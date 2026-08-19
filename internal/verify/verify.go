@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path"
 	"strings"
 
 	"github.com/bobcob7/refinery/internal/review"
@@ -60,7 +61,7 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 	exists, err := v.refExists(ctx, ref)
 	if err != nil {
 		v.log.Debug("ref lookup failed", "ref", short(ref), "error", err)
-		verification = review.Verification{Source: "none", Anchors: verification.Anchors, Reason: err.Error()}
+		verification = review.Verification{Source: "unavailable", Anchors: verification.Anchors, Reason: err.Error()}
 		if verification.Anchors == 0 {
 			return nil, nil, verification
 		}
@@ -76,7 +77,7 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 		if verification.Anchors == 0 {
 			return []review.Diagnostic{diagnostic}, nil, verification
 		}
-		return []review.Diagnostic{diagnostic}, skips("the document ref does not resolve"), verification
+		return []review.Diagnostic{diagnostic}, excusableSkips("the document ref does not resolve", "ref-unknown"), verification
 	}
 	diagnostics := []review.Diagnostic{}
 	unusable, unreadable := 0, 0
@@ -183,15 +184,33 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 	return review.Diagnostic{}, verified
 }
 
+// refExists asks whether the commit is present without asking git to read it.
+// cat-file -e reports an absent object as exit 1, but it also exits 1 when it
+// could not look — an unreadable alternates directory, a damaged pack index, a
+// promisor clone that cannot reach its remote — so the status alone would fail a
+// correct document over a bad disk. What separates them is that git complains
+// first: absence is the silent answer. See objectAbsent.
 func (v *Verifier) refExists(ctx context.Context, ref string) (bool, error) {
-	out, err := v.git.run(ctx, "cat-file", "-t", ref)
-	if err != nil {
-		if answered(err) {
+	if _, err := v.git.run(ctx, "cat-file", "-e", ref); err != nil {
+		if objectAbsent(err) {
 			return false, nil
 		}
 		return false, err
 	}
+	out, err := v.git.run(ctx, "cat-file", "-t", ref)
+	if err != nil {
+		return false, err
+	}
 	return strings.TrimSpace(string(out)) == "commit", nil
+}
+
+// objectAbsent reports git's one answer that means the object is not in this
+// repository: exit 1 with nothing said. Every way git fails to look says so on
+// stderr first, so silence carries the claim rather than the status, and a git
+// that grows a new diagnostic is read as unable to look rather than as certain.
+func objectAbsent(err error) bool {
+	status, exited := exitStatus(err)
+	return exited && status == 1 && !complained(stderrOf(err))
 }
 
 // fileAt looks a path up at the ref, once per distinct path.
@@ -200,27 +219,83 @@ func (v *Verifier) fileAt(ctx context.Context, ref, file string) fileState {
 	if state, cached := v.files[key]; cached {
 		return state
 	}
-	state := fileState{}
-	out, err := v.git.run(ctx, "cat-file", "-t", key)
-	switch {
-	case err == nil:
-		state.kind = strings.TrimSpace(string(out))
-	case !answered(err):
-		state.err = err
-	}
-	if state.kind == "blob" {
-		content, err := v.git.run(ctx, "cat-file", "blob", key)
-		if err != nil {
-			state.err = err
-		} else {
-			state.lines = countLines(content)
-		}
-	}
+	state := v.lookUp(ctx, ref, file)
 	if state.err != nil {
 		v.log.Debug("git could not read a file", "file", file, "ref", short(ref), "error", state.err)
 	}
 	v.files[key] = state
 	return state
+}
+
+// lookUp reads one path out of the tree. ls-tree is used rather than cat-file
+// because it distinguishes the two answers by shape instead of by prose: a path
+// that is not in the tree is an empty listing and a zero exit, while a tree git
+// cannot read is a non-zero exit. cat-file conflates them, reporting both as
+// exit 128 and leaving only an English sentence to tell a missing file from an
+// unreadable one — so a corrupt object turned a correct anchor into a finding.
+func (v *Verifier) lookUp(ctx context.Context, ref, file string) fileState {
+	// -z drops the c-style quoting ls-tree otherwise applies to unusual paths.
+	// --literal-pathspecs stops an anchor being read as pathspec magic: without
+	// it a file whose name begins with a colon is parsed as ":(glob)..." and
+	// fails the whole call, which would be reported as an unreadable file.
+	out, err := v.git.run(ctx, "--literal-pathspecs", "ls-tree", "-z", ref, "--", file)
+	if err != nil {
+		return fileState{err: err}
+	}
+	kind, object, ok := treeEntry(string(out), file)
+	if !ok {
+		return fileState{}
+	}
+	if kind != "blob" {
+		return fileState{kind: kind}
+	}
+	content, err := v.git.run(ctx, "cat-file", "blob", object)
+	if err != nil {
+		return fileState{err: err}
+	}
+	return fileState{kind: kind, lines: countLines(content)}
+}
+
+// treeEntry parses the single entry ls-tree -z prints for a path:
+// "<mode> <type> <object>\t<path>". Anything else — no entry, several entries,
+// or a name that is not the one asked for — is reported as not found, which
+// skips the anchor rather than inventing a claim about it.
+//
+// The names are compared cleaned, because git answers with the path it stores
+// rather than the one it was handed: "./internal/x.go" and "internal//x.go"
+// both come back as "internal/x.go", and refuting those would call a legal
+// anchor missing over a spelling git itself does not keep. A ".." segment is
+// not such a spelling — cleaning it away would confirm an anchor against a file
+// it does not name — so those are refused outright, as anchor-path-safe already
+// says of them.
+func treeEntry(out, file string) (kind, object string, ok bool) {
+	if traverses(file) {
+		return "", "", false
+	}
+	entries := strings.Split(strings.TrimRight(out, "\x00"), "\x00")
+	if len(entries) != 1 || entries[0] == "" {
+		return "", "", false
+	}
+	meta, name, found := strings.Cut(entries[0], "\t")
+	if !found || path.Clean(name) != path.Clean(file) {
+		return "", "", false
+	}
+	fields := strings.Fields(meta)
+	if len(fields) != 3 {
+		return "", "", false
+	}
+	return fields[1], fields[2], true
+}
+
+// traverses reports whether any segment of the path is "..", in any spelling
+// git would accept.
+func traverses(file string) bool {
+	for _, segment := range strings.Split(file, "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // countLines counts lines the way an editor does: a trailing fragment with no
@@ -242,6 +317,16 @@ func skips(reason string) []review.Skipped {
 	skipped := make([]review.Skipped, 0, len(anchorChecks))
 	for _, name := range anchorChecks {
 		skipped = append(skipped, review.Skipped{Name: name, Reason: reason})
+	}
+	return skipped
+}
+
+// excusableSkips reports the anchor checks as skipped by a condition the caller
+// can accept with --warn-only, naming the check that condition belongs to.
+func excusableSkips(reason, cause string) []review.Skipped {
+	skipped := skips(reason)
+	for i := range skipped {
+		skipped[i].Excuses = cause
 	}
 	return skipped
 }

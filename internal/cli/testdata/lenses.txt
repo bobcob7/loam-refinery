@@ -275,6 +275,27 @@ so a future consumer can recognise a format it does not understand and say so.
 example: "1"
 related: verdict, comments
 
+check:document-unparseable — Unparseable document
+
+Fires when the input never became a document: malformed JSON, a top-level value
+that is not an object, or a second value after the first. It is the one failure
+that stops the run, because there is nothing left to check — every other check
+reports against a document, and here there is none.
+
+No other diagnostic accompanies it. Do not read that quiet as approval of the
+rest: nothing else ran.
+
+The usual causes are prose wrapped around the JSON, a fenced code block left in,
+and two documents concatenated into one stream. The message carries the
+decoder's own complaint, which names the byte offset:
+
+  refinery validate review.json
+  invalid character 'h' looking for beginning of value
+
+This is a document to repair rather than a command line to fix, so it exits 1
+like any other unusable document.
+related: schema, tiers, verdict
+
 check:schema — Schema conformance
 
 Fires when the document does not conform to the embedded JSON Schema: a missing
@@ -356,6 +377,24 @@ holding a checkout already.
   before: "main", "4f2c1a9"
   after:  "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d"
 related: ref, ref-unknown, ref-missing
+
+check:verification-required — Verification required but unavailable
+
+Fires only under --require-verification, and says one thing: nobody confirmed
+these anchors. A repository that did not answer, a commit this checkout does not
+have, a file git could not read — different causes, same answer.
+
+Without the flag that is reported and the run passes, because a document is not
+wrong for being checked somewhere that could not check it. The flag is for the
+caller who cannot accept that: a merge gate whose whole purpose is confirming
+the line numbers are real, where a review nobody verified is worth no more than
+no review.
+
+The status line carries the cause: "not a git repository" means cd, and an
+unavailable source means the machine rather than the review. --warn-only on the
+check that explains the gap excuses it — ref-unknown for a commit this
+checkout never had. Nothing excuses a file git could not read.
+related: ref-unknown, anchor-file-missing, tiers
 
 check:ref-unknown — Unresolvable ref
 
@@ -733,17 +772,18 @@ Structural checks ask "is this a document?" — schema conformance, unique ids,
 safe paths, well-formed refs. Always run, always hard.
 
 Verification checks ask "is this about anything real?" — does this path exist
-at this ref, does the file have this many lines. They run whenever a repository
-is found, and are errors when they do. --warn-only demotes them for a repository
-that lacks the reviewed commit.
+at this ref, does the file have this many lines. Errors when a repository
+answers. --warn-only demotes them for one lacking the reviewed commit;
+--require-verification makes a skip an error.
 
 Advisory checks ask "is this a good review?" — a thin body, a suggestion with
 no stated cost, every comment at priority 9. Always run, never fatal. --strict
 promotes them, --disable silences named ones.
 
 Exit 0 is valid, exit 1 means revise the review, exit 2 means fix the
-invocation. No check gates another, so one run reports everything findable, and
-checks that cannot run are listed as skipped rather than counted as passing.
+invocation. Only document-unparseable gates the rest; otherwise one run reports
+everything findable, and checks that cannot run are listed as skipped, not
+passed.
 related: schema, ref-unknown, priority-flat
 
 topic:verification — Anchors as checkable claims

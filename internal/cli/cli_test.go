@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"github.com/bobcob7/refinery/internal/entry"
 	"github.com/bobcob7/refinery/internal/render"
 	"github.com/bobcob7/refinery/internal/review"
+	"github.com/bobcob7/refinery/internal/structural"
 	"github.com/bobcob7/refinery/internal/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -323,4 +325,87 @@ func TestAnEmptyElementIsNotReportedAsAnEmptyList(t *testing.T) {
 	h := newHarness(t, `{"version":"1"}`)
 	assert.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"validate", "--disable=body-thin,,vacuous-body"}))
 	assert.Contains(t, h.stderr.String(), "empty name")
+}
+
+// Exit 1 has to mean the same thing in both formats. Writing the failure past
+// the renderer left --format=json exiting 1 with an empty stdout, which reads
+// to a caller unmarshalling it as a crashed tool rather than as a document to
+// repair.
+func TestAnUnparseableDocumentIsRenderedInTheChosenFormat(t *testing.T) {
+	t.Parallel()
+	t.Run("json", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t, "nonsense")
+		h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
+			return nil, parseError(t)
+		}
+		require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"validate", "--format=json"}))
+		var payload struct {
+			Valid       bool `json:"valid"`
+			Diagnostics []struct {
+				Severity string `json:"severity"`
+				Name     string `json:"name"`
+				Message  string `json:"message"`
+			} `json:"diagnostics"`
+		}
+		require.NoError(t, json.Unmarshal(h.stdout.Bytes(), &payload), "stdout was %q", h.stdout.String())
+		assert.False(t, payload.Valid)
+		require.Len(t, payload.Diagnostics, 1)
+		assert.Equal(t, "document-unparseable", payload.Diagnostics[0].Name)
+		assert.Equal(t, "error", payload.Diagnostics[0].Severity)
+		assert.Contains(t, payload.Diagnostics[0].Message, "reading review document")
+	})
+	t.Run("text names a check and hands back the lens", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t, "nonsense")
+		h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
+			return nil, parseError(t)
+		}
+		require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"validate"}))
+		assert.Contains(t, h.stdout.String(), "INVALID", "the status line still goes to stdout")
+		assert.Contains(t, h.stderr.String(), "document-unparseable",
+			"prime promises every exit-1 diagnostic names a check")
+		assert.Contains(t, h.stderr.String(), "describe --lens=document-unparseable",
+			"prime promises the run ends with that command already assembled")
+	})
+}
+
+// The diagnostic's check name has to be the registry's, or the describe command
+// the run hands back exits 2 with "unknown lens" — and no golden file would
+// notice, because regenerating them makes the drift look intended.
+func TestTheUnparseableCheckNameIsTheRegisteredOne(t *testing.T) {
+	t.Parallel()
+	names := []string{}
+	for _, check := range structural.Checks() {
+		names = append(names, check.Name)
+	}
+	assert.Contains(t, names, checkDocumentUnparseable,
+		"the name the CLI reports must be a check describe --lens can open")
+}
+
+// The flag has to reach the validator, and has to be off unless asked for.
+// Nothing else in the suite would notice it defaulting to true.
+func TestRequireVerificationReachesTheValidatorAndDefaultsOff(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "absent by default", args: []string{"validate"}},
+		{name: "given", args: []string{"validate", "--require-verification"}, want: true},
+		{name: "given as false", args: []string{"validate", "--require-verification=false"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, `{"version":"1"}`)
+			var got validate.Options
+			h.validator.ValidateFunc = func(_ context.Context, _ []byte, options validate.Options) (*review.Result, error) {
+				got = options
+				return &review.Result{Valid: true}, nil
+			}
+			require.Equal(t, ExitValid, h.app.Run(t.Context(), test.args))
+			assert.Equal(t, test.want, got.RequireVerification)
+		})
+	}
 }

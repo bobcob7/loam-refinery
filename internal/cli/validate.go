@@ -11,7 +11,7 @@ import (
 	"github.com/bobcob7/refinery/internal/validate"
 )
 
-const validateUsage = `usage: refinery validate [path] [--strict] [--warn-only=NAME,...] [--disable=NAME,...] [--format text|json]
+const validateUsage = `usage: refinery validate [path] [--strict] [--require-verification] [--warn-only=NAME,...] [--disable=NAME,...] [--format text|json]
 `
 
 // validate checks one review document. Every check runs: a failure in one tier
@@ -21,6 +21,7 @@ func (a *App) validate(ctx context.Context, args []string) int {
 	strict := set.Bool("strict", false, "treat advisories as errors")
 	warnOnly := set.String("warn-only", "", "demote the named verification checks")
 	disable := set.String("disable", "", "skip the named advisories")
+	require := set.Bool("require-verification", false, "fail if the anchors were not checked")
 	format := set.String("format", "text", "output format: text or json")
 	paths, err := parseAnywhere(set, args)
 	if err != nil {
@@ -35,7 +36,7 @@ func (a *App) validate(ctx context.Context, args []string) int {
 		a.fail(fmt.Errorf("validate takes at most one path, got %d", len(paths)))
 		return ExitUsage
 	}
-	options := validate.Options{Strict: *strict, Dir: a.dir}
+	options := validate.Options{Strict: *strict, RequireVerification: *require, Dir: a.dir}
 	if options.Disabled, err = a.checkNames(*disable, "--disable", a.names.Advisory, isSet(set, "disable")); err != nil {
 		a.fail(err)
 		return ExitUsage
@@ -55,11 +56,11 @@ func (a *App) validate(ctx context.Context, args []string) int {
 	}
 	result, err := a.validator.Validate(ctx, source, options)
 	if err != nil {
-		a.fail(err)
-		if review.IsDocumentError(err) {
-			return ExitInvalid
+		if !review.IsDocumentError(err) {
+			a.fail(err)
+			return ExitUsage
 		}
-		return ExitUsage
+		result = a.unparseable(err, *strict)
 	}
 	if err := renderer.Result(a.stdout, a.stderr, result); err != nil {
 		a.fail(err)
@@ -69,6 +70,43 @@ func (a *App) validate(ctx context.Context, args []string) int {
 		return ExitValid
 	}
 	return ExitInvalid
+}
+
+// checkDocumentUnparseable is the check this diagnostic reports under. It is
+// the registry's name, asserted against it in the tests, because prime promises
+// the run hands back a describe command that works and a name that drifts from
+// the registry turns that promise into a lens lookup that exits 2.
+const checkDocumentUnparseable = "document-unparseable"
+
+// unparseable turns a document that never parsed into a result the renderer can
+// express. The alternative is prose written past the renderer, which leaves
+// --format=json exiting 1 with nothing on stdout: a caller unmarshalling that
+// sees a crashed tool rather than a document to repair. Going through the
+// renderer also keeps the promise prime makes, that an exit 1 names a check and
+// hands back the describe command for it.
+func (a *App) unparseable(err error, strict bool) *review.Result {
+	const reason = "the input is not a review document"
+	result := &review.Result{
+		Strict: strict,
+		Diagnostics: []review.Diagnostic{{
+			Severity: review.SeverityError,
+			Name:     checkDocumentUnparseable,
+			Message:  err.Error(),
+		}},
+		Verification: review.Verification{Source: "unavailable", Reason: reason},
+	}
+	// Every other check is reported as skipped rather than left out, because a
+	// caller counting "registered minus reported" would otherwise read silence
+	// as twenty-odd checks passing on a document that never parsed.
+	for _, tier := range [][]string{a.names.Structural, a.names.Verification, a.names.Advisory} {
+		for _, name := range tier {
+			if name == checkDocumentUnparseable {
+				continue
+			}
+			result.Skipped = append(result.Skipped, review.Skipped{Name: name, Reason: reason})
+		}
+	}
+	return result
 }
 
 // checkNames validates a comma-separated list of check names against the tier

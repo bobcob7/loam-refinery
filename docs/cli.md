@@ -68,7 +68,8 @@ Explicitly out of scope:
 ```
 refinery prime
 refinery describe [--lens=NAME[,NAME...]] [--format text|json]
-refinery validate [path] [--strict] [--warn-only=…] [--disable=…]
+refinery validate [path] [--strict] [--require-verification]
+                  [--warn-only=…] [--disable=…]
                          [--format text|json]
 refinery schema   [--annotated]
 refinery version
@@ -257,7 +258,8 @@ per mistake. Checks that genuinely cannot run are listed as skipped rather than
 passing silently.
 
 Input must be a single JSON object. Multiple documents, JSON Lines, and arrays
-are rejected as usage errors.
+fail `document-unparseable` and exit 1: the input is a document to repair, not
+an invocation to fix.
 
 #### 2.3.1 Verifying anchors
 
@@ -268,8 +270,9 @@ Verification is the only check tier that catches it.
 
 It runs **by default**, against the git repository containing the working
 directory, discovered the way git itself discovers one — walking up from the CWD
-until a repository root is found. There is no flag. Anchors resolve by object
-lookup, `git cat-file` against the object database. No ref resolution is
+until a repository root is found. There is no flag. Anchors resolve against the
+object database — `git ls-tree` for the path, `git cat-file` for the object
+behind it, and never a working tree. No ref resolution is
 involved, because a ref is already a SHA; there is nothing to disambiguate and no
 chance of resolving to a different commit than the reviewer saw. Commits that are
 not checked out still work.
@@ -280,11 +283,33 @@ gets run — a tool whose whole purpose is catching hallucinated anchors should 
 require an argument to do it. Pointing `refinery` at a different repository is
 `cd`, which every caller already has and no caller has to be taught.
 
-When the working directory is not inside a git repository, verification is
-**skipped and reported as skipped**, with the reason on the status line. It is
-never silently passed: a run that verified nothing must not look like a run that
-verified everything, or the tier is worse than absent — it would license
-confidence it never earned.
+When no repository can answer, verification is **skipped and reported as
+skipped**, with the reason on the status line. It is never silently passed: a
+run that verified nothing must not look like a run that verified everything, or
+the tier is worse than absent — it would license confidence it never earned.
+
+A caller who cannot accept an unchecked document passes
+`--require-verification`, which turns "nobody confirmed these anchors" into a
+`verification-required` error and exit 1. It fires whenever the anchor claims
+went unchecked — no repository, an unreachable one, or a single file git could
+not read — because those are one answer to the question the flag asks. It is
+off by default: a document is not wrong for being checked somewhere that could
+not check it, and only the caller knows whether it needed a repository to.
+`--warn-only=verification-required` demotes it like any other verification
+check; asking for both is contradictory, but visibly so. Demoting a *different*
+verification check excuses only the gap that check explains —
+`--warn-only=ref-unknown` lets a repository legitimately lacking the reviewed
+commit pass under `--require-verification`, while a file git could not read, a
+malformed field, and no repository at all still fail. A document with no anchors
+is never failed by the flag: there is nothing for it to ask about.
+
+Two things can go wrong there, and they are not the same thing. Running outside
+a repository is ordinary, and reports `source: none`. A repository that exists
+but could not be asked — git missing, a bare repository, a checkout git refuses
+on ownership grounds — reports `source: unavailable` and carries git's own
+words. Neither fails the run, because the document is not at fault for either;
+but a caller that requires verified anchors can tell them apart, and a run that
+checked nothing never claims otherwise.
 
 Being run in the *wrong* repository is loud rather than silent, and needs no
 special handling. The reviewed commit will not exist in an unrelated repository,
@@ -347,6 +372,7 @@ setup.
 ```
 --strict                  treat advisories as errors (exit 1)        validate
 --warn-only=NAME[,NAME…]  demote the named verification checks       validate
+--require-verification    fail if the anchors were not checked       validate
 --disable=NAME[,NAME...]  skip the named advisories                  validate
 --lens=NAME[,NAME...]     open one entry in full                     describe
 --list                    print the lens index, no bodies            describe
@@ -356,7 +382,9 @@ setup.
 
 Structural checks cannot be disabled or demoted. Verification checks can be
 demoted with `--warn-only` but not disabled: they run whenever a repository is
-found, and when none is, the skip is reported rather than chosen. Naming an unknown check
+found, and when none is, the skip is reported rather than chosen. The one
+exception is `verification-required`, which runs only when asked for, and asks
+about that skip rather than about the document. Naming an unknown check
 in `--disable` or `--warn-only` is a usage error (exit 2) rather than a silent
 no-op, so typos surface immediately.
 
@@ -368,8 +396,8 @@ default posture: review quality is a judgment the caller owns.
 | Code | Meaning |
 | --- | --- |
 | 0 | Structurally valid, and anchors verified where a repository was available. Advisories may be present. |
-| 1 | Structurally invalid, a verification failure, or advisories present under `--strict`. |
-| 2 | Usage or I/O error: unreadable path, malformed JSON, unknown advisory name, bad flag. |
+| 1 | Structurally invalid, unparseable, a verification failure, unverified anchors under `--require-verification`, or advisories present under `--strict`. |
+| 2 | Usage or I/O error: unreadable path, unknown advisory name, bad flag. |
 
 Distinguishing 1 from 2 matters: exit 1 means *revise the review*, exit 2 means
 *fix the invocation*. An agent must be able to tell those apart without parsing
@@ -507,9 +535,10 @@ is always present, empty when everything ran. As with `verification`, absence
 must never be read as success: a consumer that ignores this field will treat a
 check that never executed as a check that found nothing.
 
-`verification` is always present. `source` is `"repo"` or `"none"`;
-with `"none"`, `verified` is `0` and a consumer can tell that unverified anchors
-were not checked rather than found sound. A caller that treats a missing
+`verification` is always present. `source` is `"repo"`, `"none"` when the run
+was not inside a repository, or `"unavailable"` when one could not be asked;
+with either of the last two, `verified` is `0` and a consumer can tell that
+unverified anchors were not checked rather than found sound. A caller that treats a missing
 `verification` block as "verified" is reading an older version, which is why the
 field is required rather than omitted when empty.
 
@@ -530,7 +559,7 @@ command grows past its budget — a limit nothing measures is a limit that erode
 | Call | Budget | Frequency |
 | --- | --- | --- |
 | `prime` | 250 | Once per session, often pinned into a system prompt |
-| `describe` | 600 | Once per session that writes a review |
+| `describe` | 625 | Once per session that writes a review |
 | `describe --lens=NAME` | 250 each | Only on uncertainty or a failed check |
 | `describe --list` | 200 | Rare; discovery and the unknown-lens error |
 | `schema` | 1,000 | Rare; machine consumers only |
