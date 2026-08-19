@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -414,12 +415,58 @@ func distance(a, b string) int {
 	return previous[len(b)]
 }
 
+// ratBitCap bounds the numbers spelled out in full, at roughly 154 decimal
+// digits. Past that a value says everything it has to say through its
+// magnitude, and spelling it out lets a nine-byte field bury the report:
+// "priority": 1e100000 rendered as 100,035 digits of a single number.
+const ratBitCap = 512
+
 func rat(value *big.Rat) string {
+	if value.Num().BitLen() > ratBitCap || value.Denom().BitLen() > ratBitCap {
+		return magnitude(value)
+	}
 	if value.IsInt() {
 		return value.Num().String()
 	}
 	float, _ := value.Float64()
 	return strconv.FormatFloat(float, 'f', -1, 64)
+}
+
+// magnitude renders a number too large to spell out, to six significant
+// digits. It never converts the value to decimal, so the cost does not grow
+// with the number: a document cannot buy unbounded work with one short field.
+func magnitude(value *big.Rat) string {
+	log := log10(value.Num()) - log10(value.Denom())
+	exponent := math.Floor(log)
+	// Round to six digits before normalising, not after: rounding is itself
+	// what lifts a 9.999999 mantissa to 10, and the exponent has to follow.
+	mantissa, _ := strconv.ParseFloat(strconv.FormatFloat(math.Pow(10, log-exponent), 'g', 6, 64), 64)
+	if mantissa >= 10 {
+		mantissa, exponent = mantissa/10, exponent+1
+	}
+	if mantissa < 1 {
+		mantissa, exponent = mantissa*10, exponent-1
+	}
+	sign := ""
+	if value.Sign() < 0 {
+		sign = "-"
+	}
+	return fmt.Sprintf("%s%se%+d", sign, strconv.FormatFloat(mantissa, 'g', 6, 64), int(exponent))
+}
+
+// log10 approximates the base-ten logarithm of |value|. The top 64 bits fix
+// the mantissa and the bit length fixes the exponent, so the result is exact
+// to far more digits than the six magnitude prints.
+func log10(value *big.Int) float64 {
+	bits := value.BitLen()
+	if bits == 0 {
+		return 0
+	}
+	lead := new(big.Int).Abs(value)
+	if bits > 64 {
+		lead.Rsh(lead, uint(bits-64))
+	}
+	return (float64(bits-lead.BitLen()) + math.Log2(float64(lead.Uint64()))) * math.Log10(2)
 }
 
 func display(value any) string {

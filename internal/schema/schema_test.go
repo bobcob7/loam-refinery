@@ -3,6 +3,7 @@ package schema
 import (
 	"bytes"
 	"encoding/json"
+	"math/big"
 	"strings"
 	"testing"
 
@@ -144,6 +145,43 @@ func decode(t *testing.T, source string) any {
 	var value any
 	require.NoError(t, decoder.Decode(&value))
 	return value
+}
+
+func TestRatSpellsOutOrdinaryNumbersAndBoundsOversizedOnes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "a priority is spelled out", value: "12", want: "12"},
+		{name: "a negative is spelled out", value: "-3", want: "-3"},
+		{name: "a fraction keeps its decimal form", value: "3/2", want: "1.5"},
+		{name: "a number just under the cap is still spelled out", value: "1e150", want: "1" + strings.Repeat("0", 150)},
+		{name: "an oversized number collapses to its magnitude", value: "1e100000", want: "1e+100000"},
+		{name: "an oversized number keeps six significant digits", value: "12345678901234567890e100000", want: "1.23457e+100019"},
+		{name: "an oversized negative keeps its sign", value: "-1e100000", want: "-1e+100000"},
+		{name: "an oversized denominator collapses too", value: "1/" + "1" + strings.Repeat("0", 200), want: "1e-200"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			value, ok := new(big.Rat).SetString(test.value)
+			require.True(t, ok, "unparseable test value %s", test.value)
+			assert.Equal(t, test.want, rat(value))
+		})
+	}
+}
+
+// A document buys unbounded output with a nine-byte field only if rat spells
+// the number out; the bound is the point of the check, so pin it directly.
+func TestRatBoundsOutputRegardlessOfInputMagnitude(t *testing.T) {
+	t.Parallel()
+	for _, exponent := range []string{"1e10000", "1e100000", "1e1000000"} {
+		value, ok := new(big.Rat).SetString(exponent)
+		require.True(t, ok)
+		assert.LessOrEqual(t, len(rat(value)), 32, "rendering %s should stay short", exponent)
+	}
 }
 
 const valid = `{
