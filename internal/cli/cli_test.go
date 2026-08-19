@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -174,7 +175,8 @@ func TestValidateExitCodes(t *testing.T) {
 	}{
 		{name: "valid", result: &review.Result{Valid: true}, code: ExitValid},
 		{name: "invalid", result: &review.Result{}, code: ExitInvalid},
-		{name: "unreadable input", err: errors.New("input is not valid JSON"), code: ExitUsage},
+		{name: "unparseable document", err: parseError(t), code: ExitInvalid},
+		{name: "wiring failure", err: errors.New("no repository finder"), code: ExitUsage},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -276,3 +278,13 @@ type stubProvider struct {
 func (p *stubProvider) Name() string { return "test" }
 
 func (p *stubProvider) Entries() ([]entry.Entry, error) { return p.entries, nil }
+
+// parseError returns the error a real unparseable document produces, so the
+// exit-code mapping is tested against the predicate rather than a stand-in.
+func parseError(t *testing.T) error {
+	t.Helper()
+	_, err := review.Parse([]byte("nonsense"))
+	require.Error(t, err)
+	require.True(t, review.IsDocumentError(err))
+	return fmt.Errorf("reading review document: %w", err)
+}

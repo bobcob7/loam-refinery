@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/bobcob7/refinery/internal/review"
 	"github.com/bobcob7/refinery/internal/validate"
 )
 
@@ -49,6 +50,9 @@ func (a *App) validate(ctx context.Context, args []string) int {
 	result, err := a.validator.Validate(ctx, source, options)
 	if err != nil {
 		a.fail(err)
+		if review.IsDocumentError(err) {
+			return ExitInvalid
+		}
 		return ExitUsage
 	}
 	if err := renderer.Result(a.stdout, a.stderr, result); err != nil {

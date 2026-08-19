@@ -90,6 +90,13 @@ var (
 	errNotObject = errors.New("input must be a single JSON object")
 )
 
+// IsDocumentError reports whether err means the input was not a single JSON
+// object. That is a document to repair, not a command line to fix, and callers
+// map it to the exit code that tells a writer which of the two to change.
+func IsDocumentError(err error) bool {
+	return errors.Is(err, errNotJSON) || errors.Is(err, errNotObject)
+}
+
 // Parse decodes a review document. It fails only when the input is not a single
 // JSON object: every other defect is recorded on the returned Document so that
 // checks can degrade per field and per item.
