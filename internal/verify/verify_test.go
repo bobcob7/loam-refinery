@@ -314,7 +314,8 @@ func TestAFailedRefLookupIsSkippedNotReportedAsRefUnknown(t *testing.T) {
 	doc := document(t, absentSHA, []map[string]any{{"file": "a.go", "line": 12}})
 	diagnostics, skipped, verification := New(git, logger()).Verify(t.Context(), doc)
 	assert.Empty(t, diagnostics, "a ref that could not be looked up is not a ref that does not resolve")
-	assert.Equal(t, "none", verification.Source)
+	assert.Equal(t, "unavailable", verification.Source,
+		"a repository that answered nothing is not a run made outside one")
 	require.NotEmpty(t, skipped)
 	assert.Equal(t, "git could not resolve the document ref", skipped[0].Reason)
 }
@@ -353,7 +354,8 @@ func TestAKilledGitIsNotReportedAsARefThatDoesNotResolve(t *testing.T) {
 	doc := document(t, absentSHA, []map[string]any{{"file": "a.go", "line": 12}})
 	diagnostics, skipped, verification := New(git, logger()).Verify(t.Context(), doc)
 	assert.Empty(t, diagnostics, "a git that was killed never said the ref was absent")
-	assert.Equal(t, "none", verification.Source)
+	assert.Equal(t, "unavailable", verification.Source,
+		"a repository that answered nothing is not a run made outside one")
 	require.NotEmpty(t, skipped)
 	assert.Equal(t, "git could not resolve the document ref", skipped[0].Reason)
 }
@@ -528,7 +530,7 @@ func TestAnUnreadableObjectIsSkippedNotReportedAsAbsent(t *testing.T) {
 		doc := document(t, sha, []map[string]any{{"file": "internal/fetch/client.go", "line": 12}})
 		diagnostics, skipped, verification := New(repository, logger()).Verify(t.Context(), doc)
 		assert.Empty(t, diagnostics, "a commit git cannot read is not a commit that does not resolve")
-		assert.Equal(t, "none", verification.Source)
+		assert.Equal(t, "unavailable", verification.Source)
 		require.NotEmpty(t, skipped)
 		assert.Equal(t, "git could not resolve the document ref", skipped[0].Reason)
 	})
@@ -594,6 +596,7 @@ func TestAGitCallReturnsEvenWhenAChildHoldsItsPipes(t *testing.T) {
 	select {
 	case err := <-done:
 		require.Error(t, err)
+		assert.ErrorIs(t, err, errNotAnswered, "the deadline, not the process state, carries this")
 		assert.False(t, answered(err), "a call that never finished is not git answering")
 		assert.Less(t, time.Since(start), waitDelay+10*time.Second)
 	case <-time.After(waitDelay + 15*time.Second):
@@ -619,7 +622,7 @@ func TestAnObjectStoreItCannotSearchIsNotAnAbsentRef(t *testing.T) {
 		doc := document(t, sha, []map[string]any{{"file": "internal/fetch/client.go"}})
 		diagnostics, skipped, verification := New(repository, logger()).Verify(t.Context(), doc)
 		assert.Empty(t, diagnostics, "a store git could not search is not a ref that does not resolve")
-		assert.Equal(t, "none", verification.Source)
+		assert.Equal(t, "unavailable", verification.Source)
 		require.NotEmpty(t, skipped)
 	})
 	t.Run("a damaged pack index", func(t *testing.T) {
@@ -636,7 +639,7 @@ func TestAnObjectStoreItCannotSearchIsNotAnAbsentRef(t *testing.T) {
 		doc := document(t, sha, []map[string]any{{"file": "internal/fetch/client.go"}})
 		diagnostics, skipped, verification := New(repository, logger()).Verify(t.Context(), doc)
 		assert.Empty(t, diagnostics, "a damaged pack index is not a ref that does not resolve")
-		assert.Equal(t, "none", verification.Source)
+		assert.Equal(t, "unavailable", verification.Source)
 		require.NotEmpty(t, skipped)
 	})
 }
@@ -672,9 +675,155 @@ func TestRepositoryRunReturnsWhenAChildHoldsItsPipes(t *testing.T) {
 	select {
 	case err := <-done:
 		require.Error(t, err)
+		assert.ErrorIs(t, err, errNotAnswered, "the deadline, not the process state, carries this")
 		assert.False(t, answered(err))
 		assert.False(t, objectAbsent(err), "a call that never finished never found the object absent")
 	case <-time.After(waitDelay + 15*time.Second):
 		t.Fatal("Repository.run outlived its deadline: WaitDelay is not bounding the wait")
 	}
+}
+
+// Absence is read from git's silence, so anything that can put text on stderr
+// without git having failed is a way to lose a real finding. These pin the two
+// that reach it: the caller's environment, and a partial clone's lazy fetch.
+func TestNoiseOnStderrDoesNotHideAnAbsentRef(t *testing.T) {
+	t.Run("a trace variable inherited from the caller", func(t *testing.T) {
+		t.Setenv("GIT_TRACE", "1")
+		repository, _ := repo(t)
+		doc := document(t, absentSHA, []map[string]any{{"file": "internal/fetch/client.go"}})
+		diagnostics, _, _ := New(repository, logger()).Verify(t.Context(), doc)
+		require.Len(t, diagnostics, 1, "trace output is not git failing to look")
+		assert.Equal(t, "ref-unknown", diagnostics[0].Name)
+	})
+	t.Run("a partial clone asked for a ref nobody has", func(t *testing.T) {
+		t.Parallel()
+		origin, _ := repo(t)
+		run(t, origin.Root(), "config", "uploadpack.allowfilter", "true")
+		dir := t.TempDir()
+		clone := filepath.Join(dir, "clone")
+		if err := exec.Command("git", "clone", "--quiet", "--filter=blob:none",
+			"--no-local", "file://"+origin.Root(), clone).Run(); err != nil {
+			t.Skip("this git cannot make a partial clone here")
+		}
+		repository, err := Discover(t.Context(), clone)
+		require.NoError(t, err)
+		doc := document(t, absentSHA, []map[string]any{{"file": "internal/fetch/client.go"}})
+		diagnostics, _, _ := New(repository, logger()).Verify(t.Context(), doc)
+		require.Len(t, diagnostics, 1,
+			"a lazy fetch reaching for a ref that exists nowhere is still an absent ref")
+		assert.Equal(t, "ref-unknown", diagnostics[0].Name)
+	})
+}
+
+func TestComplainedSeparatesGitsWarningsFromItsFailures(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		stderr string
+		want   bool
+	}{
+		{name: "silence"},
+		{name: "a warning is not a failure", stderr: "warning: unable to access '.git/x'"},
+		{name: "trace output is not a failure", stderr: "12:00:00.1 git.c:463  trace: built-in: git cat-file"},
+		{name: "an error is", stderr: "error: index file .git/objects/pack/p.idx is too small", want: true},
+		{name: "a fatal is", stderr: "fatal: git upload-pack: not our ref", want: true},
+		{name: "an error after a warning is", stderr: "warning: nope\nerror: unable to open object pack directory", want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, test.want, complained(test.stderr))
+		})
+	}
+}
+
+func TestStderrIsReadFromEitherShapeOfGitFailure(t *testing.T) {
+	t.Parallel()
+	exit := refused(t, 1)
+	exit.Stderr = []byte("fatal: something\n")
+	assert.Equal(t, "fatal: something", stderrOf(exit), "cmd.Output puts git's words on the ExitError")
+	wrapped := fmt.Errorf("wrapped: %w", &gitError{args: []string{"cat-file"}, stderr: "error: nope", err: exit})
+	assert.Equal(t, "error: nope", stderrOf(wrapped), "and Repository.run puts them on a gitError")
+	assert.Empty(t, stderrOf(errors.New("plain")), "an error that is not git's says nothing about git")
+}
+
+// A ".." segment is not a spelling git normalises away, it is a different file.
+// Cleaning it would confirm the anchor against something it does not name,
+// while anchor-path-safe is separately calling it unsafe.
+func TestATraversalPathIsNeverVerifiedAgainstAnotherFile(t *testing.T) {
+	t.Parallel()
+	repository, sha := repo(t)
+	doc := document(t, sha, []map[string]any{{"file": "internal/../internal/fetch/client.go"}})
+	diagnostics, _, verification := New(repository, logger()).Verify(t.Context(), doc)
+	assert.Zero(t, verification.Verified, "the anchor names a path git does not store")
+	require.Len(t, diagnostics, 1)
+	assert.Equal(t, "anchor-file-missing", diagnostics[0].Name)
+}
+
+// refinery-4fw names this case: a partial clone whose promisor is gone must
+// leave a correct review passing rather than refuting anchors it cannot read.
+func TestAPromisorItCannotReachDoesNotRefuteAnchors(t *testing.T) {
+	t.Parallel()
+	origin, sha := repo(t)
+	run(t, origin.Root(), "config", "uploadpack.allowfilter", "true")
+	dir := t.TempDir()
+	clone := filepath.Join(dir, "clone")
+	// --no-checkout, or the clone fetches the very blob this test needs absent.
+	if err := exec.Command("git", "clone", "--quiet", "--filter=blob:none", "--no-checkout",
+		"--no-local", "file://"+origin.Root(), clone).Run(); err != nil {
+		t.Skip("this git cannot make a partial clone here")
+	}
+	require.NoError(t, os.Rename(origin.Root(), origin.Root()+"-moved"))
+	repository, err := Discover(t.Context(), clone)
+	require.NoError(t, err)
+	doc := document(t, sha, []map[string]any{{"file": "internal/fetch/client.go", "line": 40}})
+	diagnostics, skipped, _ := New(repository, logger()).Verify(t.Context(), doc)
+	assert.Empty(t, diagnostics, "a blob the promisor cannot supply is not a wrong line number")
+	require.NotEmpty(t, skipped)
+}
+
+// The reason reaches a single-line status line, so it keeps git's first
+// sentence rather than its whole complaint.
+func TestAGitFailureReasonStaysOnOneLine(t *testing.T) {
+	t.Parallel()
+	failure := &gitError{
+		args:   []string{"cat-file", "-e", absentSHA},
+		stderr: "error: unable to open object pack directory: /x\nerror: again: /y\nfatal: could not get object info",
+		err:    refused(t, 128),
+	}
+	assert.NotContains(t, failure.Error(), "\n", "a multi-line reason breaks the status line it lands on")
+	assert.Contains(t, failure.Error(), "unable to open object pack directory")
+}
+
+// plainEnv and complained() are deliberately redundant: either alone keeps a
+// trace variable from hiding an absent ref, which means neither is pinned by a
+// test that only runs git. These pin them separately.
+func TestPlainEnvDropsTheVariablesThatWriteToStderr(t *testing.T) {
+	t.Setenv("GIT_TRACE", "1")
+	t.Setenv("GIT_TRACE2_PERF", "1")
+	t.Setenv("GIT_CURL_VERBOSE", "1")
+	t.Setenv("GIT_AUTHOR_NAME", "keep me")
+	env := plainEnv()
+	for _, entry := range env {
+		assert.NotContains(t, entry, "GIT_TRACE", "trace output would be read as git failing to look")
+		assert.NotContains(t, entry, "GIT_CURL_VERBOSE")
+	}
+	assert.Contains(t, env, "GIT_AUTHOR_NAME=keep me", "only the noisy variables go")
+	assert.Contains(t, env, "GIT_NO_LAZY_FETCH=1")
+	assert.Contains(t, env, "LC_ALL=C")
+}
+
+func TestOnlyAComplaintWithdrawsTheClaimOfAbsence(t *testing.T) {
+	t.Parallel()
+	absent := func(stderr string) error {
+		return &gitError{args: []string{"cat-file", "-e", absentSHA}, stderr: stderr, err: refused(t, 1)}
+	}
+	assert.True(t, objectAbsent(absent("")), "silence is the answer that means it is not here")
+	assert.True(t, objectAbsent(absent("12:00:00.1 git.c:463  trace: built-in: git cat-file")),
+		"noise on stderr is not git failing to look")
+	assert.True(t, objectAbsent(absent("warning: unable to access '/x'")),
+		"nor is a warning git carried on past")
+	assert.False(t, objectAbsent(absent("error: index file p.idx is too small")))
+	assert.False(t, objectAbsent(absent("fatal: git upload-pack: not our ref")))
+	assert.False(t, objectAbsent(&gitError{stderr: "", err: refused(t, 128)}),
+		"only exit 1 is the not-here answer at all")
 }

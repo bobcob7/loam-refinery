@@ -68,8 +68,8 @@ Explicitly out of scope:
 ```
 refinery prime
 refinery describe [--lens=NAME[,NAME...]] [--format text|json]
-refinery validate [path] [--strict] [--require-verification] [--warn-only=…]
-                  [--disable=…]
+refinery validate [path] [--strict] [--require-verification]
+                  [--warn-only=…] [--disable=…]
                          [--format text|json]
 refinery schema   [--annotated]
 refinery version
@@ -270,8 +270,9 @@ Verification is the only check tier that catches it.
 
 It runs **by default**, against the git repository containing the working
 directory, discovered the way git itself discovers one — walking up from the CWD
-until a repository root is found. There is no flag. Anchors resolve by object
-lookup, `git cat-file` against the object database. No ref resolution is
+until a repository root is found. There is no flag. Anchors resolve against the
+object database — `git ls-tree` for the path, `git cat-file` for the object
+behind it, and never a working tree. No ref resolution is
 involved, because a ref is already a SHA; there is nothing to disambiguate and no
 chance of resolving to a different commit than the reviewer saw. Commits that are
 not checked out still work.
@@ -295,7 +296,12 @@ not read — because those are one answer to the question the flag asks. It is
 off by default: a document is not wrong for being checked somewhere that could
 not check it, and only the caller knows whether it needed a repository to.
 `--warn-only=verification-required` demotes it like any other verification
-check; asking for both is contradictory, but visibly so.
+check; asking for both is contradictory, but visibly so. Demoting a *different*
+verification check excuses only the gap that check explains —
+`--warn-only=ref-unknown` lets a repository legitimately lacking the reviewed
+commit pass under `--require-verification`, while a file git could not read, a
+malformed field, and no repository at all still fail. A document with no anchors
+is never failed by the flag: there is nothing for it to ask about.
 
 Two things can go wrong there, and they are not the same thing. Running outside
 a repository is ordinary, and reports `source: none`. A repository that exists
@@ -529,9 +535,10 @@ is always present, empty when everything ran. As with `verification`, absence
 must never be read as success: a consumer that ignores this field will treat a
 check that never executed as a check that found nothing.
 
-`verification` is always present. `source` is `"repo"` or `"none"`;
-with `"none"`, `verified` is `0` and a consumer can tell that unverified anchors
-were not checked rather than found sound. A caller that treats a missing
+`verification` is always present. `source` is `"repo"`, `"none"` when the run
+was not inside a repository, or `"unavailable"` when one could not be asked;
+with either of the last two, `verified` is `0` and a consumer can tell that
+unverified anchors were not checked rather than found sound. A caller that treats a missing
 `verification` block as "verified" is reading an older version, which is why the
 field is required rather than omitted when empty.
 

@@ -275,7 +275,7 @@ func TestRequireVerificationRespectsAnExcusedCondition(t *testing.T) {
 	t.Parallel()
 	lacking := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
 		return []review.Diagnostic{{Severity: review.SeverityError, Name: "ref-unknown", Message: "absent"}},
-			[]review.Skipped{{Name: "anchor-file-missing", Reason: "the document ref does not resolve"}},
+			[]review.Skipped{{Name: "anchor-file-missing", Reason: "the document ref does not resolve", Excuses: "ref-unknown"}},
 			review.Verification{Source: "repo", Anchors: 1}
 	}}
 	options := Options{RequireVerification: true, WarnOnly: map[string]bool{"ref-unknown": true}}
@@ -313,4 +313,42 @@ func TestTheVerificationRequirementNamesEveryCause(t *testing.T) {
 	assert.Contains(t, result.Diagnostics[0].Message, "unusable field on 1 anchor")
 	assert.Contains(t, result.Diagnostics[0].Message, "git could not read the file for 1 anchor",
 		"a broken object store must not be hidden behind a malformed field")
+}
+
+// --warn-only excuses the repository, never the machine. Demoting a check must
+// not wave through anchors that went unchecked because git could not read them:
+// the caller accepted a commit being absent, not a disk being bad.
+func TestAnExcusedConditionNeverCoversABrokenMachine(t *testing.T) {
+	t.Parallel()
+	broken := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return []review.Diagnostic{{Severity: review.SeverityError, Name: "anchor-file-missing", Message: "gone"}},
+			[]review.Skipped{{
+				Name:   "anchor-line-out-of-range",
+				Reason: "git could not read the file for 1 anchor",
+			}},
+			review.Verification{Source: "repo", Anchors: 2}
+	}}
+	options := Options{RequireVerification: true, WarnOnly: map[string]bool{"anchor-file-missing": true}}
+	result, err := validator(passing(), quiet(), finder(broken)).Validate(t.Context(), []byte(anchored), options)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Errors(), "a demoted check does not excuse an unreadable object store")
+	assert.Equal(t, "verification-required", result.Diagnostics[0].Name)
+}
+
+// Demoting one check excuses the gap that check explains, and no other. The
+// earlier rule asked only whether every diagnostic was demoted, so an unrelated
+// demotion waved through anchors nothing had looked at.
+func TestOnlyTheExcusedConditionIsExcused(t *testing.T) {
+	t.Parallel()
+	mixed := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return []review.Diagnostic{{Severity: review.SeverityError, Name: "anchor-file-missing", Message: "gone"}},
+			[]review.Skipped{{Name: "anchor-line-out-of-range", Reason: "unusable field on 1 anchor"}},
+			review.Verification{Source: "repo", Anchors: 2}
+	}}
+	options := Options{RequireVerification: true, WarnOnly: map[string]bool{"anchor-file-missing": true}}
+	result, err := validator(passing(), quiet(), finder(mixed)).Validate(t.Context(), []byte(anchored), options)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Errors(),
+		"demoting one check does not excuse a skip that check does not explain")
+	assert.Equal(t, "verification-required", result.Diagnostics[0].Name)
 }

@@ -61,7 +61,7 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 	exists, err := v.refExists(ctx, ref)
 	if err != nil {
 		v.log.Debug("ref lookup failed", "ref", short(ref), "error", err)
-		verification = review.Verification{Source: "none", Anchors: verification.Anchors, Reason: err.Error()}
+		verification = review.Verification{Source: "unavailable", Anchors: verification.Anchors, Reason: err.Error()}
 		if verification.Anchors == 0 {
 			return nil, nil, verification
 		}
@@ -77,7 +77,7 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 		if verification.Anchors == 0 {
 			return []review.Diagnostic{diagnostic}, nil, verification
 		}
-		return []review.Diagnostic{diagnostic}, skips("the document ref does not resolve"), verification
+		return []review.Diagnostic{diagnostic}, excusableSkips("the document ref does not resolve", "ref-unknown"), verification
 	}
 	diagnostics := []review.Diagnostic{}
 	unusable, unreadable := 0, 0
@@ -210,7 +210,7 @@ func (v *Verifier) refExists(ctx context.Context, ref string) (bool, error) {
 // that grows a new diagnostic is read as unable to look rather than as certain.
 func objectAbsent(err error) bool {
 	status, exited := exitStatus(err)
-	return exited && status == 1 && stderrOf(err) == ""
+	return exited && status == 1 && !complained(stderrOf(err))
 }
 
 // fileAt looks a path up at the ref, once per distinct path.
@@ -264,8 +264,14 @@ func (v *Verifier) lookUp(ctx context.Context, ref, file string) fileState {
 // The names are compared cleaned, because git answers with the path it stores
 // rather than the one it was handed: "./internal/x.go" and "internal//x.go"
 // both come back as "internal/x.go", and refuting those would call a legal
-// anchor missing over a spelling git itself does not keep.
+// anchor missing over a spelling git itself does not keep. A ".." segment is
+// not such a spelling — cleaning it away would confirm an anchor against a file
+// it does not name — so those are refused outright, as anchor-path-safe already
+// says of them.
 func treeEntry(out, file string) (kind, object string, ok bool) {
+	if traverses(file) {
+		return "", "", false
+	}
 	entries := strings.Split(strings.TrimRight(out, "\x00"), "\x00")
 	if len(entries) != 1 || entries[0] == "" {
 		return "", "", false
@@ -279,6 +285,17 @@ func treeEntry(out, file string) (kind, object string, ok bool) {
 		return "", "", false
 	}
 	return fields[1], fields[2], true
+}
+
+// traverses reports whether any segment of the path is "..", in any spelling
+// git would accept.
+func traverses(file string) bool {
+	for _, segment := range strings.Split(file, "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // countLines counts lines the way an editor does: a trailing fragment with no
@@ -300,6 +317,16 @@ func skips(reason string) []review.Skipped {
 	skipped := make([]review.Skipped, 0, len(anchorChecks))
 	for _, name := range anchorChecks {
 		skipped = append(skipped, review.Skipped{Name: name, Reason: reason})
+	}
+	return skipped
+}
+
+// excusableSkips reports the anchor checks as skipped by a condition the caller
+// can accept with --warn-only, naming the check that condition belongs to.
+func excusableSkips(reason, cause string) []review.Skipped {
+	skipped := skips(reason)
+	for i := range skipped {
+		skipped[i].Excuses = cause
 	}
 	return skipped
 }

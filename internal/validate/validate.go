@@ -54,7 +54,7 @@ func (v *Validator) Validate(ctx context.Context, source []byte, options Options
 	result.Diagnostics = append(result.Diagnostics, v.structural.Check(doc)...)
 	verified, skipped, verification := v.verify(ctx, doc, options)
 	if options.RequireVerification {
-		verified = append(verified, unverified(verification, skipped, verified, options.WarnOnly)...)
+		verified = append(verified, unverified(verification, skipped, options.WarnOnly)...)
 	}
 	result.Diagnostics = append(result.Diagnostics, demote(verified, options.WarnOnly)...)
 	result.Skipped = append(result.Skipped, skipped...)
@@ -98,14 +98,14 @@ func (v *Validator) verify(ctx context.Context, doc *review.Document, options Op
 // like any other verification check. Asking for both is contradictory, but it is
 // contradictory on the command line where a reader can see it, which beats a
 // flag that silently outranks another.
-func unverified(verification review.Verification, skipped []review.Skipped, found []review.Diagnostic, warnOnly map[string]bool) []review.Diagnostic {
+func unverified(verification review.Verification, skipped []review.Skipped, warnOnly map[string]bool) []review.Diagnostic {
 	if verification.Anchors == 0 {
 		return nil
 	}
 	if verification.Source == "repo" && len(skipped) == 0 {
 		return nil
 	}
-	if excused(found, warnOnly) {
+	if excused(skipped, warnOnly) {
 		return nil
 	}
 	reason := verification.Reason
@@ -129,15 +129,16 @@ func unverified(verification review.Verification, skipped []review.Skipped, foun
 // impossible to combine — the caller could never say "verify these, but I know
 // this commit is gone".
 //
-// Only a gap git actually explained can be excused. No repository at all, or a
-// file git could not read, produces no diagnostic to demote and so is never
-// waved through by a flag naming some other check.
-func excused(found []review.Diagnostic, warnOnly map[string]bool) bool {
-	if len(found) == 0 {
+// Each skip says for itself which check would excuse it, so demoting one check
+// never covers a gap some other condition caused: no repository at all, a file
+// git could not read, and a field too malformed to check name nothing, and no
+// flag waves them through.
+func excused(skipped []review.Skipped, warnOnly map[string]bool) bool {
+	if len(skipped) == 0 {
 		return false
 	}
-	for _, diagnostic := range found {
-		if !warnOnly[diagnostic.Name] {
+	for _, skip := range skipped {
+		if skip.Excuses == "" || !warnOnly[skip.Excuses] {
 			return false
 		}
 	}

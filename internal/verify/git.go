@@ -47,11 +47,14 @@ type gitError struct {
 	err    error
 }
 
+// Error keeps only the sentence git led with. The whole message can run to
+// several lines, and this one ends up in a Reason the renderers print on a
+// single status line; the rest is advice for a person and is already on stderr.
 func (e *gitError) Error() string {
 	if e.stderr == "" {
 		return fmt.Sprintf("git %s: %v", strings.Join(e.args, " "), e.err)
 	}
-	return fmt.Sprintf("git %s: %v: %s", strings.Join(e.args, " "), e.err, e.stderr)
+	return fmt.Sprintf("git %s: %v: %s", strings.Join(e.args, " "), e.err, firstLine(e.stderr))
 }
 
 func (e *gitError) Unwrap() error { return e.err }
@@ -121,11 +124,45 @@ func discoveryFailure(err error) error {
 	return fmt.Errorf("git could not identify a repository here: %s", refusal)
 }
 
-// plainEnv pins git to its untranslated messages. Discovery decides whether a
-// directory is a repository by reading what git said, and a German or Japanese
-// checkout would otherwise answer in a sentence no match here recognises.
+// plainEnv gives git an environment whose answers mean what they say.
+//
+// LC_ALL and LANGUAGE pin the untranslated messages: discovery decides whether
+// a directory is a repository by reading what git said, and a German checkout
+// would otherwise answer in a sentence no match here recognises.
+//
+// GIT_NO_LAZY_FETCH stops a partial clone reaching for the network when it is
+// asked about an object it does not have. Absence is read from git's silence,
+// and a lazy fetch turns the plainest absence there is into a fatal error about
+// a remote — which would be read as "could not look" and skipped, letting a
+// review name a commit that exists nowhere and still pass.
+//
+// The trace variables are dropped because they write to the same stderr the
+// silence is read from. Inheriting one from the caller's shell would make every
+// absent object look unreadable.
 func plainEnv() []string {
-	return append(os.Environ(), "LC_ALL=C", "LANGUAGE=")
+	env := make([]string, 0, len(os.Environ())+3)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "GIT_TRACE") || strings.HasPrefix(entry, "GIT_CURL_VERBOSE") {
+			continue
+		}
+		env = append(env, entry)
+	}
+	return append(env, "LC_ALL=C", "LANGUAGE=", "GIT_NO_LAZY_FETCH=1")
+}
+
+// complained reports whether git raised a problem, as opposed to saying nothing
+// or merely warning. The two prefixes are git's own severity markers and are
+// not translated, so this holds wherever it runs. It is the backstop under
+// plainEnv: silence carries the claim, and anything git calls an error or a
+// fatal withdraws it, whatever else may have reached stderr.
+func complained(stderr string) bool {
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "error:") || strings.HasPrefix(line, "fatal:") {
+			return true
+		}
+	}
+	return false
 }
 
 // firstLine keeps the sentence git leads with. Its later lines are advice for a
