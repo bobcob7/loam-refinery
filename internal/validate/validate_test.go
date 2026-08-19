@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/bobcob7/refinery/internal/review"
+	"github.com/bobcob7/refinery/internal/verify"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,8 +41,9 @@ func TestNoTierGatesAnother(t *testing.T) {
 
 func TestVerificationSkipsAreReportedNotPassed(t *testing.T) {
 	t.Parallel()
-	missing := errors.New("not a git repository")
-	find := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) { return nil, missing }}
+	find := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
+		return nil, verify.ErrNoRepository
+	}}
 	result, err := validator(passing(), quiet(), find).Validate(t.Context(), []byte(document), Options{})
 	require.NoError(t, err)
 	assert.Equal(t, "none", result.Verification.Source)
@@ -54,6 +56,32 @@ func TestVerificationSkipsAreReportedNotPassed(t *testing.T) {
 	}
 	assert.Equal(t, []string{"ref-unknown", "anchor-file-missing", "anchor-line-out-of-range"}, names)
 	assert.True(t, result.Valid, "a skipped tier does not make a document invalid")
+}
+
+// Being outside a repository is ordinary and skips the anchor checks. A machine
+// that could not be asked is not ordinary, and must not take the same exit as a
+// document that passed: the anchors went unexamined either way, but only one of
+// the two is a fact about the review.
+func TestUnreachableRepositoryFailsRatherThanPassesSilently(t *testing.T) {
+	t.Parallel()
+	broken := errors.New("running git: exec: \"git\": executable file not found in $PATH")
+	find := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) { return nil, broken }}
+	result, err := validator(passing(), quiet(), find).Validate(t.Context(), []byte(document), Options{})
+	require.Error(t, err, "a machine that could not be asked must not report a valid document")
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, broken, "the cause survives for a caller deciding what to tell the operator")
+	assert.NotContains(t, err.Error(), "not a git repository")
+}
+
+// A refusal wrapped by discovery is still not ErrNoRepository, so it must not
+// be mistaken for standing outside a repository.
+func TestRepositoryRefusalIsNotMistakenForAbsence(t *testing.T) {
+	t.Parallel()
+	refused := errors.New("git could not identify a repository here: fatal: detected dubious ownership")
+	find := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) { return nil, refused }}
+	_, err := validator(passing(), quiet(), find).Validate(t.Context(), []byte(document), Options{})
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, verify.ErrNoRepository))
 }
 
 func TestWarnOnlyDemotesVerificationFailures(t *testing.T) {

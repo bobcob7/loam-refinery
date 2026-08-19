@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -323,4 +324,47 @@ func TestAnEmptyElementIsNotReportedAsAnEmptyList(t *testing.T) {
 	h := newHarness(t, `{"version":"1"}`)
 	assert.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"validate", "--disable=body-thin,,vacuous-body"}))
 	assert.Contains(t, h.stderr.String(), "empty name")
+}
+
+// Exit 1 has to mean the same thing in both formats. Writing the failure past
+// the renderer left --format=json exiting 1 with an empty stdout, which reads
+// to a caller unmarshalling it as a crashed tool rather than as a document to
+// repair.
+func TestAnUnparseableDocumentIsRenderedInTheChosenFormat(t *testing.T) {
+	t.Parallel()
+	t.Run("json", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t, "nonsense")
+		h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
+			return nil, parseError(t)
+		}
+		require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"validate", "--format=json"}))
+		var payload struct {
+			Valid       bool `json:"valid"`
+			Diagnostics []struct {
+				Severity string `json:"severity"`
+				Name     string `json:"name"`
+				Message  string `json:"message"`
+			} `json:"diagnostics"`
+		}
+		require.NoError(t, json.Unmarshal(h.stdout.Bytes(), &payload), "stdout was %q", h.stdout.String())
+		assert.False(t, payload.Valid)
+		require.Len(t, payload.Diagnostics, 1)
+		assert.Equal(t, "document-unparseable", payload.Diagnostics[0].Name)
+		assert.Equal(t, "error", payload.Diagnostics[0].Severity)
+		assert.Contains(t, payload.Diagnostics[0].Message, "reading review document")
+	})
+	t.Run("text names a check and hands back the lens", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t, "nonsense")
+		h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
+			return nil, parseError(t)
+		}
+		require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"validate"}))
+		assert.Contains(t, h.stdout.String(), "INVALID", "the status line still goes to stdout")
+		assert.Contains(t, h.stderr.String(), "document-unparseable",
+			"prime promises every exit-1 diagnostic names a check")
+		assert.Contains(t, h.stderr.String(), "describe --lens=document-unparseable",
+			"prime promises the run ends with that command already assembled")
+	})
 }

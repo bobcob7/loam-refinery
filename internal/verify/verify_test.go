@@ -281,3 +281,171 @@ func TestAFailedRefLookupIsSkippedNotReportedAsRefUnknown(t *testing.T) {
 	require.NotEmpty(t, skipped)
 	assert.Equal(t, "git could not resolve the document ref", skipped[0].Reason)
 }
+
+// killedProcess is what a git call looks like when the timeout or the caller's
+// context kills it: a real *exec.ExitError that carries no exit status at all.
+// This is the shape that makes a broken machine look like an answer, so the
+// tests below build a genuine one rather than a stand-in.
+func killedProcess(t *testing.T) error {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	cmd := exec.CommandContext(ctx, "sleep", "30")
+	require.NoError(t, cmd.Start())
+	cancel()
+	err := cmd.Wait()
+	var exit *exec.ExitError
+	require.ErrorAs(t, err, &exit)
+	require.False(t, exit.Exited(), "a signalled process has no exit status")
+	return err
+}
+
+// refused is a real non-zero exit: the command ran to completion and said no.
+func refused(t *testing.T, code int) *exec.ExitError {
+	t.Helper()
+	err := exec.Command("sh", "-c", fmt.Sprintf("exit %d", code)).Run()
+	var exit *exec.ExitError
+	require.ErrorAs(t, err, &exit)
+	require.True(t, exit.Exited())
+	return exit
+}
+
+func TestAKilledGitIsNotReportedAsARefThatDoesNotResolve(t *testing.T) {
+	t.Parallel()
+	killed := killedProcess(t)
+	git := &gitRunnerMock{runFunc: func(context.Context, ...string) ([]byte, error) { return nil, killed }}
+	doc := document(t, absentSHA, []map[string]any{{"file": "a.go", "line": 12}})
+	diagnostics, skipped, verification := New(git, logger()).Verify(t.Context(), doc)
+	assert.Empty(t, diagnostics, "a git that was killed never said the ref was absent")
+	assert.Equal(t, "none", verification.Source)
+	require.NotEmpty(t, skipped)
+	assert.Equal(t, "git could not resolve the document ref", skipped[0].Reason)
+}
+
+func TestAKilledGitIsNotReportedAsAMissingFile(t *testing.T) {
+	t.Parallel()
+	killed := killedProcess(t)
+	git := &gitRunnerMock{runFunc: func(_ context.Context, args ...string) ([]byte, error) {
+		if args[1] == "-t" && !strings.Contains(args[2], ":") {
+			return []byte("commit\n"), nil
+		}
+		return nil, killed
+	}}
+	doc := document(t, absentSHA, []map[string]any{{"file": "a.go", "line": 12}})
+	diagnostics, skipped, verification := New(git, logger()).Verify(t.Context(), doc)
+	assert.Empty(t, diagnostics, "a git that was killed never said the file was absent")
+	assert.Zero(t, verification.Verified)
+	require.NotEmpty(t, skipped)
+	assert.Equal(t, "git could not read the file for 1 anchor", skipped[0].Reason)
+}
+
+// The other half of the contract: a real non-zero exit is git answering, and
+// that answer belongs in the review.
+func TestARealNonZeroExitIsAnAnswerAboutTheRepository(t *testing.T) {
+	t.Parallel()
+	t.Run("an absent ref is reported", func(t *testing.T) {
+		t.Parallel()
+		exit := refused(t, 128)
+		git := &gitRunnerMock{runFunc: func(context.Context, ...string) ([]byte, error) { return nil, exit }}
+		doc := document(t, absentSHA, []map[string]any{{"file": "a.go", "line": 12}})
+		diagnostics, _, _ := New(git, logger()).Verify(t.Context(), doc)
+		require.Len(t, diagnostics, 1)
+		assert.Equal(t, "ref-unknown", diagnostics[0].Name)
+	})
+	t.Run("an absent file is reported", func(t *testing.T) {
+		t.Parallel()
+		exit := refused(t, 128)
+		git := &gitRunnerMock{runFunc: func(_ context.Context, args ...string) ([]byte, error) {
+			if args[1] == "-t" && !strings.Contains(args[2], ":") {
+				return []byte("commit\n"), nil
+			}
+			return nil, exit
+		}}
+		doc := document(t, absentSHA, []map[string]any{{"file": "a.go", "line": 12}})
+		diagnostics, _, _ := New(git, logger()).Verify(t.Context(), doc)
+		require.Len(t, diagnostics, 1)
+		assert.Equal(t, "anchor-file-missing", diagnostics[0].Name)
+	})
+}
+
+func TestDiscoveryTellsAbsenceApartFromRefusal(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		stderr string
+		absent bool
+		reason string
+	}{
+		{
+			name:   "no repository here is an ordinary answer",
+			stderr: "fatal: not a git repository (or any of the parent directories): .git\n",
+			absent: true,
+		},
+		{
+			name:   "a refused checkout is not an absent repository",
+			stderr: "fatal: detected dubious ownership in repository at '/src'\nTo add an exception run:\n  git config ...\n",
+			reason: "git could not identify a repository here: fatal: detected dubious ownership in repository at '/src'",
+		},
+		{
+			name:   "a bare repository is not an absent repository",
+			stderr: "fatal: this operation must be run in a work tree\n",
+			reason: "git could not identify a repository here: fatal: this operation must be run in a work tree",
+		},
+		{
+			name:   "an exit with nothing to say is still not an absent repository",
+			stderr: "",
+			reason: "git could not identify a repository here",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			exit := refused(t, 128)
+			exit.Stderr = []byte(test.stderr)
+			err := discoveryFailure(exit)
+			if test.absent {
+				assert.ErrorIs(t, err, ErrNoRepository)
+				return
+			}
+			assert.NotErrorIs(t, err, ErrNoRepository,
+				"a refusal read as an absent repository skips every anchor check and passes the document")
+			assert.Contains(t, err.Error(), test.reason)
+		})
+	}
+}
+
+func TestDiscoveryReportsAKilledGitAsAMachineFailure(t *testing.T) {
+	t.Parallel()
+	err := discoveryFailure(killedProcess(t))
+	assert.NotErrorIs(t, err, ErrNoRepository)
+	assert.Contains(t, err.Error(), "running git")
+}
+
+func TestDiscoverTellsAbsenceApartFromRefusalAgainstRealGit(t *testing.T) {
+	t.Parallel()
+	t.Run("outside a repository", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		if exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Run() == nil {
+			t.Skip("the temp dir is itself inside a repository")
+		}
+		_, err := Discover(t.Context(), dir)
+		assert.ErrorIs(t, err, ErrNoRepository)
+	})
+	t.Run("inside a repository", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, exec.Command("git", "-C", dir, "init", "--quiet").Run())
+		repository, err := Discover(t.Context(), dir)
+		require.NoError(t, err)
+		assert.NotEmpty(t, repository.Root())
+	})
+	t.Run("a bare repository is a refusal, not an absence", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, exec.Command("git", "init", "--bare", "--quiet", dir).Run())
+		_, err := Discover(t.Context(), dir)
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, ErrNoRepository,
+			"a bare repository read as an absent one would pass every anchor unchecked")
+	})
+}

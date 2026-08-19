@@ -5,6 +5,7 @@ package validate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -37,8 +38,10 @@ func New(structural structuralChecker, advisories advisoryRunner, finder reposit
 	return &Validator{structural: structural, advisories: advisories, finder: finder, log: log}
 }
 
-// Validate parses and checks one document. It returns an error only when the
-// input is not a single JSON object, which is the one true stop.
+// Validate parses and checks one document. It returns an error for the two
+// things that are not findings about the review: input that is not a single
+// JSON object, and a machine that could not be asked. Neither may be reported
+// as a defect in the document.
 func (v *Validator) Validate(ctx context.Context, source []byte, options Options) (*review.Result, error) {
 	doc, err := review.Parse(source)
 	if err != nil {
@@ -46,7 +49,10 @@ func (v *Validator) Validate(ctx context.Context, source []byte, options Options
 	}
 	result := &review.Result{Strict: options.Strict, Comments: len(doc.Comments)}
 	result.Diagnostics = append(result.Diagnostics, v.structural.Check(doc)...)
-	verified, skipped, verification := v.verify(ctx, doc, options)
+	verified, skipped, verification, err := v.verify(ctx, doc, options)
+	if err != nil {
+		return nil, err
+	}
 	result.Diagnostics = append(result.Diagnostics, demote(verified, options.WarnOnly)...)
 	result.Skipped = append(result.Skipped, skipped...)
 	result.Verification = verification
@@ -58,13 +64,22 @@ func (v *Validator) Validate(ctx context.Context, source []byte, options Options
 	return result, nil
 }
 
-func (v *Validator) verify(ctx context.Context, doc *review.Document, options Options) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+// verify has three outcomes, not two. Running outside a repository is ordinary
+// and the anchor checks are simply reported as skipped; a repository that could
+// not be reached at all is a broken machine, and returning it as an error keeps
+// the run from exiting 0 with every anchor claim silently unexamined.
+func (v *Validator) verify(ctx context.Context, doc *review.Document, options Options) ([]review.Diagnostic, []review.Skipped, review.Verification, error) {
 	repository, err := v.finder.Find(ctx, options.Dir)
-	if err != nil {
+	switch {
+	case errors.Is(err, verify.ErrNoRepository):
 		v.log.Debug("verification skipped", "reason", err)
-		return nil, verify.SkipAll(err.Error()), review.Verification{Source: "none", Reason: err.Error()}
+		return nil, verify.SkipAll(err.Error()), review.Verification{Source: "none", Reason: err.Error()}, nil
+	case err != nil:
+		v.log.Debug("verification unavailable", "reason", err)
+		return nil, nil, review.Verification{}, fmt.Errorf("verifying anchors: %w", err)
 	}
-	return repository.Verify(ctx, doc)
+	diagnostics, skipped, verification := repository.Verify(ctx, doc)
+	return diagnostics, skipped, verification, nil
 }
 
 // demote turns the verification checks a caller named in --warn-only into

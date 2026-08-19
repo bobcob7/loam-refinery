@@ -55,11 +55,11 @@ func (a *App) validate(ctx context.Context, args []string) int {
 	}
 	result, err := a.validator.Validate(ctx, source, options)
 	if err != nil {
-		a.fail(err)
-		if review.IsDocumentError(err) {
-			return ExitInvalid
+		if !review.IsDocumentError(err) {
+			a.fail(err)
+			return ExitUsage
 		}
-		return ExitUsage
+		result = unparseable(err)
 	}
 	if err := renderer.Result(a.stdout, a.stderr, result); err != nil {
 		a.fail(err)
@@ -69,6 +69,23 @@ func (a *App) validate(ctx context.Context, args []string) int {
 		return ExitValid
 	}
 	return ExitInvalid
+}
+
+// unparseable turns a document that never parsed into a result the renderer can
+// express. The alternative is prose written past the renderer, which leaves
+// --format=json exiting 1 with nothing on stdout: a caller unmarshalling that
+// sees a crashed tool rather than a document to repair. Going through the
+// renderer also keeps the promise prime makes, that an exit 1 names a check and
+// hands back the describe command for it.
+func unparseable(err error) *review.Result {
+	return &review.Result{
+		Diagnostics: []review.Diagnostic{{
+			Severity: review.SeverityError,
+			Name:     "document-unparseable",
+			Message:  err.Error(),
+		}},
+		Verification: review.Verification{Source: "none", Reason: "the input is not a review document"},
+	}
 }
 
 // checkNames validates a comma-separated list of check names against the tier

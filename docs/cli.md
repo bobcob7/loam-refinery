@@ -530,7 +530,7 @@ command grows past its budget — a limit nothing measures is a limit that erode
 | Call | Budget | Frequency |
 | --- | --- | --- |
 | `prime` | 250 | Once per session, often pinned into a system prompt |
-| `describe` | 600 | Once per session that writes a review |
+| `describe` | 625 | Once per session that writes a review |
 | `describe --lens=NAME` | 250 each | Only on uncertainty or a failed check |
 | `describe --list` | 200 | Rare; discovery and the unknown-lens error |
 | `schema` | 1,000 | Rare; machine consumers only |

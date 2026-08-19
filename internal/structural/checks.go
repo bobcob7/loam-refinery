@@ -7,6 +7,30 @@ import "github.com/bobcob7/refinery/internal/review"
 func Checks() []review.Check {
 	return []review.Check{
 		{
+			Name:    "document-unparseable",
+			Tier:    review.TierStructural,
+			Summary: "the input is not a single JSON object",
+			Title:   "Unparseable document",
+			Body: `Fires when the input never became a document: malformed JSON, a top-level
+value that is not an object, or a second value after the first. It is the one
+failure that stops the run, because there is nothing left to check — every
+other check reports against a document, and here there is none.
+
+No other diagnostic accompanies it. Do not read that quiet as approval of the
+rest: nothing else ran.
+
+The usual causes are prose wrapped around the JSON, a fenced code block left
+in, and two documents concatenated into one stream. The message carries the
+decoder's own complaint, which names the byte offset:
+
+  refinery validate review.json
+  invalid character 'h' looking for beginning of value
+
+This is a document to repair rather than a command line to fix, so it exits 1
+like any other unusable document.`,
+			Related: []string{"schema", "verdict"},
+		},
+		{
 			Name:    "schema",
 			Tier:    review.TierStructural,
 			Summary: "JSON Schema draft 2020-12 conformance against the embedded schema",
