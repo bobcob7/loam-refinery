@@ -479,6 +479,7 @@ exit codes, `--strict`, which source of truth it accepts — is
 
 | Check | Rule |
 | --- | --- |
+| `document-unparseable` | The input is not a single JSON object: malformed JSON, a top-level value that is not an object, or a second value after the first. The one failure that stops the run — see [§11.4](#114-partial-documents). |
 | `schema` | JSON Schema draft 2020-12 conformance against the embedded schema, including `additionalProperties: false` on every object. Reported with a JSON Pointer into the document. |
 | `id-unique` | No two comments share an `id`. Duplicate IDs break addressing outright. |
 | `anchor-range-ordered` | `end_line` requires `line` and must be ≥ it. |
@@ -486,13 +487,15 @@ exit codes, `--strict`, which source of truth it accepts — is
 | `ref-format` | `ref`, where present, matches `^[0-9a-f]{40}$` — a full lowercase commit SHA. Branches, tags, and abbreviated SHAs are rejected. Checkable without a repository. |
 
 See [§11.4](#114-partial-documents) — a structural failure does not stop the
-other tiers from running.
+other tiers from running. `document-unparseable` is the single exception, and
+only because there is no document left for another tier to check.
 
 ### 11.2 Verification checks — conditional
 
 Anchor claims checked against the repository the review is about. Skipped
-entirely when it is not available — and a skipped verification is reported as
-skipped, never as a pass.
+entirely when none can answer — reported as `source: none` outside a repository
+and `source: unavailable` when one could not be asked — and a skipped
+verification is reported as skipped, never as a pass.
 
 | Check | Rule |
 | --- | --- |

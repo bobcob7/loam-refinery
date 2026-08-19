@@ -51,9 +51,13 @@ type Skipped struct {
 
 // Verification records whether anchors were checked, and against what.
 type Verification struct {
-	// Source is "repo" or "none".
+	// Source is "repo" when a repository answered, "none" when the run was not
+	// inside one, and "unavailable" when there was one but it could not be
+	// asked. "none" and "unavailable" both skip the anchor checks, but only
+	// "none" is ordinary: a caller that treats them alike cannot tell a
+	// document nothing checked from one a repository confirmed.
 	Source string
-	// Reason explains a "none" source.
+	// Reason explains a source other than "repo".
 	Reason   string
 	Anchors  int
 	Verified int

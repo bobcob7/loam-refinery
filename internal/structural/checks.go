@@ -28,7 +28,7 @@ decoder's own complaint, which names the byte offset:
 
 This is a document to repair rather than a command line to fix, so it exits 1
 like any other unusable document.`,
-			Related: []string{"schema", "verdict"},
+			Related: []string{"schema", "tiers", "verdict"},
 		},
 		{
 			Name:    "schema",

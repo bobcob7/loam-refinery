@@ -38,10 +38,8 @@ func New(structural structuralChecker, advisories advisoryRunner, finder reposit
 	return &Validator{structural: structural, advisories: advisories, finder: finder, log: log}
 }
 
-// Validate parses and checks one document. It returns an error for the two
-// things that are not findings about the review: input that is not a single
-// JSON object, and a machine that could not be asked. Neither may be reported
-// as a defect in the document.
+// Validate parses and checks one document. It returns an error only when the
+// input is not a single JSON object, which is the one true stop.
 func (v *Validator) Validate(ctx context.Context, source []byte, options Options) (*review.Result, error) {
 	doc, err := review.Parse(source)
 	if err != nil {
@@ -49,10 +47,7 @@ func (v *Validator) Validate(ctx context.Context, source []byte, options Options
 	}
 	result := &review.Result{Strict: options.Strict, Comments: len(doc.Comments)}
 	result.Diagnostics = append(result.Diagnostics, v.structural.Check(doc)...)
-	verified, skipped, verification, err := v.verify(ctx, doc, options)
-	if err != nil {
-		return nil, err
-	}
+	verified, skipped, verification := v.verify(ctx, doc, options)
 	result.Diagnostics = append(result.Diagnostics, demote(verified, options.WarnOnly)...)
 	result.Skipped = append(result.Skipped, skipped...)
 	result.Verification = verification
@@ -64,22 +59,26 @@ func (v *Validator) Validate(ctx context.Context, source []byte, options Options
 	return result, nil
 }
 
-// verify has three outcomes, not two. Running outside a repository is ordinary
-// and the anchor checks are simply reported as skipped; a repository that could
-// not be reached at all is a broken machine, and returning it as an error keeps
-// the run from exiting 0 with every anchor claim silently unexamined.
-func (v *Validator) verify(ctx context.Context, doc *review.Document, options Options) ([]review.Diagnostic, []review.Skipped, review.Verification, error) {
+// verify has three outcomes, not two, and none of them stops the run: a
+// document is still a document when there is nothing to check it against, and
+// discarding the structural and advisory findings already computed would blame
+// the machine's failure on the review by saying nothing about it at all.
+//
+// The three are told apart by Source rather than by exit code. Standing outside
+// a repository is ordinary and reports "none"; a repository that could not be
+// reached is "unavailable", which carries git's own words, so a caller can tell
+// "there was nothing to check against" from "the check never happened".
+func (v *Validator) verify(ctx context.Context, doc *review.Document, options Options) ([]review.Diagnostic, []review.Skipped, review.Verification) {
 	repository, err := v.finder.Find(ctx, options.Dir)
 	switch {
 	case errors.Is(err, verify.ErrNoRepository):
 		v.log.Debug("verification skipped", "reason", err)
-		return nil, verify.SkipAll(err.Error()), review.Verification{Source: "none", Reason: err.Error()}, nil
+		return nil, verify.SkipAll(err.Error()), review.Verification{Source: "none", Reason: err.Error()}
 	case err != nil:
 		v.log.Debug("verification unavailable", "reason", err)
-		return nil, nil, review.Verification{}, fmt.Errorf("verifying anchors: %w", err)
+		return nil, verify.SkipAll(err.Error()), review.Verification{Source: "unavailable", Reason: err.Error()}
 	}
-	diagnostics, skipped, verification := repository.Verify(ctx, doc)
-	return diagnostics, skipped, verification, nil
+	return repository.Verify(ctx, doc)
 }
 
 // demote turns the verification checks a caller named in --warn-only into

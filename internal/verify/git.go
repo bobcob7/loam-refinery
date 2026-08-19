@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ func Discover(ctx context.Context, dir string) (*Repository, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 	cmd.Dir = dir
+	cmd.Env = plainEnv()
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, discoveryFailure(err)
@@ -60,6 +62,13 @@ func discoveryFailure(err error) error {
 		return fmt.Errorf("git could not identify a repository here: %w", err)
 	}
 	return fmt.Errorf("git could not identify a repository here: %s", refusal)
+}
+
+// plainEnv pins git to its untranslated messages. Discovery decides whether a
+// directory is a repository by reading what git said, and a German or Japanese
+// checkout would otherwise answer in a sentence no match here recognises.
+func plainEnv() []string {
+	return append(os.Environ(), "LC_ALL=C", "LANGUAGE=")
 }
 
 // firstLine keeps the sentence git leads with. Its later lines are advice for a
@@ -93,6 +102,7 @@ func (r *Repository) run(ctx context.Context, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", r.root}, args...)...)
+	cmd.Env = plainEnv()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

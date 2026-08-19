@@ -59,7 +59,7 @@ func (a *App) validate(ctx context.Context, args []string) int {
 			a.fail(err)
 			return ExitUsage
 		}
-		result = unparseable(err)
+		result = a.unparseable(err, *strict)
 	}
 	if err := renderer.Result(a.stdout, a.stderr, result); err != nil {
 		a.fail(err)
@@ -71,21 +71,41 @@ func (a *App) validate(ctx context.Context, args []string) int {
 	return ExitInvalid
 }
 
+// checkDocumentUnparseable is the check this diagnostic reports under. It is
+// the registry's name, asserted against it in the tests, because prime promises
+// the run hands back a describe command that works and a name that drifts from
+// the registry turns that promise into a lens lookup that exits 2.
+const checkDocumentUnparseable = "document-unparseable"
+
 // unparseable turns a document that never parsed into a result the renderer can
 // express. The alternative is prose written past the renderer, which leaves
 // --format=json exiting 1 with nothing on stdout: a caller unmarshalling that
 // sees a crashed tool rather than a document to repair. Going through the
 // renderer also keeps the promise prime makes, that an exit 1 names a check and
 // hands back the describe command for it.
-func unparseable(err error) *review.Result {
-	return &review.Result{
+func (a *App) unparseable(err error, strict bool) *review.Result {
+	const reason = "the input is not a review document"
+	result := &review.Result{
+		Strict: strict,
 		Diagnostics: []review.Diagnostic{{
 			Severity: review.SeverityError,
-			Name:     "document-unparseable",
+			Name:     checkDocumentUnparseable,
 			Message:  err.Error(),
 		}},
-		Verification: review.Verification{Source: "none", Reason: "the input is not a review document"},
+		Verification: review.Verification{Source: "unavailable", Reason: reason},
 	}
+	// Every other check is reported as skipped rather than left out, because a
+	// caller counting "registered minus reported" would otherwise read silence
+	// as twenty-odd checks passing on a document that never parsed.
+	for _, tier := range [][]string{a.names.Structural, a.names.Verification, a.names.Advisory} {
+		for _, name := range tier {
+			if name == checkDocumentUnparseable {
+				continue
+			}
+			result.Skipped = append(result.Skipped, review.Skipped{Name: name, Reason: reason})
+		}
+	}
+	return result
 }
 
 // checkNames validates a comma-separated list of check names against the tier

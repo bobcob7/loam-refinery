@@ -257,7 +257,8 @@ per mistake. Checks that genuinely cannot run are listed as skipped rather than
 passing silently.
 
 Input must be a single JSON object. Multiple documents, JSON Lines, and arrays
-are rejected as usage errors.
+fail `document-unparseable` and exit 1: the input is a document to repair, not
+an invocation to fix.
 
 #### 2.3.1 Verifying anchors
 
@@ -280,11 +281,18 @@ gets run — a tool whose whole purpose is catching hallucinated anchors should 
 require an argument to do it. Pointing `refinery` at a different repository is
 `cd`, which every caller already has and no caller has to be taught.
 
-When the working directory is not inside a git repository, verification is
-**skipped and reported as skipped**, with the reason on the status line. It is
-never silently passed: a run that verified nothing must not look like a run that
-verified everything, or the tier is worse than absent — it would license
-confidence it never earned.
+When no repository can answer, verification is **skipped and reported as
+skipped**, with the reason on the status line. It is never silently passed: a
+run that verified nothing must not look like a run that verified everything, or
+the tier is worse than absent — it would license confidence it never earned.
+
+Two things can go wrong there, and they are not the same thing. Running outside
+a repository is ordinary, and reports `source: none`. A repository that exists
+but could not be asked — git missing, a bare repository, a checkout git refuses
+on ownership grounds — reports `source: unavailable` and carries git's own
+words. Neither fails the run, because the document is not at fault for either;
+but a caller that requires verified anchors can tell them apart, and a run that
+checked nothing never claims otherwise.
 
 Being run in the *wrong* repository is loud rather than silent, and needs no
 special handling. The reviewed commit will not exist in an unrelated repository,
@@ -368,8 +376,8 @@ default posture: review quality is a judgment the caller owns.
 | Code | Meaning |
 | --- | --- |
 | 0 | Structurally valid, and anchors verified where a repository was available. Advisories may be present. |
-| 1 | Structurally invalid, a verification failure, or advisories present under `--strict`. |
-| 2 | Usage or I/O error: unreadable path, malformed JSON, unknown advisory name, bad flag. |
+| 1 | Structurally invalid, unparseable, a verification failure, or advisories present under `--strict`. |
+| 2 | Usage or I/O error: unreadable path, unknown advisory name, bad flag. |
 
 Distinguishing 1 from 2 matters: exit 1 means *revise the review*, exit 2 means
 *fix the invocation*. An agent must be able to tell those apart without parsing

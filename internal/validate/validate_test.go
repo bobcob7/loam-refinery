@@ -58,30 +58,52 @@ func TestVerificationSkipsAreReportedNotPassed(t *testing.T) {
 	assert.True(t, result.Valid, "a skipped tier does not make a document invalid")
 }
 
-// Being outside a repository is ordinary and skips the anchor checks. A machine
-// that could not be asked is not ordinary, and must not take the same exit as a
-// document that passed: the anchors went unexamined either way, but only one of
-// the two is a fact about the review.
-func TestUnreachableRepositoryFailsRatherThanPassesSilently(t *testing.T) {
+// Being outside a repository is ordinary. A repository that could not be asked
+// is not, and the two must not look alike to a caller — but neither may stop
+// the run, because the structural and advisory findings are about the document
+// and stand whatever git did.
+func TestAnUnreachableRepositoryIsReportedNotConfusedWithAbsence(t *testing.T) {
 	t.Parallel()
-	broken := errors.New("running git: exec: \"git\": executable file not found in $PATH")
+	broken := errors.New(`running git: exec: "git": executable file not found in $PATH`)
 	find := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) { return nil, broken }}
-	result, err := validator(passing(), quiet(), find).Validate(t.Context(), []byte(document), Options{})
-	require.Error(t, err, "a machine that could not be asked must not report a valid document")
-	assert.Nil(t, result)
-	assert.ErrorIs(t, err, broken, "the cause survives for a caller deciding what to tell the operator")
-	assert.NotContains(t, err.Error(), "not a git repository")
+	structural := &structuralCheckerMock{CheckFunc: func(*review.Document) []review.Diagnostic {
+		return []review.Diagnostic{{Severity: review.SeverityError, Name: "schema", Path: "/summary", Message: "too short"}}
+	}}
+	result, err := validator(structural, quiet(), find).Validate(t.Context(), []byte(document), Options{})
+	require.NoError(t, err, "a broken machine is not a reason to stop reporting the document")
+	assert.Equal(t, "unavailable", result.Verification.Source,
+		"a repository that could not be asked is not the same as standing outside one")
+	assert.Equal(t, broken.Error(), result.Verification.Reason)
+	assert.Equal(t, 1, result.Errors(), "the findings already computed survive a git that never ran")
+	assert.False(t, result.Valid)
+	names := []string{}
+	for _, skipped := range result.Skipped {
+		names = append(names, skipped.Name)
+	}
+	assert.Equal(t, []string{"ref-unknown", "anchor-file-missing", "anchor-line-out-of-range"}, names,
+		"the checks that did not run are reported, never silently omitted")
 }
 
-// A refusal wrapped by discovery is still not ErrNoRepository, so it must not
-// be mistaken for standing outside a repository.
-func TestRepositoryRefusalIsNotMistakenForAbsence(t *testing.T) {
+// The two unverified sources must stay distinguishable, which is the whole
+// point of separating them: identical output would let a caller read a run that
+// checked nothing as a run that had nothing to check.
+func TestAbsenceAndUnavailabilityAreDifferentSources(t *testing.T) {
 	t.Parallel()
-	refused := errors.New("git could not identify a repository here: fatal: detected dubious ownership")
-	find := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) { return nil, refused }}
-	_, err := validator(passing(), quiet(), find).Validate(t.Context(), []byte(document), Options{})
-	require.Error(t, err)
-	assert.False(t, errors.Is(err, verify.ErrNoRepository))
+	absent := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
+		return nil, verify.ErrNoRepository
+	}}
+	refused := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
+		return nil, errors.New("git could not identify a repository here: fatal: detected dubious ownership")
+	}}
+	outside, err := validator(passing(), quiet(), absent).Validate(t.Context(), []byte(document), Options{})
+	require.NoError(t, err)
+	unreachable, err := validator(passing(), quiet(), refused).Validate(t.Context(), []byte(document), Options{})
+	require.NoError(t, err)
+	assert.Equal(t, "none", outside.Verification.Source)
+	assert.Equal(t, "unavailable", unreachable.Verification.Source)
+	assert.NotEqual(t, outside.Verification.Reason, unreachable.Verification.Reason)
+	assert.True(t, outside.Valid, "a document is not wrong because there was no repository")
+	assert.True(t, unreachable.Valid, "nor because git refused to answer")
 }
 
 func TestWarnOnlyDemotesVerificationFailures(t *testing.T) {

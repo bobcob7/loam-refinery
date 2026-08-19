@@ -16,6 +16,7 @@ import (
 	"github.com/bobcob7/refinery/internal/entry"
 	"github.com/bobcob7/refinery/internal/render"
 	"github.com/bobcob7/refinery/internal/review"
+	"github.com/bobcob7/refinery/internal/structural"
 	"github.com/bobcob7/refinery/internal/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -367,4 +368,17 @@ func TestAnUnparseableDocumentIsRenderedInTheChosenFormat(t *testing.T) {
 		assert.Contains(t, h.stderr.String(), "describe --lens=document-unparseable",
 			"prime promises the run ends with that command already assembled")
 	})
+}
+
+// The diagnostic's check name has to be the registry's, or the describe command
+// the run hands back exits 2 with "unknown lens" — and no golden file would
+// notice, because regenerating them makes the drift look intended.
+func TestTheUnparseableCheckNameIsTheRegisteredOne(t *testing.T) {
+	t.Parallel()
+	names := []string{}
+	for _, check := range structural.Checks() {
+		names = append(names, check.Name)
+	}
+	assert.Contains(t, names, checkDocumentUnparseable,
+		"the name the CLI reports must be a check describe --lens can open")
 }
