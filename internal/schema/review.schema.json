@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/bobcob7/refinery/review.schema.json",
+  "$id": "https://github.com/bobcob7/loam-refinery/review.schema.json",
   "title": "Review document",
   "description": "One agent's complete review of one change.",
   "type": "object",

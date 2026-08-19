@@ -7,11 +7,11 @@ import (
 	"io"
 	"os"
 
-	"github.com/bobcob7/refinery/internal/review"
-	"github.com/bobcob7/refinery/internal/validate"
+	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/validate"
 )
 
-const validateUsage = `usage: refinery validate [path] [--strict] [--require-verification] [--warn-only=NAME,...] [--disable=NAME,...] [--format json]
+const validateUsage = `usage: loam-refinery validate [path] [--strict] [--require-verification] [--warn-only=NAME,...] [--disable=NAME,...] [--format json]
 `
 
 // validate checks one review document. Every check runs: a failure in one tier

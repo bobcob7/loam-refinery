@@ -24,7 +24,7 @@ var printer = message.NewPrinter(language.English)
 var annotated []byte
 
 const (
-	resourceURL = "https://github.com/bobcob7/refinery/review.schema.json"
+	resourceURL = "https://github.com/bobcob7/loam-refinery/review.schema.json"
 	// fieldNamespace is the lens namespace field entries live in, used when a
 	// field can only be named unambiguously in qualified form.
 	fieldNamespace = "field"

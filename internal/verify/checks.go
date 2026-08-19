@@ -1,6 +1,6 @@
 package verify
 
-import "github.com/bobcob7/refinery/internal/review"
+import "github.com/bobcob7/loam-refinery/internal/review"
 
 // Checks returns the verification check registry: anchor claims checked against
 // the repository. They run whenever one is found, are reported as skipped when
@@ -31,7 +31,7 @@ never had. Nothing excuses a file git could not read.`,
 		{
 			Name:    "ref-unknown",
 			Tier:    review.TierVerification,
-			Summary: "the ref does not resolve in the repository refinery was run in",
+			Summary: "the ref does not resolve in the repository loam-refinery was run in",
 			Title:   "Unresolvable ref",
 			Body: `Fires when the document ref names no commit in the repository the tool was run
 in. Every anchor is read at that ref, so the whole review becomes a set of claims
@@ -47,7 +47,7 @@ not fail the run.
 
 If the ref is wrong rather than absent, take it from the checkout the review was
 performed against: git rev-parse HEAD. Fetching the commit is the other fix;
-refinery never touches the network itself.`,
+loam-refinery never touches the network itself.`,
 			Related: []string{"ref", "ref-format", "anchor-file-missing"},
 		},
 		{
@@ -89,7 +89,7 @@ before filing it:
 
   git show 4f2c1a9:internal/fetch/client.go | sed -n '88,94p'
 
-refinery only confirms the line exists. Whether it is the right line is your
+loam-refinery only confirms the line exists. Whether it is the right line is your
 job — that is why a file-level anchor, with no line at all, is a legitimate
 answer when you are not certain.`,
 			Related: []string{"line", "end_line", "anchors"},

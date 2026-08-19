@@ -3,7 +3,7 @@ package validate
 import (
 	"context"
 
-	"github.com/bobcob7/refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/review"
 )
 
 //go:generate moq -out moq_test.go . structuralChecker advisoryRunner repositoryFinder verifier

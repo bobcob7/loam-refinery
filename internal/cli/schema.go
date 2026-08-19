@@ -2,7 +2,7 @@ package cli
 
 import "fmt"
 
-const schemaUsage = `usage: refinery schema [--annotated]
+const schemaUsage = `usage: loam-refinery schema [--annotated]
 `
 
 // schema writes the grammar for machines: minimal by default, annotated for

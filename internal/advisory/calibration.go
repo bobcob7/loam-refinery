@@ -3,7 +3,7 @@ package advisory
 import (
 	"fmt"
 
-	"github.com/bobcob7/refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/review"
 )
 
 // softCategories conventionally stay below the blocking band.

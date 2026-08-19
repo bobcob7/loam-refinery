@@ -1,4 +1,4 @@
-# The refinery CLI
+# The loam-refinery CLI
 
 Tool specification. Version 0.1 (draft).
 
@@ -6,7 +6,7 @@ For the format this tool reads, see [review-document.md](review-document.md).
 
 ## 1. Overview
 
-`refinery` accepts a review document and answers one question: **is this review
+`loam-refinery` accepts a review document and answers one question: **is this review
 well-formed, and where does it fall short of being worth acting on?** It defines
 the contract, enforces the parts that must hold for a document to be consumable,
 and advises on the parts that are matters of review quality.
@@ -32,15 +32,15 @@ Explicitly out of scope:
 - Posting to GitHub or any forge
 - Reading file *contents*. Verification asks a checkout whether a path and line
   number exist at a ref; it never looks at what is on the line, because judging
-  that would make `refinery` a reviewer rather than a referee.
-- Assessing the *truth* of a review's claims. `refinery` cannot know whether
+  that would make `loam-refinery` a reviewer rather than a referee.
+- Assessing the *truth* of a review's claims. `loam-refinery` cannot know whether
   "this nil check is missing" is correct; it only knows the comment is anchored,
   prioritized, substantive, and honest about what its suggestions cost.
 - Storing or aggregating reviews across runs
 
 ### Design principles
 
-1. **Offline, and read-only about the repository.** No network, ever. `refinery`
+1. **Offline, and read-only about the repository.** No network, ever. `loam-refinery`
    reads the repository it is run in to verify anchors
    ([§2.3.1](#231-verifying-anchors)), and reads only what it takes to answer
    "does this path exist at this ref, and does it have this many lines?" It never
@@ -66,13 +66,13 @@ Explicitly out of scope:
 ## 2. Commands
 
 ```
-refinery prime
-refinery describe [--lens=NAME[,NAME...]] [--format json]
-refinery validate [path] [--strict] [--require-verification]
+loam-refinery prime
+loam-refinery describe [--lens=NAME[,NAME...]] [--format json]
+loam-refinery validate [path] [--strict] [--require-verification]
                   [--warn-only=…] [--disable=…]
                          [--format json]
-refinery schema   [--annotated]
-refinery version
+loam-refinery schema   [--annotated]
+loam-refinery version
 ```
 
 Global: `--help` on any subcommand.
@@ -101,12 +101,12 @@ whole session, so it is the one that must stay small.
 The workflow it teaches:
 
 1. Write a review document.
-2. Run `refinery validate`.
+2. Run `loam-refinery validate`.
 3. Exit 0 — done. Exit 2 — the invocation is wrong, not the review.
 4. Exit 1 — each diagnostic names a check. Run
-   `refinery describe --lens=<check-name>` for the ones you do not understand,
+   `loam-refinery describe --lens=<check-name>` for the ones you do not understand,
    fix, and validate again.
-5. Unsure about a field before writing? `refinery describe --lens=<field>`. Never
+5. Unsure about a field before writing? `loam-refinery describe --lens=<field>`. Never
    guess at an enum or a scale.
 
 Budget: ~250 tokens. See [§6](#6-token-economy).
@@ -280,7 +280,7 @@ not checked out still work.
 Verifying by default rather than on request is the deliberate part. An opt-in
 check makes the plain invocation the weak one, and the plain invocation is what
 gets run — a tool whose whole purpose is catching hallucinated anchors should not
-require an argument to do it. Pointing `refinery` at a different repository is
+require an argument to do it. Pointing `loam-refinery` at a different repository is
 `cd`, which every caller already has and no caller has to be taught.
 
 When no repository can answer, verification is **skipped and reported as
@@ -332,9 +332,9 @@ since.
 
 Verification is not the only audit path, and deliberately not the last word.
 Because a ref is an immutable SHA, every anchor in a passing review remains
-resolvable by ordinary git tooling long after `refinery` has exited — `git show`,
+resolvable by ordinary git tooling long after `loam-refinery` has exited — `git show`,
 `git blame -L`, any reviewer or CI job that wants to check what the comment was
-actually looking at. `refinery` confirms the anchor points somewhere; git lets
+actually looking at. `loam-refinery` confirms the anchor points somewhere; git lets
 anyone confirm it points at the right thing. Keeping those separate is why the
 tool needs no state and no opinion about code.
 
@@ -574,7 +574,7 @@ name is cacheable — across a session, and across the agent's own memory of wha
 ### 7.1 Package layout
 
 ```
-cmd/refinery/main.go              flag parsing, wiring, exit codes
+cmd/loam-refinery/main.go              flag parsing, wiring, exit codes
 internal/cli/                     subcommand implementations
 internal/cli/interfaces.go        validator, renderer
 internal/review/review.go         document types, enums, priority bands
@@ -643,12 +643,12 @@ Deliberately deferred, recorded so the design leaves room for them.
   review was written, rather than merely that the line still exists. Deferred
   because it puts repository content inside the review document, which every
   other decision here has avoided.
-- **Review merging.** A `refinery merge` subcommand combining several subagent
+- **Review merging.** A `loam-refinery merge` subcommand combining several subagent
   reviews into one. Comment IDs and slug grouping are what make this tractable:
   merge by slug, keep the highest priority per group, and union the suggestions.
   Suffixes are renumbered on merge, so IDs are stable within a document but not
   across them.
-- **Suggestion selection.** A `refinery pick` subcommand that, given a review and
+- **Suggestion selection.** A `loam-refinery pick` subcommand that, given a review and
   a ceiling on effort and blast radius, emits the subset of suggestions worth
   taking now — e.g. `--max-effort=small --max-scope=file` to assemble a
   low-risk cleanup pass, spilling everything wider into a deferred list. This is
@@ -674,7 +674,7 @@ Deliberately deferred, recorded so the design leaves room for them.
   than compiled into the binary — is the obvious follow-on and would be another
   provider. It is deliberately not specified here, because it breaks the
   stateless-and-offline principle in a way that deserves its own design.
-- **MCP adapter.** A `refinery mcp` subcommand serving the same command layer over
+- **MCP adapter.** A `loam-refinery mcp` subcommand serving the same command layer over
   stdio, for hosts without a shell. The internal packages are structured to make
   this an adapter rather than a rewrite; it is not built now because MCP tool
   schemas cost context on every session whether used or not.

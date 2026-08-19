@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bobcob7/refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/review"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -657,7 +657,7 @@ func TestADeadlineIsNeverReadAsGitAnswering(t *testing.T) {
 	assert.False(t, objectAbsent(timedOut), "and it is certainly not proof the object is absent")
 }
 
-// refinery-0v1 asks for both call sites, and Repository.run is the one every
+// loam-refinery-0v1 asks for both call sites, and Repository.run is the one every
 // anchor goes through.
 func TestRepositoryRunReturnsWhenAChildHoldsItsPipes(t *testing.T) {
 	dir := t.TempDir()
@@ -759,7 +759,7 @@ func TestATraversalPathIsNeverVerifiedAgainstAnotherFile(t *testing.T) {
 	assert.Equal(t, "anchor-file-missing", diagnostics[0].Name)
 }
 
-// refinery-4fw names this case: a partial clone whose promisor is gone must
+// loam-refinery-4fw names this case: a partial clone whose promisor is gone must
 // leave a correct review passing rather than refuting anchors it cannot read.
 func TestAPromisorItCannotReachDoesNotRefuteAnchors(t *testing.T) {
 	t.Parallel()

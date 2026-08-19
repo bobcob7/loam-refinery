@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/bobcob7/refinery/internal/entry"
-	"github.com/bobcob7/refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/entry"
+	"github.com/bobcob7/loam-refinery/internal/review"
 )
 
 // JSON renders for programmatic callers. The whole object goes to stdout;

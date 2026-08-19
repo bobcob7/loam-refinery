@@ -5,9 +5,9 @@ package cli
 
 import (
 	"context"
-	"github.com/bobcob7/refinery/internal/entry"
-	"github.com/bobcob7/refinery/internal/review"
-	"github.com/bobcob7/refinery/internal/validate"
+	"github.com/bobcob7/loam-refinery/internal/entry"
+	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/validate"
 	"io"
 	"sync"
 )

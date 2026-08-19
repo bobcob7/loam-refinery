@@ -5,7 +5,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.1.
 .PHONY: build test lint generate tools clean
 
 build:
-	go build -ldflags "-X main.version=$(VERSION)" -o $(BIN)/refinery ./cmd/refinery
+	go build -ldflags "-X main.version=$(VERSION)" -o $(BIN)/loam-refinery ./cmd/loam-refinery
 
 test:
 	go test ./...
