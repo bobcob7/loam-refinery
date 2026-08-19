@@ -183,12 +183,20 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 	return review.Diagnostic{}, verified
 }
 
+// refExists asks whether the commit is present without asking git to read it.
+// cat-file -e answers that with an exit status rather than a sentence: 1 means
+// the object is not there, and every other failure means git could not look,
+// which says nothing about the review. Reading a corrupt object store as an
+// absent commit would fail a correct document over a bad disk.
 func (v *Verifier) refExists(ctx context.Context, ref string) (bool, error) {
-	out, err := v.git.run(ctx, "cat-file", "-t", ref)
-	if err != nil {
-		if answered(err) {
+	if _, err := v.git.run(ctx, "cat-file", "-e", ref); err != nil {
+		if status, exited := exitStatus(err); exited && status == 1 {
 			return false, nil
 		}
+		return false, err
+	}
+	out, err := v.git.run(ctx, "cat-file", "-t", ref)
+	if err != nil {
 		return false, err
 	}
 	return strings.TrimSpace(string(out)) == "commit", nil
@@ -200,27 +208,60 @@ func (v *Verifier) fileAt(ctx context.Context, ref, file string) fileState {
 	if state, cached := v.files[key]; cached {
 		return state
 	}
-	state := fileState{}
-	out, err := v.git.run(ctx, "cat-file", "-t", key)
-	switch {
-	case err == nil:
-		state.kind = strings.TrimSpace(string(out))
-	case !answered(err):
-		state.err = err
-	}
-	if state.kind == "blob" {
-		content, err := v.git.run(ctx, "cat-file", "blob", key)
-		if err != nil {
-			state.err = err
-		} else {
-			state.lines = countLines(content)
-		}
-	}
+	state := v.lookUp(ctx, ref, file)
 	if state.err != nil {
 		v.log.Debug("git could not read a file", "file", file, "ref", short(ref), "error", state.err)
 	}
 	v.files[key] = state
 	return state
+}
+
+// lookUp reads one path out of the tree. ls-tree is used rather than cat-file
+// because it distinguishes the two answers by shape instead of by prose: a path
+// that is not in the tree is an empty listing and a zero exit, while a tree git
+// cannot read is a non-zero exit. cat-file conflates them, reporting both as
+// exit 128 and leaving only an English sentence to tell a missing file from an
+// unreadable one — so a corrupt object turned a correct anchor into a finding.
+func (v *Verifier) lookUp(ctx context.Context, ref, file string) fileState {
+	// -z drops the c-style quoting ls-tree otherwise applies to unusual paths,
+	// and --literal-pathspecs stops a path containing a wildcard from matching
+	// entries the anchor never named.
+	out, err := v.git.run(ctx, "--literal-pathspecs", "ls-tree", "-z", ref, "--", file)
+	if err != nil {
+		return fileState{err: err}
+	}
+	kind, object, ok := treeEntry(string(out), file)
+	if !ok {
+		return fileState{}
+	}
+	if kind != "blob" {
+		return fileState{kind: kind}
+	}
+	content, err := v.git.run(ctx, "cat-file", "blob", object)
+	if err != nil {
+		return fileState{err: err}
+	}
+	return fileState{kind: kind, lines: countLines(content)}
+}
+
+// treeEntry parses the single entry ls-tree -z prints for a path:
+// "<mode> <type> <object>\t<path>". Anything else — no entry, several entries,
+// or a name that is not the one asked for — is reported as not found, which
+// skips the anchor rather than inventing a claim about it.
+func treeEntry(out, file string) (kind, object string, ok bool) {
+	entries := strings.Split(strings.TrimRight(out, "\x00"), "\x00")
+	if len(entries) != 1 || entries[0] == "" {
+		return "", "", false
+	}
+	meta, name, found := strings.Cut(entries[0], "\t")
+	if !found || name != file {
+		return "", "", false
+	}
+	fields := strings.Fields(meta)
+	if len(fields) != 3 {
+		return "", "", false
+	}
+	return fields[1], fields[2], true
 }
 
 // countLines counts lines the way an editor does: a trailing fragment with no

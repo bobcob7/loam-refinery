@@ -23,6 +23,10 @@ type Options struct {
 	WarnOnly map[string]bool
 	// Dir is where repository discovery starts.
 	Dir string
+	// RequireVerification fails a run whose anchors were not actually checked.
+	// Off by default: a document is not wrong because no repository answered,
+	// and only the caller knows whether it needed one to.
+	RequireVerification bool
 }
 
 // Validator assembles one result from the three check tiers.
@@ -48,6 +52,9 @@ func (v *Validator) Validate(ctx context.Context, source []byte, options Options
 	result := &review.Result{Strict: options.Strict, Comments: len(doc.Comments)}
 	result.Diagnostics = append(result.Diagnostics, v.structural.Check(doc)...)
 	verified, skipped, verification := v.verify(ctx, doc, options)
+	if options.RequireVerification {
+		verified = append(verified, unverified(verification, skipped)...)
+	}
 	result.Diagnostics = append(result.Diagnostics, demote(verified, options.WarnOnly)...)
 	result.Skipped = append(result.Skipped, skipped...)
 	result.Verification = verification
@@ -79,6 +86,33 @@ func (v *Validator) verify(ctx context.Context, doc *review.Document, options Op
 		return nil, verify.SkipAll(err.Error()), review.Verification{Source: "unavailable", Reason: err.Error()}
 	}
 	return repository.Verify(ctx, doc)
+}
+
+// unverified reports the one thing --require-verification asks about: whether
+// the anchor claims were actually checked. A repository that did not answer and
+// an anchor whose file could not be read are the same answer to that question —
+// no one confirmed this — however different their causes.
+//
+// It is produced before demote, so --warn-only=verification-required demotes it
+// like any other verification check. Asking for both is contradictory, but it is
+// contradictory on the command line where a reader can see it, which beats a
+// flag that silently outranks another.
+func unverified(verification review.Verification, skipped []review.Skipped) []review.Diagnostic {
+	if verification.Source == "repo" && len(skipped) == 0 {
+		return nil
+	}
+	reason := verification.Reason
+	if reason == "" && len(skipped) > 0 {
+		reason = skipped[0].Reason
+	}
+	if reason == "" {
+		reason = "no repository answered"
+	}
+	return []review.Diagnostic{{
+		Severity: review.SeverityError,
+		Name:     "verification-required",
+		Message:  fmt.Sprintf("the anchors were not verified: %s", reason),
+	}}
 }
 
 // demote turns the verification checks a caller named in --warn-only into

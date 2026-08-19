@@ -286,6 +286,16 @@ skipped**, with the reason on the status line. It is never silently passed: a
 run that verified nothing must not look like a run that verified everything, or
 the tier is worse than absent — it would license confidence it never earned.
 
+A caller who cannot accept an unchecked document passes
+`--require-verification`, which turns "nobody confirmed these anchors" into a
+`verification-required` error and exit 1. It fires whenever the anchor claims
+went unchecked — no repository, an unreachable one, or a single file git could
+not read — because those are one answer to the question the flag asks. It is
+off by default: a document is not wrong for being checked somewhere that could
+not check it, and only the caller knows whether it needed a repository to.
+`--warn-only=verification-required` demotes it like any other verification
+check; asking for both is contradictory, but visibly so.
+
 Two things can go wrong there, and they are not the same thing. Running outside
 a repository is ordinary, and reports `source: none`. A repository that exists
 but could not be asked — git missing, a bare repository, a checkout git refuses
@@ -376,7 +386,7 @@ default posture: review quality is a judgment the caller owns.
 | Code | Meaning |
 | --- | --- |
 | 0 | Structurally valid, and anchors verified where a repository was available. Advisories may be present. |
-| 1 | Structurally invalid, unparseable, a verification failure, or advisories present under `--strict`. |
+| 1 | Structurally invalid, unparseable, a verification failure, unverified anchors under `--require-verification`, or advisories present under `--strict`. |
 | 2 | Usage or I/O error: unreadable path, unknown advisory name, bad flag. |
 
 Distinguishing 1 from 2 matters: exit 1 means *revise the review*, exit 2 means

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bobcob7/refinery/internal/review"
 	"github.com/stretchr/testify/assert"
@@ -138,18 +139,61 @@ func TestDiscoverFailsOutsideARepository(t *testing.T) {
 	assert.Equal(t, "not a git repository", err.Error())
 }
 
-func TestFileLookupsAreCachedPerRefAndPath(t *testing.T) {
-	t.Parallel()
-	git := &gitRunnerMock{runFunc: func(_ context.Context, args ...string) ([]byte, error) {
-		switch {
-		case args[1] == "-t" && len(args) == 3 && !strings.Contains(args[2], ":"):
+// gitCall names which of the verifier's four calls this is, so a test can
+// answer the one it is about without matching argument positions.
+func gitCall(args []string) string {
+	switch {
+	case args[len(args)-1] == "-z" || contains(args, "ls-tree"):
+		return "ls-tree"
+	case args[1] == "-e":
+		return "exists"
+	case args[1] == "-t":
+		return "type"
+	default:
+		return "blob"
+	}
+}
+
+func contains(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
+}
+
+// treeEntryFor is what ls-tree -z prints for one blob at path.
+func treeEntryFor(path string) []byte {
+	return []byte("100644 blob " + strings.Repeat("a", 40) + "\t" + path + "\x00")
+}
+
+// answering builds a git that resolves the ref and finds every path as a blob,
+// then lets a test override exactly one of the four calls.
+func answering(override func(kind string, args []string) ([]byte, error, bool)) *gitRunnerMock {
+	return &gitRunnerMock{runFunc: func(_ context.Context, args ...string) ([]byte, error) {
+		kind := gitCall(args)
+		if override != nil {
+			if out, err, handled := override(kind, args); handled {
+				return out, err
+			}
+		}
+		switch kind {
+		case "exists":
+			return nil, nil
+		case "type":
 			return []byte("commit\n"), nil
-		case args[1] == "-t":
-			return []byte("blob\n"), nil
+		case "ls-tree":
+			return treeEntryFor(args[len(args)-1]), nil
 		default:
 			return []byte("one\ntwo\nthree\nfour\n"), nil
 		}
 	}}
+}
+
+func TestFileLookupsAreCachedPerRefAndPath(t *testing.T) {
+	t.Parallel()
+	git := answering(nil)
 	doc := document(t, absentSHA, []map[string]any{
 		{"file": "a.go", "line": 1},
 		{"file": "a.go", "line": 2},
@@ -157,7 +201,7 @@ func TestFileLookupsAreCachedPerRefAndPath(t *testing.T) {
 	})
 	_, _, verification := New(git, logger()).Verify(t.Context(), doc)
 	assert.Equal(t, 3, verification.Verified)
-	assert.Len(t, git.runCalls(), 3, "the ref resolves once, then one type and one blob read per distinct path")
+	assert.Len(t, git.runCalls(), 4, "the ref resolves once, then one tree and one blob read per distinct path")
 }
 
 func TestCountLinesTreatsATrailingFragmentAsALine(t *testing.T) {
@@ -251,16 +295,9 @@ var gitFailure = errors.New("exec: \"git\": executable file not found in $PATH")
 
 func TestAFailedBlobReadIsSkippedNotReportedAsAZeroLineFile(t *testing.T) {
 	t.Parallel()
-	git := &gitRunnerMock{runFunc: func(_ context.Context, args ...string) ([]byte, error) {
-		switch {
-		case args[1] == "-t" && !strings.Contains(args[2], ":"):
-			return []byte("commit\n"), nil
-		case args[1] == "-t":
-			return []byte("blob\n"), nil
-		default:
-			return nil, gitFailure
-		}
-	}}
+	git := answering(func(kind string, _ []string) ([]byte, error, bool) {
+		return nil, gitFailure, kind == "blob"
+	})
 	doc := document(t, absentSHA, []map[string]any{{"file": "a.go", "line": 12}})
 	diagnostics, skipped, verification := New(git, logger()).Verify(t.Context(), doc)
 	assert.Empty(t, diagnostics, "a git that could not answer says nothing about the review")
@@ -324,12 +361,9 @@ func TestAKilledGitIsNotReportedAsARefThatDoesNotResolve(t *testing.T) {
 func TestAKilledGitIsNotReportedAsAMissingFile(t *testing.T) {
 	t.Parallel()
 	killed := killedProcess(t)
-	git := &gitRunnerMock{runFunc: func(_ context.Context, args ...string) ([]byte, error) {
-		if args[1] == "-t" && !strings.Contains(args[2], ":") {
-			return []byte("commit\n"), nil
-		}
-		return nil, killed
-	}}
+	git := answering(func(kind string, _ []string) ([]byte, error, bool) {
+		return nil, killed, kind == "ls-tree"
+	})
 	doc := document(t, absentSHA, []map[string]any{{"file": "a.go", "line": 12}})
 	diagnostics, skipped, verification := New(git, logger()).Verify(t.Context(), doc)
 	assert.Empty(t, diagnostics, "a git that was killed never said the file was absent")
@@ -344,8 +378,10 @@ func TestARealNonZeroExitIsAnAnswerAboutTheRepository(t *testing.T) {
 	t.Parallel()
 	t.Run("an absent ref is reported", func(t *testing.T) {
 		t.Parallel()
-		exit := refused(t, 128)
-		git := &gitRunnerMock{runFunc: func(context.Context, ...string) ([]byte, error) { return nil, exit }}
+		absent := refused(t, 1)
+		git := answering(func(kind string, _ []string) ([]byte, error, bool) {
+			return nil, absent, kind == "exists"
+		})
 		doc := document(t, absentSHA, []map[string]any{{"file": "a.go", "line": 12}})
 		diagnostics, _, _ := New(git, logger()).Verify(t.Context(), doc)
 		require.Len(t, diagnostics, 1)
@@ -353,13 +389,9 @@ func TestARealNonZeroExitIsAnAnswerAboutTheRepository(t *testing.T) {
 	})
 	t.Run("an absent file is reported", func(t *testing.T) {
 		t.Parallel()
-		exit := refused(t, 128)
-		git := &gitRunnerMock{runFunc: func(_ context.Context, args ...string) ([]byte, error) {
-			if args[1] == "-t" && !strings.Contains(args[2], ":") {
-				return []byte("commit\n"), nil
-			}
-			return nil, exit
-		}}
+		git := answering(func(kind string, _ []string) ([]byte, error, bool) {
+			return nil, nil, kind == "ls-tree"
+		})
 		doc := document(t, absentSHA, []map[string]any{{"file": "a.go", "line": 12}})
 		diagnostics, _, _ := New(git, logger()).Verify(t.Context(), doc)
 		require.Len(t, diagnostics, 1)
@@ -448,4 +480,115 @@ func TestDiscoverTellsAbsenceApartFromRefusalAgainstRealGit(t *testing.T) {
 		assert.NotErrorIs(t, err, ErrNoRepository,
 			"a bare repository read as an absent one would pass every anchor unchecked")
 	})
+}
+
+// corrupt replaces an object's file with bytes git cannot inflate, which is
+// what a bad disk or an interrupted write leaves behind. git then exits 128 —
+// the same status it uses for "this is not here" — so nothing but the shape of
+// the answer separates a broken store from an absent object.
+func corrupt(t *testing.T, dir, object string) {
+	t.Helper()
+	path := filepath.Join(dir, ".git", "objects", object[:2], object[2:])
+	require.NoError(t, os.Chmod(filepath.Dir(path), 0o755))
+	require.NoError(t, os.Chmod(path, 0o644))
+	require.NoError(t, os.WriteFile(path, []byte("not zlib"), 0o644))
+}
+
+// The bug this guards: a review whose anchors are all correct must not be
+// refuted because the object store underneath it is damaged.
+func TestAnUnreadableObjectIsSkippedNotReportedAsAbsent(t *testing.T) {
+	t.Parallel()
+	t.Run("a corrupt tree does not refute the anchor", func(t *testing.T) {
+		t.Parallel()
+		repository, sha := repo(t)
+		tree := strings.TrimSpace(run(t, repository.Root(), "rev-parse", sha+"^{tree}"))
+		corrupt(t, repository.Root(), tree)
+		doc := document(t, sha, []map[string]any{{"file": "internal/fetch/client.go", "line": 12}})
+		diagnostics, skipped, verification := New(repository, logger()).Verify(t.Context(), doc)
+		assert.Empty(t, diagnostics, "a tree git cannot read says nothing about the anchor")
+		assert.Zero(t, verification.Verified)
+		require.NotEmpty(t, skipped)
+		assert.Equal(t, "git could not read the file for 1 anchor", skipped[0].Reason)
+	})
+	t.Run("a corrupt blob does not refute the line range", func(t *testing.T) {
+		t.Parallel()
+		repository, sha := repo(t)
+		blob := strings.TrimSpace(run(t, repository.Root(), "rev-parse", sha+":internal/fetch/client.go"))
+		corrupt(t, repository.Root(), blob)
+		doc := document(t, sha, []map[string]any{{"file": "internal/fetch/client.go", "line": 40}})
+		diagnostics, skipped, verification := New(repository, logger()).Verify(t.Context(), doc)
+		assert.Empty(t, diagnostics, "an unreadable blob is not a file with too few lines")
+		assert.Zero(t, verification.Verified)
+		require.NotEmpty(t, skipped)
+	})
+	t.Run("a corrupt commit does not refute the ref", func(t *testing.T) {
+		t.Parallel()
+		repository, sha := repo(t)
+		corrupt(t, repository.Root(), sha)
+		doc := document(t, sha, []map[string]any{{"file": "internal/fetch/client.go", "line": 12}})
+		diagnostics, skipped, verification := New(repository, logger()).Verify(t.Context(), doc)
+		assert.Empty(t, diagnostics, "a commit git cannot read is not a commit that does not resolve")
+		assert.Equal(t, "none", verification.Source)
+		require.NotEmpty(t, skipped)
+		assert.Equal(t, "git could not resolve the document ref", skipped[0].Reason)
+	})
+}
+
+// The other half: against a healthy repository the absent cases are still
+// reported, so the fix above did not buy its safety by checking nothing.
+func TestAbsenceIsStillReportedAgainstAHealthyRepository(t *testing.T) {
+	t.Parallel()
+	repository, sha := repo(t)
+	t.Run("an absent ref", func(t *testing.T) {
+		t.Parallel()
+		doc := document(t, absentSHA, []map[string]any{{"file": "internal/fetch/client.go"}})
+		diagnostics, _, _ := New(repository, logger()).Verify(t.Context(), doc)
+		require.Len(t, diagnostics, 1)
+		assert.Equal(t, "ref-unknown", diagnostics[0].Name)
+	})
+	t.Run("an absent path", func(t *testing.T) {
+		t.Parallel()
+		doc := document(t, sha, []map[string]any{{"file": "internal/fetch/absent.go"}})
+		diagnostics, _, _ := New(repository, logger()).Verify(t.Context(), doc)
+		require.Len(t, diagnostics, 1)
+		assert.Equal(t, "anchor-file-missing", diagnostics[0].Name)
+	})
+	t.Run("a wildcard never matches a path it did not name", func(t *testing.T) {
+		t.Parallel()
+		doc := document(t, sha, []map[string]any{{"file": "internal/fetch/*.go"}})
+		diagnostics, _, _ := New(repository, logger()).Verify(t.Context(), doc)
+		require.Len(t, diagnostics, 1)
+		assert.Equal(t, "anchor-file-missing", diagnostics[0].Name,
+			"a pathspec wildcard must not verify an anchor against some other file")
+	})
+}
+
+// gitTimeout is only half a bound. Killing git does not close the pipes a
+// descendant inherited, and Wait blocks on the goroutines copying them, so
+// without WaitDelay this call outlives its deadline for as long as the child
+// lives. A hang is the one outcome the exit-code contract cannot express.
+func TestAGitCallReturnsEvenWhenAChildHoldsItsPipes(t *testing.T) {
+	dir := t.TempDir()
+	shim := filepath.Join(dir, "git")
+	// Absolute paths: PATH is about to be narrowed to the shim's own directory,
+	// so a bare "sleep" here would not resolve and the shim would exit at once,
+	// leaving nothing holding the pipe and nothing for the test to prove.
+	require.NoError(t, os.WriteFile(shim, []byte("#!/bin/sh\n/bin/sleep 120 &\n/bin/sleep 120\n"), 0o755))
+	t.Setenv("PATH", dir)
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		_, err := Discover(ctx, dir)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.False(t, answered(err), "a call that never finished is not git answering")
+		assert.Less(t, time.Since(start), waitDelay+10*time.Second)
+	case <-time.After(waitDelay + 15*time.Second):
+		t.Fatal("the git call outlived its deadline: WaitDelay is not bounding the wait")
+	}
 }

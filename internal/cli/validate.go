@@ -11,7 +11,7 @@ import (
 	"github.com/bobcob7/refinery/internal/validate"
 )
 
-const validateUsage = `usage: refinery validate [path] [--strict] [--warn-only=NAME,...] [--disable=NAME,...] [--format text|json]
+const validateUsage = `usage: refinery validate [path] [--strict] [--require-verification] [--warn-only=NAME,...] [--disable=NAME,...] [--format text|json]
 `
 
 // validate checks one review document. Every check runs: a failure in one tier
@@ -21,6 +21,7 @@ func (a *App) validate(ctx context.Context, args []string) int {
 	strict := set.Bool("strict", false, "treat advisories as errors")
 	warnOnly := set.String("warn-only", "", "demote the named verification checks")
 	disable := set.String("disable", "", "skip the named advisories")
+	require := set.Bool("require-verification", false, "fail if the anchors were not checked")
 	format := set.String("format", "text", "output format: text or json")
 	paths, err := parseAnywhere(set, args)
 	if err != nil {
@@ -35,7 +36,7 @@ func (a *App) validate(ctx context.Context, args []string) int {
 		a.fail(fmt.Errorf("validate takes at most one path, got %d", len(paths)))
 		return ExitUsage
 	}
-	options := validate.Options{Strict: *strict, Dir: a.dir}
+	options := validate.Options{Strict: *strict, RequireVerification: *require, Dir: a.dir}
 	if options.Disabled, err = a.checkNames(*disable, "--disable", a.names.Advisory, isSet(set, "disable")); err != nil {
 		a.fail(err)
 		return ExitUsage

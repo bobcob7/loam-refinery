@@ -175,3 +175,69 @@ func quiet() *advisoryRunnerMock {
 		return nil, nil
 	}}
 }
+
+// --require-verification answers one question: were the anchor claims actually
+// checked? Off, the run passes whatever the answer; on, an unchecked document
+// fails. Nothing about it changes what the document itself is.
+func TestRequireVerificationFailsOnlyWhenNothingWasChecked(t *testing.T) {
+	t.Parallel()
+	checked := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return nil, nil, review.Verification{Source: "repo", Anchors: 1, Verified: 1}
+	}}
+	partly := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return nil, []review.Skipped{{Name: "anchor-file-missing", Reason: "git could not read the file for 1 anchor"}},
+			review.Verification{Source: "repo", Anchors: 2, Verified: 1}
+	}}
+	absent := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
+		return nil, verify.ErrNoRepository
+	}}
+	tests := []struct {
+		name    string
+		finder  *repositoryFinderMock
+		require bool
+		valid   bool
+		reason  string
+	}{
+		{name: "checked, not required", finder: finder(checked), valid: true},
+		{name: "checked, required", finder: finder(checked), require: true, valid: true},
+		{name: "no repository, not required", finder: absent, valid: true},
+		{name: "no repository, required", finder: absent, require: true, reason: "not a git repository"},
+		{name: "some anchors unread, not required", finder: finder(partly), valid: true},
+		{
+			name: "some anchors unread, required", finder: finder(partly), require: true,
+			reason: "git could not read the file for 1 anchor",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			options := Options{RequireVerification: test.require}
+			result, err := validator(passing(), quiet(), test.finder).Validate(t.Context(), []byte(document), options)
+			require.NoError(t, err)
+			assert.Equal(t, test.valid, result.Valid)
+			if test.valid {
+				return
+			}
+			require.Len(t, result.Diagnostics, 1)
+			assert.Equal(t, "verification-required", result.Diagnostics[0].Name)
+			assert.Equal(t, review.SeverityError, result.Diagnostics[0].Severity)
+			assert.Contains(t, result.Diagnostics[0].Message, test.reason,
+				"the diagnostic names why nothing was checked, not just that nothing was")
+		})
+	}
+}
+
+// The flag is a verification check like any other, so --warn-only reaches it.
+// Asking for both is contradictory, but visibly so on the command line.
+func TestWarnOnlyDemotesTheVerificationRequirement(t *testing.T) {
+	t.Parallel()
+	absent := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
+		return nil, verify.ErrNoRepository
+	}}
+	options := Options{RequireVerification: true, WarnOnly: map[string]bool{"verification-required": true}}
+	result, err := validator(passing(), quiet(), absent).Validate(t.Context(), []byte(document), options)
+	require.NoError(t, err)
+	assert.Zero(t, result.Errors())
+	assert.Equal(t, 1, result.Advisories())
+	assert.True(t, result.Valid)
+}

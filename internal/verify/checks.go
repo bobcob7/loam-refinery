@@ -8,6 +8,27 @@ import "github.com/bobcob7/refinery/internal/review"
 func Checks() []review.Check {
 	return []review.Check{
 		{
+			Name:    "verification-required",
+			Tier:    review.TierVerification,
+			Summary: "the anchors were not checked, and --require-verification asked that they be",
+			Title:   "Verification required but unavailable",
+			Body: `Fires only under --require-verification, and says one thing: nobody confirmed
+these anchors. A repository that did not answer, a commit this checkout does
+not have, a file git could not read — different causes, same answer.
+
+Without the flag that is reported and the run passes, because a document is not
+wrong for being checked somewhere that could not check it. The flag is for the
+caller who cannot accept that: a merge gate whose whole purpose is confirming
+the line numbers are real, where a review nobody verified is worth no more than
+no review.
+
+The status line carries the cause: "not a git repository" means cd, an
+unavailable source means the machine rather than the review, and a skipped
+anchor names its file. --warn-only demotes this like any other verification
+check — coherent to ask for, worth noticing that you did.`,
+			Related: []string{"ref-unknown", "anchor-file-missing", "tiers"},
+		},
+		{
 			Name:    "ref-unknown",
 			Tier:    review.TierVerification,
 			Summary: "the ref does not resolve in the repository refinery was run in",
