@@ -2,6 +2,7 @@ package render
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"os"
 	"path/filepath"
@@ -14,57 +15,6 @@ import (
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files")
-
-func TestTextResult(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name   string
-		result *review.Result
-		golden string
-	}{
-		{name: "clean", result: clean(), golden: "text-clean"},
-		{name: "unverified", result: unverified(), golden: "text-unverified"},
-		{name: "diagnostics", result: messy(), golden: "text-diagnostics"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
-			require.NoError(t, NewText().Result(stdout, stderr, test.result))
-			golden(t, test.golden+".txt", stdout.String()+stderr.String())
-		})
-	}
-}
-
-func TestTextSendsTheStatusLineToStdoutAndDiagnosticsToStderr(t *testing.T) {
-	t.Parallel()
-	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
-	require.NoError(t, NewText().Result(stdout, stderr, messy()))
-	assert.Contains(t, stdout.String(), "INVALID")
-	assert.NotContains(t, stdout.String(), "error ")
-	assert.Contains(t, stderr.String(), "error ")
-	assert.Contains(t, stderr.String(), "refinery describe --lens=")
-	assert.NotContains(t, stdout.String(), "--lens=")
-}
-
-func TestTextSuppressesThePointerLineWhenThereIsNothingToSay(t *testing.T) {
-	t.Parallel()
-	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
-	require.NoError(t, NewText().Result(stdout, stderr, clean()))
-	assert.Empty(t, stderr.String())
-}
-
-func TestTextWrapsMessagesUnderTheirColumn(t *testing.T) {
-	t.Parallel()
-	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
-	require.NoError(t, NewText().Result(stdout, stderr, messy()))
-	for _, line := range bytes.Split(stderr.Bytes(), []byte("\n")) {
-		if bytes.HasPrefix(line, []byte("refinery describe")) {
-			continue // the pointer line is runnable, so it is never wrapped
-		}
-		assert.LessOrEqual(t, len([]rune(string(line))), width, "line is wider than the column: %q", line)
-	}
-}
 
 func TestJSONResult(t *testing.T) {
 	t.Parallel()
@@ -81,7 +31,7 @@ func TestJSONResult(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
-			require.NoError(t, NewJSON().Result(stdout, stderr, test.result))
+			require.NoError(t, NewJSON().Result(stdout, test.result))
 			assert.Empty(t, stderr.String(), "json output goes to stdout alone")
 			golden(t, test.golden+".json", stdout.String())
 		})
@@ -91,7 +41,7 @@ func TestJSONResult(t *testing.T) {
 func TestJSONAlwaysCarriesVerificationAndSkipped(t *testing.T) {
 	t.Parallel()
 	stdout := &bytes.Buffer{}
-	require.NoError(t, NewJSON().Result(stdout, &bytes.Buffer{}, clean()))
+	require.NoError(t, NewJSON().Result(stdout, clean()))
 	assert.Contains(t, stdout.String(), `"verification"`)
 	assert.Contains(t, stdout.String(), `"skipped": []`)
 	assert.NotContains(t, stdout.String(), `"lenses"`, "omitted when there are no diagnostics")
@@ -108,17 +58,45 @@ func TestEntriesAndIndex(t *testing.T) {
 		Related:   []string{"category", "id"},
 	}}
 	stdout := &bytes.Buffer{}
-	require.NoError(t, NewText().Entries(stdout, entries))
-	golden(t, "text-entry.txt", stdout.String())
+	require.NoError(t, NewJSON().Entries(stdout, entries))
+	golden(t, "json-entry.json", stdout.String())
 	stdout.Reset()
-	require.NoError(t, NewText().Index(stdout, []entry.Group{
+	require.NoError(t, NewJSON().Index(stdout, []entry.Group{
 		{Namespace: entry.NamespaceField, Names: []string{"priority", "category"}},
 		{Namespace: entry.NamespaceCheck, Names: []string{"id-unique"}},
 	}))
-	golden(t, "text-index.txt", stdout.String())
+	golden(t, "json-index.json", stdout.String())
 	stdout.Reset()
-	require.NoError(t, NewJSON().Entries(stdout, entries))
-	golden(t, "json-entry.json", stdout.String())
+	require.NoError(t, NewJSON().Summary(stdout, "A review document is one JSON object.\n", []entry.Group{
+		{Namespace: entry.NamespaceField, Names: []string{"priority"}},
+	}))
+	golden(t, "json-summary.json", stdout.String())
+}
+
+// An author-supplied value reaches the output only through the encoder, so a
+// comment id carrying newlines and quotes cannot forge a line of its own. This
+// is what the second renderer used to make possible.
+func TestAnAuthoredValueCannotForgeOutput(t *testing.T) {
+	t.Parallel()
+	forged := "evil-1\nerror     anchor-file-missing       forged-2\n          internal/x.go does not exist"
+	result := &review.Result{Diagnostics: []review.Diagnostic{{
+		Severity: review.SeverityError,
+		Name:     "anchor-file-missing",
+		Comment:  forged,
+		Message:  "a\nb",
+	}}}
+	stdout := &bytes.Buffer{}
+	require.NoError(t, NewJSON().Result(stdout, result))
+	assert.NotContains(t, stdout.String(), "forged-2\n", "a newline in an id must not survive as a newline")
+	assert.Contains(t, stdout.String(), `\nerror     anchor-file-missing`, "it survives escaped instead")
+	var payload struct {
+		Diagnostics []struct {
+			Comment string `json:"comment"`
+		} `json:"diagnostics"`
+	}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &payload))
+	require.Len(t, payload.Diagnostics, 1)
+	assert.Equal(t, forged, payload.Diagnostics[0].Comment, "and decodes back to exactly what the author wrote")
 }
 
 func clean() *review.Result {
@@ -179,4 +157,29 @@ func golden(t *testing.T, name, got string) {
 	want, err := os.ReadFile(path)
 	require.NoError(t, err, "run go test ./... -update to create %s", path)
 	assert.Equal(t, string(want), got)
+}
+
+// strict is the field that replaced the deleted status line's silence: under
+// --strict a run fails with zero errors, and only this says why.
+func TestStrictIsCarriedBesideValid(t *testing.T) {
+	t.Parallel()
+	stdout := &bytes.Buffer{}
+	require.NoError(t, NewJSON().Result(stdout, &review.Result{
+		Strict:      true,
+		Comments:    1,
+		Diagnostics: []review.Diagnostic{{Severity: review.SeverityAdvisory, Name: "body-thin", Message: "thin"}},
+	}))
+	var payload struct {
+		Valid  bool `json:"valid"`
+		Strict bool `json:"strict"`
+		Counts struct {
+			Errors     int `json:"errors"`
+			Advisories int `json:"advisories"`
+		} `json:"counts"`
+	}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &payload))
+	assert.True(t, payload.Strict, "a failing run with no errors is unreadable without this")
+	assert.False(t, payload.Valid)
+	assert.Zero(t, payload.Counts.Errors)
+	assert.Equal(t, 1, payload.Counts.Advisories)
 }

@@ -15,16 +15,12 @@
   },
   "skipped": [
     {
-      "name": "ref-unknown",
-      "reason": "not a git repository"
-    },
-    {
-      "name": "anchor-file-missing",
-      "reason": "not a git repository"
-    },
-    {
-      "name": "anchor-line-out-of-range",
-      "reason": "not a git repository"
+      "reason": "not a git repository",
+      "checks": [
+        "ref-unknown",
+        "anchor-file-missing",
+        "anchor-line-out-of-range"
+      ]
     }
   ],
   "diagnostics": []

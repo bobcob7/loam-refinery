@@ -40,7 +40,7 @@ type CheckNames struct {
 type App struct {
 	validator  documentValidator
 	registry   entryRegistry
-	renderers  map[string]renderer
+	renderer   renderer
 	names      CheckNames
 	build      Build
 	dir        string
@@ -55,7 +55,6 @@ type App struct {
 func New(
 	validator documentValidator,
 	registry entryRegistry,
-	text renderer,
 	structured renderer,
 	names CheckNames,
 	build Build,
@@ -68,7 +67,7 @@ func New(
 	return &App{
 		validator:  validator,
 		registry:   registry,
-		renderers:  map[string]renderer{"text": text, "json": structured},
+		renderer:   structured,
 		names:      names,
 		build:      build,
 		schemaText: schemaText,
@@ -133,13 +132,18 @@ func (a *App) fail(err error) {
 	fmt.Fprintf(a.stderr, "refinery: %v\n", err)
 }
 
-// renderer returns the renderer for a --format value.
-func (a *App) renderer(format string) (renderer, error) {
-	chosen, ok := a.renderers[format]
-	if !ok {
-		return nil, fmt.Errorf("unknown format %q: expected text or json", format)
+// checkFormat accepts the one format there is. The flag outlived the choice it
+// used to make: keeping it means every caller already passing --format=json
+// keeps working, and a caller passing --format=text is told what happened
+// rather than being handed an unknown-flag error to guess at.
+func (a *App) checkFormat(format string) error {
+	if format == "json" {
+		return nil
 	}
-	return chosen, nil
+	if format == "text" {
+		return fmt.Errorf("the text format is gone; json is the only format, and --format=json or no flag at all selects it")
+	}
+	return fmt.Errorf("unknown format %q: json is the only format", format)
 }
 
 // errNoNames marks a flag given with nothing in it, which each caller names in

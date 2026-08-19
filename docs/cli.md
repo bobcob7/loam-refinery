@@ -67,10 +67,10 @@ Explicitly out of scope:
 
 ```
 refinery prime
-refinery describe [--lens=NAME[,NAME...]] [--format text|json]
+refinery describe [--lens=NAME[,NAME...]] [--format json]
 refinery validate [path] [--strict] [--require-verification]
                   [--warn-only=…] [--disable=…]
-                         [--format text|json]
+                         [--format json]
 refinery schema   [--annotated]
 refinery version
 ```
@@ -145,7 +145,7 @@ how a caller ends up reading about the wrong field.
 
 **A bare final segment resolves when exactly one field ends with it.** So
 `--lens=priority` and `--lens=effort` work, and are what a model will normally
-emit and what the pointer line prints. `--lens=code` does not: two fields end in
+emit and what `lenses` names. `--lens=code` does not: two fields end in
 `code`, so it exits 2 listing `comments.code` and `comments.suggestions.code`.
 Short where short is unambiguous, explicit where it is not.
 
@@ -160,7 +160,7 @@ callers that want to skip resolution entirely, and is what will keep a future
 
 **Aliases.** An entry may carry alternate names, and an alias resolves silently
 to its entry. This is the rename escape hatch: a lens name is API — it is printed
-in pointer lines, cached in agent memory across sessions, and written into
+in the `lenses` field, cached in agent memory across sessions, and written into
 prompts — so an entry that gets renamed keeps its old name as an alias rather
 than breaking callers. Aliases are not dropped.
 
@@ -284,7 +284,7 @@ require an argument to do it. Pointing `refinery` at a different repository is
 `cd`, which every caller already has and no caller has to be taught.
 
 When no repository can answer, verification is **skipped and reported as
-skipped**, with the reason on the status line. It is never silently passed: a
+skipped**, with the reason in `verification`. It is never silently passed: a
 run that verified nothing must not look like a run that verified everything, or
 the tier is worse than absent — it would license confidence it never earned.
 
@@ -340,8 +340,8 @@ tool needs no state and no opinion about code.
 
 Diagnostics carry check names, not explanations — the explanation is one
 `describe --lens` away, and printing it inline would charge every caller for
-detail most of them already have. Output ends with a single pointer line
-([§5.1](#51-text-format-default)).
+detail most of them already have. The names worth opening are collected in
+`lenses` ([§5.2](#52-the-result-object)).
 
 ### 2.4 `schema`
 
@@ -377,7 +377,7 @@ setup.
 --lens=NAME[,NAME...]     open one entry in full                     describe
 --list                    print the lens index, no bodies            describe
 --annotated               emit the schema with descriptions intact   schema
---format text|json        output format (default: text)              describe validate
+--format json             output format; json is the only one           describe validate
 ```
 
 Structural checks cannot be disabled or demoted. Verification checks can be
@@ -408,95 +408,21 @@ with `--warn-only`.
 
 ## 5. Output
 
-### 5.1 Text format (default)
+### 5.1 One format
 
-Diagnostics go to **stderr**; the status line goes to **stdout**. A caller can
-capture pass/fail cheaply while still surfacing detail on failure.
+Everything a command has to say is one JSON object on **stdout**. There is no
+second renderer and no `--format` choice left to make: two implementations of
+the same result disagreed about what a run found three separate times, and one
+of them let an author-supplied comment id forge diagnostic lines the document
+never contained. A caller parses the object; nothing has to parse prose.
 
-Clean:
+`--format=json` is still accepted so callers already passing it keep working.
+`--format=text` is an error that says where the format went.
 
-```
-VALID  5 comments, 0 advisories  [anchors unverified]
-```
+The prose that remains is prose because it is written to be read, not rendered:
+`prime`, and the `summary` field of `describe`.
 
-Counts are `errors, advisories`, plus `skipped` when any check could not run:
-
-```
-INVALID  4 errors, 1 advisory, 2 skipped  [anchors verified: 5 of 7]
-```
-
-Skipped checks are named on one line after the diagnostics, with the reason
-grouped rather than repeated:
-
-```
-skipped  priority-flat, comment-flood (2 comments have unusable priority)
-```
-
-The status line always states whether anchors were verified, and against what:
-`[anchors verified: 9 of 9]` on the normal path, `[anchors unverified: <reason>]`
-when it could not run. It costs four tokens and it is the difference between "this review
-is clean" and "this review is clean as far as anyone bothered to check."
-
-Valid with advisories — note that diagnostics are addressed by comment ID:
-
-```
-VALID  6 comments, 3 advisories  [anchors verified: 8 of 8]
-
-advisory  suggestion-no-cons        dropped-context-1
-          suggestion 1 ("Pass the caller's context straight through") lists no
-          cons; state the tradeoff or say the fix is free
-advisory  priority-flat
-          all 6 comments are priority 7; the scale is not being used
-advisory  id-grouping               missing-context-3
-          slug "missing-context" has suffixes 1, 3; renumber contiguously
-
-refinery describe --lens=suggestion-no-cons,priority-flat,id-grouping
-```
-
-Structurally invalid:
-
-```
-INVALID  2 errors, 1 advisory  [anchors verified: 6 of 7]
-
-error     anchor-file-missing       dropped-context-1
-          internal/fetch/client.go does not exist at 4f2c1a9
-error     id-unique                 unchecked-error-1
-          declared by comments[1] and comments[4]
-advisory  summary-thin
-          summary is 41 characters with 5 comments; expand it
-
-refinery describe --lens=anchor-file-missing,id-unique,summary-thin
-```
-
-A verification failure names the ref it resolved against. "Line 88 is out of
-range" invites the reviewer to argue; "line 88 is out of range in a 61-line file
-at 4f2c1a9" ends it.
-
-Renderer rules:
-
-- No color codes when stdout is not a TTY
-- Message bodies wrap at 80 columns, continuation lines aligned under the message
-- Errors before advisories, then document order
-- The third column is the comment ID when the diagnostic concerns one comment, a
-  JSON Pointer when it comes from `schema`, and empty for document-level checks
-- An unknown-property failure names the nearest valid field when one is within
-  edit distance 2: `unknown field "end-line" — did you mean "end_line"?`. The
-  format rejects unknown fields precisely to catch typos, so spending a few
-  tokens naming the intended field turns a rejection into a fix
-
-**The pointer line.** Output carrying diagnostics ends with a blank line and one
-runnable command covering every check that fired, deduplicated, in the order the
-diagnostics appeared. `schema` diagnostics contribute the *field* they failed on
-rather than the name `schema`, which is why the second example asks for
-`priority` — the useful lens for "12 is greater than the maximum of 10" is the
-priority scale, not an explanation of JSON Schema.
-
-The line exists so recovery is copy-and-run rather than recall. It costs about
-15 tokens and it is emitted once per run, never per diagnostic. Suppressed when
-there are no diagnostics, and absent from `--format json`, where the check names
-are already machine-readable fields.
-
-### 5.2 JSON format
+### 5.2 The result object
 
 ```json
 {
@@ -526,8 +452,8 @@ are already machine-readable fields.
 `comment` carries the comment ID when the diagnostic concerns one comment;
 omitted otherwise. `path` is a JSON Pointer into the input document; omitted for
 document-level checks. `lenses` is the deduplicated set of lens names covering
-the diagnostics — the structured form of the text renderer's pointer line, so a
-programmatic caller can fetch explanations without parsing prose. Omitted when
+the diagnostics, so a caller can fetch explanations without guessing at
+names. Omitted when
 there are no diagnostics.
 
 `skipped` lists the checks that could not run, each with `name` and `reason`. It
@@ -553,22 +479,35 @@ has to pay for itself.
 
 ### 6.1 Budgets
 
-Text output. These are ceilings, enforced by golden-file tests that fail when a
-command grows past its budget — a limit nothing measures is a limit that erodes.
+JSON output, except `prime`, which is prose. These are ceilings, enforced by
+golden-file tests that fail when a command grows past its budget — a limit
+nothing measures is a limit that erodes.
 
 | Call | Budget | Frequency |
 | --- | --- | --- |
 | `prime` | 250 | Once per session, often pinned into a system prompt |
-| `describe` | 625 | Once per session that writes a review |
-| `describe --lens=NAME` | 250 each | Only on uncertainty or a failed check |
-| `describe --list` | 200 | Rare; discovery and the unknown-lens error |
+| `describe` | 850 | Once per session that writes a review |
+| `describe --lens=NAME` | 350 each | Only on uncertainty or a failed check |
+| `describe --list` | 380 | Rare; discovery and the unknown-lens error |
 | `schema` | 1,000 | Rare; machine consumers only |
 | `schema --annotated` | 5,000 | Rare; codegen only |
-| `validate`, clean | 20 | Every attempt |
-| `validate`, per diagnostic | 40 | Every failed attempt |
-| pointer line | 15 | Once per failed attempt |
+| `validate`, clean | 80 | Every attempt |
+| `validate`, per diagnostic | 60 | Every failed attempt |
 
-Verification adds wall-clock, not tokens: its output is the same status line
+These are higher than the text format they replaced. Measured over a
+realistic write-validate-fix cycle it is about **2.1x**; a clean `validate`
+alone is the worst case at roughly **4x**, 14 tokens to 63, because there is a
+floor to how small a JSON object can be and almost nothing to say. That is the
+price of having one renderer rather than two. Two implementations of the
+same result disagreed about what a run found three separate times, each
+disagreement invisible to a green suite because no fixture pinned the shape
+that differed; one of them let an author-supplied comment id forge diagnostic
+lines that were never in the document. A format a caller must parse cannot do
+that, and no second implementation can drift from it. `prime` is unchanged,
+because it was never rendered — it is prose written to be pinned into a prompt,
+and so is the `summary` field of `describe`.
+
+Verification adds wall-clock, not tokens: its output is the same `verification` block
 either way. Because it runs by default, that cost is paid on every loop — object
 lookups against a local database, one per distinct file, since the whole document
 shares one `ref`.
@@ -649,7 +588,7 @@ internal/entry/interfaces.go      provider
 internal/entry/schema.go          field:* provider, reads the annotated schema
 internal/entry/checks.go          check:* provider, reads the check registries
 internal/entry/topics/            topic:* entries, //go:embed of hand-written md
-internal/render/                  text and json renderers
+internal/render/                  the json renderer
 ```
 
 Interfaces live in each package's `interfaces.go`, defined at the consumer.
@@ -686,7 +625,7 @@ mocks in `moq_test.go`.
 Testdata carries a corpus of review documents under `internal/advisory/testdata/`
 and `internal/structural/testdata/`, each paired with its expected diagnostic
 set. Every check needs a passing case and a failing case. Golden files cover the
-text and JSON renderers.
+renderer.
 
 ## 8. Future considerations
 
@@ -722,13 +661,13 @@ Deliberately deferred, recorded so the design leaves room for them.
   act rather than for a document, and the reason entries come from providers
   ([§2.2.3](#223-the-entry-registry)) — a knowledge base is a fourth provider
   registering `kb:*` entries. No new subcommand, no new flag, no change to the
-  pointer line, and `--list` grows to show it.
+  `lenses` field, and `--list` grows to show it.
 
   Two things have to hold when it lands. Bare-name resolution must stay
   predictable, which is what the namespace precedence and the ambiguity error in
   [§2.2.1](#221-lens-names) are for. And per-entry budgets must survive contact
   with prose written by hand rather than generated from a schema — a knowledge
-  base is exactly where 250-token entries quietly become 900-token ones, so the
+  base is exactly where 350-token entries quietly become 900-token ones, so the
   budget tests apply to `kb:*` from its first entry.
 
   A project-supplied knowledge base — conventions read from the repository rather

@@ -48,8 +48,8 @@ type gitError struct {
 }
 
 // Error keeps only the sentence git led with. The whole message can run to
-// several lines, and this one ends up in a Reason the renderers print on a
-// single status line; the rest is advice for a person and is already on stderr.
+// several lines, and this one ends up in a Reason a caller reads as one string;
+// the rest is advice for a person and is already on stderr.
 func (e *gitError) Error() string {
 	if e.stderr == "" {
 		return fmt.Sprintf("git %s: %v", strings.Join(e.args, " "), e.err)

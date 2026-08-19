@@ -42,9 +42,31 @@ type jsonCounts struct {
 	Skipped    int `json:"skipped"`
 }
 
+// jsonSkipped groups the checks that stopped for the same cause. One cause
+// commonly stops every check there is — an unparseable document stops all of
+// them — and repeating its sentence once per check made the reason the bulk of
+// the payload rather than the finding.
 type jsonSkipped struct {
-	Name   string `json:"name"`
-	Reason string `json:"reason"`
+	Reason string   `json:"reason"`
+	Checks []string `json:"checks"`
+}
+
+// groupSkipped collects checks by reason, keeping first-seen order so the
+// output does not move between runs.
+func groupSkipped(skipped []review.Skipped) []jsonSkipped {
+	order := []string{}
+	byReason := map[string][]string{}
+	for _, skip := range skipped {
+		if _, seen := byReason[skip.Reason]; !seen {
+			order = append(order, skip.Reason)
+		}
+		byReason[skip.Reason] = append(byReason[skip.Reason], skip.Name)
+	}
+	out := make([]jsonSkipped, 0, len(order))
+	for _, reason := range order {
+		out = append(out, jsonSkipped{Reason: reason, Checks: byReason[reason]})
+	}
+	return out
 }
 
 type jsonDiagnostic struct {
@@ -56,7 +78,7 @@ type jsonDiagnostic struct {
 }
 
 // Result writes the whole result object to stdout.
-func (j *JSON) Result(stdout, _ io.Writer, result *review.Result) error {
+func (j *JSON) Result(w io.Writer, result *review.Result) error {
 	payload := jsonResult{
 		Valid:  result.Valid,
 		Strict: result.Strict,
@@ -72,12 +94,9 @@ func (j *JSON) Result(stdout, _ io.Writer, result *review.Result) error {
 			Advisories: result.Advisories(),
 			Skipped:    len(result.Skipped),
 		},
-		Skipped:     []jsonSkipped{},
+		Skipped:     groupSkipped(result.Skipped),
 		Diagnostics: []jsonDiagnostic{},
 		Lenses:      result.Lenses(),
-	}
-	for _, skipped := range result.Skipped {
-		payload.Skipped = append(payload.Skipped, jsonSkipped{Name: skipped.Name, Reason: skipped.Reason})
 	}
 	for _, diagnostic := range result.Diagnostics {
 		payload.Diagnostics = append(payload.Diagnostics, jsonDiagnostic{
@@ -88,7 +107,7 @@ func (j *JSON) Result(stdout, _ io.Writer, result *review.Result) error {
 			Message:  diagnostic.Message,
 		})
 	}
-	return write(stdout, payload)
+	return write(w, payload)
 }
 
 type jsonEntry struct {
@@ -122,20 +141,46 @@ func (j *JSON) Entries(w io.Writer, entries []entry.Entry) error {
 	return write(w, payload)
 }
 
+// jsonGroup is one namespace of the index. The index is a list rather than an
+// object because the registry orders its namespaces deliberately — fields
+// first, then checks, then topics — and an object would let the encoder sort
+// them alphabetically instead.
+type jsonGroup struct {
+	Namespace string   `json:"namespace"`
+	Names     []string `json:"names"`
+}
+
+func groupIndex(groups []entry.Group) []jsonGroup {
+	out := make([]jsonGroup, 0, len(groups))
+	for _, group := range groups {
+		out = append(out, jsonGroup{Namespace: string(group.Namespace), Names: group.Names})
+	}
+	return out
+}
+
 // Index writes the lens index, no bodies.
 func (j *JSON) Index(w io.Writer, groups []entry.Group) error {
-	index := map[string][]string{}
-	for _, group := range groups {
-		index[string(group.Namespace)] = group.Names
-	}
 	return write(w, struct {
-		Index map[string][]string `json:"index"`
-	}{Index: index})
+		Index []jsonGroup `json:"index"`
+	}{Index: groupIndex(groups)})
+}
+
+// Summary writes the document-shape prose and the lens index together, which
+// is what describe with no arguments has to say.
+func (j *JSON) Summary(w io.Writer, text string, groups []entry.Group) error {
+	return write(w, struct {
+		Summary string      `json:"summary"`
+		Index   []jsonGroup `json:"index"`
+	}{Summary: text, Index: groupIndex(groups)})
 }
 
 func write(w io.Writer, payload any) error {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
+	// The document shape and every lens body are prose meant to be read. HTML
+	// escaping turns the canonical example's "<40 hex>" into "\u003c40 hex\u003e",
+	// which is what a caller would then copy.
+	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(payload); err != nil {
 		return fmt.Errorf("encoding json output: %w", err)
 	}

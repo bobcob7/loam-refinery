@@ -14,12 +14,11 @@
   },
   "skipped": [
     {
-      "name": "priority-flat",
-      "reason": "2 comments have unusable priority"
-    },
-    {
-      "name": "comment-flood",
-      "reason": "2 comments have unusable priority"
+      "reason": "2 comments have unusable priority",
+      "checks": [
+        "priority-flat",
+        "comment-flood"
+      ]
     }
   ],
   "diagnostics": [

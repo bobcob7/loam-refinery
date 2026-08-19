@@ -1,0 +1,17 @@
+{
+  "index": [
+    {
+      "namespace": "field",
+      "names": [
+        "priority",
+        "category"
+      ]
+    },
+    {
+      "namespace": "check",
+      "names": [
+        "id-unique"
+      ]
+    }
+  ]
+}

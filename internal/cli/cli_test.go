@@ -40,7 +40,6 @@ func newHarness(t *testing.T, stdin string) *harness {
 	app := New(
 		validator,
 		testRegistry(t),
-		render.NewText(),
 		render.NewJSON(),
 		CheckNames{
 			Structural:   []string{"id-unique"},
@@ -118,19 +117,19 @@ func TestDescribeResolvesLenses(t *testing.T) {
 			name:   "one entry in full",
 			args:   []string{"describe", "--lens=priority"},
 			code:   ExitValid,
-			stdout: []string{"field:comments.priority — Priority"},
+			stdout: []string{`"name": "comments.priority"`, `"namespace": "field"`, `"title": "Priority"`},
 		},
 		{
 			name:   "several entries, deduplicated and in order",
 			args:   []string{"describe", "--lens=priority,id-unique,priority"},
 			code:   ExitValid,
-			stdout: []string{"field:comments.priority", "check:id-unique"},
+			stdout: []string{`"name": "comments.priority"`, `"name": "id-unique"`, `"namespace": "check"`},
 		},
 		{
 			name:   "an unknown lens prints the whole index",
 			args:   []string{"describe", "--lens=nonsense"},
 			code:   ExitUsage,
-			stderr: []string{`unknown lens "nonsense"`, "comments.suggestions.code"},
+			stderr: []string{`unknown lens "nonsense"`, "refinery describe --list"},
 		},
 		{
 			name:   "an ambiguous lens prints the candidates alone",
@@ -333,7 +332,7 @@ func TestAnEmptyElementIsNotReportedAsAnEmptyList(t *testing.T) {
 // repair.
 func TestAnUnparseableDocumentIsRenderedInTheChosenFormat(t *testing.T) {
 	t.Parallel()
-	t.Run("json", func(t *testing.T) {
+	t.Run("the failure is a document, not prose", func(t *testing.T) {
 		t.Parallel()
 		h := newHarness(t, "nonsense")
 		h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
@@ -355,18 +354,19 @@ func TestAnUnparseableDocumentIsRenderedInTheChosenFormat(t *testing.T) {
 		assert.Equal(t, "error", payload.Diagnostics[0].Severity)
 		assert.Contains(t, payload.Diagnostics[0].Message, "reading review document")
 	})
-	t.Run("text names a check and hands back the lens", func(t *testing.T) {
+	t.Run("the lens to open is named in the payload", func(t *testing.T) {
 		t.Parallel()
 		h := newHarness(t, "nonsense")
 		h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
 			return nil, parseError(t)
 		}
 		require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"validate"}))
-		assert.Contains(t, h.stdout.String(), "INVALID", "the status line still goes to stdout")
-		assert.Contains(t, h.stderr.String(), "document-unparseable",
-			"prime promises every exit-1 diagnostic names a check")
-		assert.Contains(t, h.stderr.String(), "describe --lens=document-unparseable",
-			"prime promises the run ends with that command already assembled")
+		var payload struct {
+			Lenses []string `json:"lenses"`
+		}
+		require.NoError(t, json.Unmarshal(h.stdout.Bytes(), &payload))
+		assert.Equal(t, []string{"document-unparseable"}, payload.Lenses,
+			"prime tells an agent to read lenses rather than recall a name")
 	})
 }
 
@@ -407,5 +407,37 @@ func TestRequireVerificationReachesTheValidatorAndDefaultsOff(t *testing.T) {
 			require.Equal(t, ExitValid, h.app.Run(t.Context(), test.args))
 			assert.Equal(t, test.want, got.RequireVerification)
 		})
+	}
+}
+
+// The one format left is still a decision, and a wrong --format has to fail the
+// same way on both commands that take it. Nothing else in the suite would
+// notice the flag being ignored entirely.
+func TestFormatAcceptsOnlyJSON(t *testing.T) {
+	t.Parallel()
+	for _, command := range []string{"validate", "describe"} {
+		for _, test := range []struct {
+			name   string
+			value  string
+			code   int
+			stderr string
+		}{
+			{name: "json", value: "json", code: -1},
+			{name: "text says where it went", value: "text", code: ExitUsage, stderr: "the text format is gone"},
+			{name: "another format is unknown", value: "yaml", code: ExitUsage, stderr: `unknown format "yaml"`},
+			{name: "empty is unknown", value: "", code: ExitUsage, stderr: `unknown format ""`},
+		} {
+			t.Run(command+"/"+test.name, func(t *testing.T) {
+				t.Parallel()
+				h := newHarness(t, `{"version":"1"}`)
+				code := h.app.Run(t.Context(), []string{command, "--format=" + test.value})
+				if test.code == -1 {
+					assert.NotEqual(t, ExitUsage, code, "json is the format that works")
+					return
+				}
+				assert.Equal(t, test.code, code)
+				assert.Contains(t, h.stderr.String(), test.stderr)
+			})
+		}
 	}
 }

@@ -609,7 +609,7 @@ ran," because the two justify very different amounts of confidence.
 ### 11.5 Name stability
 
 Check names are API. They appear in diagnostics, in `--disable` and `--warn-only`
-arguments, in pointer lines an agent copies and runs, and in whatever an agent
+arguments, in the `lenses` an agent reads and opens, and in whatever an agent
 remembers across sessions. Renaming one breaks all of that silently, so names do
 not change; a check that outlives its usefulness is removed, not repurposed.
 

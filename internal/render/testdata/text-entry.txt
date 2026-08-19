@@ -1,9 +1,0 @@
-field:priority — Priority
-
-Integer 1-10, higher is more urgent.
-
-  before: 12
-  after:  9
-
-example: 9
-related: category, id
