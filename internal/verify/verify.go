@@ -64,7 +64,7 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 			if !anchor.Object {
 				continue
 			}
-			if !anchor.File.OK {
+			if !anchorUsable(anchor) {
 				unusable++
 				continue
 			}
@@ -78,10 +78,25 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 	}
 	skipped := []review.Skipped{}
 	if unusable > 0 {
-		skipped = skips(fmt.Sprintf("unusable file on %s", plural(unusable, "anchor")))
+		skipped = skips(fmt.Sprintf("unusable field on %s", plural(unusable, "anchor")))
 	}
 	v.log.Debug("verification complete", "anchors", verification.Anchors, "verified", verification.Verified)
 	return diagnostics, skipped, verification
+}
+
+// anchorUsable reports whether every field this tier reads is readable. A line
+// that is present but ill-typed cannot be range checked, and counting such an
+// anchor as verified would claim the opposite of what was established.
+func anchorUsable(anchor review.Anchor) bool {
+	switch {
+	case !anchor.File.OK:
+		return false
+	case anchor.Line.Present && !anchor.Line.OK:
+		return false
+	case anchor.EndLine.Present && !anchor.EndLine.OK:
+		return false
+	}
+	return true
 }
 
 // refUsable reports whether the document carries a ref worth looking up. A

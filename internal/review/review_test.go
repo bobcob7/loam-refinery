@@ -82,3 +82,34 @@ func TestLensesDeduplicatesInDiagnosticOrder(t *testing.T) {
 	}}
 	assert.Equal(t, []string{"priority", "id-unique"}, result.Lenses())
 }
+
+func TestParseAcceptsEveryIntegralSpellingOfANumber(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		literal string
+		want    int
+		ok      bool
+	}{
+		"a plain integer":     {"100", 100, true},
+		"a zero fraction":     {"100.0", 100, true},
+		"an exponent":         {"1e2", 100, true},
+		"a negative exponent": {"1000e-1", 100, true},
+		"a real fraction":     {"100.5", 0, false},
+		"beyond exact range":  {"1e300", 0, false},
+		"a string":            {`"100"`, 0, false},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := `{"comments":[{"anchors":[{"file":"a.go","line":` + test.literal + `}]}]}`
+			doc, err := Parse([]byte(source))
+			require.NoError(t, err)
+			require.Len(t, doc.Comments, 1)
+			require.Len(t, doc.Comments[0].Anchors, 1)
+			line := doc.Comments[0].Anchors[0].Line
+			assert.True(t, line.Present)
+			assert.Equal(t, test.ok, line.OK, "JSON Schema calls any zero-fraction number an integer")
+			assert.Equal(t, test.want, line.Value)
+		})
+	}
+}

@@ -9,8 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 )
+
+// exactFloatInt is the largest magnitude a float64 represents exactly, the
+// bound past which an integral-looking number can no longer be trusted.
+const exactFloatInt = 1 << 53
 
 // Field is one document field: its value, whether the key was present at all,
 // and whether the value was of the type the format requires. Checks read OK
@@ -200,11 +205,32 @@ func intField(obj map[string]any, key string) Field[int] {
 	if !ok {
 		return Field[int]{Present: true}
 	}
-	value, err := strconv.Atoi(number.String())
+	value, err := integral(number)
 	if err != nil {
 		return Field[int]{Present: true}
 	}
 	return Field[int]{Value: value, Present: true, OK: true}
+}
+
+// integral reads a JSON number the way JSON Schema defines "integer": any
+// number with a zero fractional part, so 100, 100.0 and 1e2 are one value.
+// Reading only the digit form would leave the other two Present but not OK,
+// which every consumer treats as a field it cannot check — silently.
+func integral(number json.Number) (int, error) {
+	if value, err := strconv.Atoi(number.String()); err == nil {
+		return value, nil
+	}
+	value, err := number.Float64()
+	if err != nil {
+		return 0, err
+	}
+	if value != math.Trunc(value) {
+		return 0, fmt.Errorf("%s has a fractional part", number)
+	}
+	if value < -exactFloatInt || value > exactFloatInt {
+		return 0, fmt.Errorf("%s is out of range", number)
+	}
+	return int(value), nil
 }
 
 func stringsField(obj map[string]any, key string) Field[[]string] {

@@ -127,7 +127,7 @@ func TestOneMalformedAnchorDoesNotStopTheOthers(t *testing.T) {
 	_, skipped, verification := New(repository, logger()).Verify(t.Context(), doc)
 	assert.Equal(t, 1, verification.Verified, "one unusable anchor does not stop the other")
 	require.NotEmpty(t, skipped)
-	assert.Equal(t, "unusable file on 1 anchor", skipped[0].Reason)
+	assert.Equal(t, "unusable field on 1 anchor", skipped[0].Reason)
 }
 
 func TestDiscoverFailsOutsideARepository(t *testing.T) {
@@ -230,4 +230,16 @@ func document(t *testing.T, ref string, anchors []map[string]any) *review.Docume
 
 func logger() *slog.Logger {
 	return slog.New(slog.NewJSONHandler(io.Discard, nil))
+}
+
+func TestAnAnchorWithAnUnreadableLineIsNotCountedAsVerified(t *testing.T) {
+	t.Parallel()
+	repository, sha := repo(t)
+	doc := document(t, sha, []map[string]any{{"file": "internal/fetch/client.go"}})
+	doc.Comments[0].Anchors[0].Line = review.Field[int]{Present: true}
+	diagnostics, skipped, verification := New(repository, logger()).Verify(t.Context(), doc)
+	assert.Empty(t, diagnostics)
+	assert.Zero(t, verification.Verified, "a line that cannot be read was never range checked")
+	require.NotEmpty(t, skipped)
+	assert.Equal(t, "unusable field on 1 anchor", skipped[0].Reason)
 }
