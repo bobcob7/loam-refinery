@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "refinery",
+  "project_id": "c702eb29-eda2-48bb-b125-ae21a2f90fcd"
+}
