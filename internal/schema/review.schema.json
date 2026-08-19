@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bobcob7/refinery/review.schema.json",
+  "title": "Review document",
+  "description": "One agent's complete review of one change.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "verdict", "summary", "comments"],
+  "properties": {
+    "version": {
+      "title": "Format version",
+      "description": "Format version. Always the string \"1\" — a string, not a number. Any other value is rejected outright. The field is not a compatibility scheme; it exists so a future consumer can recognise a format it does not understand and say so.",
+      "$comment": "related: verdict, comments",
+      "type": "string",
+      "const": "1",
+      "examples": ["1"]
+    },
+    "verdict": {
+      "title": "Overall disposition",
+      "description": "The review's overall disposition. approve — the change should land as it stands. request_changes — something has to change first. comment — observations, with no gate either way. Nothing relates the verdict to comment priorities: approve while filing a priority-10 note, or request changes over a single 4, if that is your judgement. Reconciling verdict and priorities is the reviewer's job and no check second-guesses it. A request_changes or comment verdict must carry at least one comment; approve may carry none, and that is the only case where an empty comments array validates.",
+      "$comment": "related: comments, priority",
+      "type": "string",
+      "enum": ["approve", "request_changes", "comment"],
+      "examples": ["request_changes"]
+    },
+    "summary": {
+      "title": "Overall assessment",
+      "description": "One to three sentences assessing the change as a whole, 30-1500 characters. Consumers read it without opening the comments, so state what is actually wrong and what holds up — restating the verdict (\"changes requested\") wastes the field. Under 60 characters on a review with three or more comments raises summary-thin. A suggestion's one-line summary is a different field: comments.suggestions.summary.",
+      "$comment": "related: verdict, comments",
+      "type": "string",
+      "minLength": 30,
+      "maxLength": 1500,
+      "examples": ["The retry loop is sound, but the context deadline is not propagated to the downstream call, so a cancelled request keeps retrying."]
+    },
+    "ref": {
+      "title": "Reviewed commit",
+      "description": "The commit the review was performed against: a full 40-character lowercase SHA, and nothing else. Not a branch, not a tag, not an abbreviation — a branch names a moving target, so an anchor recorded against main means whatever main points at when someone looks, which reads as precision while being unverifiable. git rev-parse HEAD produces the correct value. Set it once at the root: it is the commit every anchor in the document is read at. There is deliberately no per-anchor ref — a review is of one change at one revision, and a comment that needs to talk about a second revision says so in its body. Optional, because not every review is of a git repository — but an anchor carrying a line number in a document with no ref raises ref-missing, since that line number can never be checked by anyone.",
+      "$comment": "related: anchors, line, ref-format",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "examples": ["4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d"]
+    },
+    "comments": {
+      "title": "Findings",
+      "description": "The findings, one object per finding. May be empty only when verdict is approve; a request_changes or comment verdict with no comments is not a review with a quality problem, it is a review that failed to say anything. Each comment carries a reviewer-authored id, a priority, a category, a body, a list of anchors and a list of suggestions. Four occurrences of the same problem are one comment with four anchors, not four comments. More than 25 comments raises comment-flood.",
+      "$comment": "related: id, priority, anchors, suggestions",
+      "type": "array",
+      "items": { "$ref": "#/$defs/comment" }
+    }
+  },
+  "if": {
+    "properties": { "verdict": { "enum": ["request_changes", "comment"] } },
+    "required": ["verdict"]
+  },
+  "then": {
+    "properties": { "comments": { "minItems": 1 } }
+  },
+  "$defs": {
+    "comment": {
+      "title": "Comment",
+      "description": "One finding.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "priority", "category", "body", "anchors", "suggestions"],
+      "properties": {
+        "id": {
+          "title": "Comment identifier",
+          "description": "A reviewer-authored identifier: a short kebab-case slug naming the kind of finding, then a numeric suffix, e.g. missing-context-2. Pattern ^[a-z][a-z0-9]*(-[a-z0-9]+)*-[1-9][0-9]*$; keep the slug under 48 characters and five words. The slug groups: four findings of the same kind share it, so a consumer collapses them into one theme without reading four bodies. The suffix addresses one finding, so an orchestrator can say \"resolve missing-context-2\". There is no controlled vocabulary — naming the finding is part of the job, and describe-2 or issue-1 throws the grouping away. Ids are unique within a document, and suffixes within a slug run contiguously from 1.",
+          "$comment": "related: id-unique, id-grouping",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*-[1-9][0-9]*$",
+          "maxLength": 64,
+          "examples": ["missing-context-2"]
+        },
+        "priority": {
+          "title": "Priority",
+          "description": "Integer 1-10, higher is more urgent. 9-10 must fix before merge: the change is wrong or unsafe as it stands. 7-8 should fix before merge: a real defect or design problem, not a preference. 4-6 worth fixing, does not block. 1-3 optional polish the author may decline without justification. Use the range, not the endpoints — four or more comments at one value raises priority-flat, the signal that the scale went unused. A comment at 7 or above with no suggestions raises suggestion-absent. testing, maintainability, documentation and style filed at 9-10 raise priority-category-convention; there is no floor, and a security finding at 2 is fine.",
+          "$comment": "related: category, suggestions, priority-flat",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "examples": [9]
+        },
+        "category": {
+          "title": "Category",
+          "description": "What kind of finding this is. correctness — wrong behaviour, logic errors, unhandled cases. security — vulnerabilities, unsafe handling of untrusted input or secrets. performance — avoidable cost in time, memory or I/O. maintainability — structure, naming, duplication, complexity. testing — missing, weak or misleading tests. documentation — missing or incorrect comments, docs or godoc. style — formatting and convention adherence. The first three can carry any priority; the last four conventionally stay below the blocking band, and one filed at 9-10 raises priority-category-convention rather than being rejected.",
+          "$comment": "related: priority, priority-category-convention",
+          "type": "string",
+          "enum": ["correctness", "security", "performance", "maintainability", "testing", "documentation", "style"],
+          "examples": ["correctness"]
+        },
+        "body": {
+          "title": "Finding and rationale",
+          "description": "The finding and why it matters, 20-4000 characters. State what is wrong, then the consequence — \"passes context.Background(), so a cancelled request keeps retrying for the full backoff schedule\" is actionable where \"context handling is wrong\" is not. Under 60 characters raises body-thin; low-signal text (\"lgtm\", \"looks good\", \"see above\", \"consider refactoring\" with nothing following) raises vacuous-body. Two comments with identical bodies raise duplicate-body. Where the fix goes belongs in a suggestion, not here.",
+          "$comment": "related: comments.code, suggestions, body-thin",
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 4000,
+          "examples": ["The retry loop calls c.do(context.Background(), req) rather than passing the caller's ctx, so a cancelled request keeps retrying."]
+        },
+        "code": {
+          "title": "Code excerpt",
+          "description": "An optional illustrative excerpt. On a comment it shows the problematic code as it stands; on a suggestion it shows that code as the suggestion would leave it. Read together they show the change without anyone opening a file, and one before can be quoted against several afters. Both are deliberately soft: no line numbers, no fences, matched against nothing, verified by nothing, and carrying none of an anchor's constraints. Truncate freely, elide the middle, trim context to whatever makes the point. Nothing downstream may treat it as authoritative, and it must never be applied as a patch — a soft excerpt that gets applied is a patch that silently corrupts a file. Often absent: a missing test has no code to quote.",
+          "$comment": "related: anchors, suggestions",
+          "type": "string",
+          "examples": ["resp, err := c.do(context.Background(), req)"]
+        },
+        "anchors": {
+          "title": "Where the finding applies",
+          "description": "Zero or more locations the finding applies to, each a repository-relative path with an optional line or line span, read at the document ref. A list, because one finding can occur at four call sites — that is one comment with four anchors, not four comments. Architectural findings with no single location may carry none, but the array is required and empty is the way to say so. Anchors describe where the problem is; where a fix lands and how far it reaches is the suggestion's scope, and the two are frequently different. Anchors are checked against the repository: a path or line that does not exist at the document ref is an error, not an advisory.",
+          "$comment": "related: file, line, ref, scope",
+          "type": "array",
+          "items": { "$ref": "#/$defs/anchor" }
+        },
+        "suggestions": {
+          "title": "Proposed fixes",
+          "description": "Zero or more competing ways to address the finding, each with its effort, its blast radius, its pros and its cons. A list because the useful case is offering a choice: \"patch this call site\" and \"make the mistake unexpressible at the type level\" answer the same finding at different cost and different risk, and a reviewer presenting one has quietly made the orchestrator's decision for it. Required, and may be empty — but a comment at priority 7 or above with no suggestions raises suggestion-absent, and a comment whose only suggestion is module or project scope raises broad-scope-alone.",
+          "$comment": "related: effort, scope, pros, cons",
+          "type": "array",
+          "items": { "$ref": "#/$defs/suggestion" }
+        }
+      }
+    },
+    "anchor": {
+      "title": "Anchor",
+      "description": "Where a comment applies.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file"],
+      "properties": {
+        "file": {
+          "title": "File path",
+          "description": "A repository-relative POSIX path: no leading slash, no .. segment, no backslashes. internal/fetch/client.go, never /home/me/repo/internal/fetch/client.go and never ../other/client.go. The path is checked against the repository at the document ref, so a file that does not exist there is an error naming the ref it was looked up in.",
+          "$comment": "related: line, ref, anchor-path-safe",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/\\\\][^\\\\]*$",
+          "examples": ["internal/fetch/client.go"]
+        },
+        "line": {
+          "title": "Line number",
+          "description": "1-indexed line the comment applies to. Omit for a file-level comment — an anchor with only a file is valid and is the right shape for \"this file needs a test\". The number is verified against the file at the document ref, so it must be a line that exists there; a plausible-looking line number is exactly the error this format exists to catch. A line in a document with no ref raises ref-missing, because nobody can ever check it.",
+          "$comment": "related: end_line, file, ref",
+          "type": "integer",
+          "minimum": 1,
+          "examples": [88]
+        },
+        "end_line": {
+          "title": "Span end",
+          "description": "1-indexed inclusive last line of the span. Requires line and must be greater than or equal to it; end_line without line, or before it, is a structural error (anchor-range-ordered). Omit for a single-line anchor rather than repeating line. Note the underscore: end-line is rejected, because a permissive schema would drop the misspelling silently and leave a review claiming a one-line span the reviewer never meant.",
+          "$comment": "related: line, anchor-range-ordered",
+          "type": "integer",
+          "minimum": 1,
+          "examples": [94]
+        }
+      }
+    },
+    "suggestion": {
+      "title": "Suggestion",
+      "description": "One proposed way to address a comment.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "effort", "scope", "pros", "cons"],
+      "properties": {
+        "summary": {
+          "title": "Suggestion summary",
+          "description": "What to do, in one sentence, 10-500 characters. Name the change and where it goes — \"pass the caller's context straight through to c.do\" — rather than restating the finding. This is the field an orchestrator reads when choosing between competing suggestions, so two suggestions on one comment should be distinguishable from their summaries alone. The optional code field shows the result; the summary says what the move is.",
+          "$comment": "related: effort, scope, comments.suggestions.code",
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 500,
+          "examples": ["Pass the caller's context straight through to c.do"]
+        },
+        "effort": {
+          "title": "Level of effort",
+          "description": "How much work the suggestion is, as one of four buckets. trivial — a line or two, no design decision, no new tests. small — contained in one function or file, under an hour. medium — spans several files or needs a design choice, under a day. large — structural change, migration, or new subsystem. An ordinal enum rather than a number because effort estimates from a model are not precise enough to justify a 1-10 scale. Effort is independent of scope, and keeping them apart is the point: one shared constant is trivial effort with project blast radius.",
+          "$comment": "related: scope, suggestions",
+          "type": "string",
+          "enum": ["trivial", "small", "medium", "large"],
+          "examples": ["trivial"]
+        },
+        "scope": {
+          "title": "Blast radius",
+          "description": "How far applying this suggestion reaches — what else has to be re-read, re-tested or re-approved. line: a line or a few adjacent lines, nothing beyond them. block: one function, method or type body, callers unaffected. file: structure within one file, the package's exported surface unchanged. module: several files, or a package's exported surface, so other packages must adapt. project: architecture, conventions, tooling or a public API; repository-wide. A property of the fix, not of the finding — the same finding can be answered at several radii, which is why scope sits here and not on the comment. A lone module or project suggestion raises broad-scope-alone.",
+          "$comment": "related: effort, broad-scope-alone",
+          "type": "string",
+          "enum": ["line", "block", "file", "module", "project"],
+          "examples": ["line"]
+        },
+        "pros": {
+          "title": "Upsides",
+          "description": "Why this option is worth taking, one string per point. Required; may be empty, but an empty list raises suggestion-no-pros. Say what this option buys that the alternatives do not — \"cancellation propagates immediately\", \"makes the deadline impossible to drop rather than fixing one site\" — since the value of listing several suggestions is that a consumer can tell them apart.",
+          "$comment": "related: cons, suggestions",
+          "type": "array",
+          "items": { "type": "string" },
+          "examples": [["Cancellation and deadlines propagate immediately"]]
+        },
+        "cons": {
+          "title": "Downsides",
+          "description": "What this option costs or risks, one string per point. Required; may be empty, but an empty list raises suggestion-no-cons, and an empty list on a module or project suggestion also raises broad-scope-no-cons. A suggestion with no stated downside is either trivially correct or under-examined, and the difference matters to whoever has to choose. If the fix really is free, an empty list plus the advisory is the honest record; reaching module or project scope is never free.",
+          "$comment": "related: pros, broad-scope-no-cons",
+          "type": "array",
+          "items": { "type": "string" },
+          "examples": [["Breaks the exported signature; every caller must be updated"]]
+        },
+        "code": {
+          "title": "Resulting code",
+          "description": "An optional illustrative excerpt of the code as this suggestion would leave it — the after to the comment's before. It lives on the suggestion rather than the comment because competing suggestions produce different code: a line-scope option rewrites the call site where a module-scope option answering the same finding changes the exported signature. One before, several afters, and a consumer choosing between them can see the difference without opening a file. Soft, exactly like the comment's excerpt: no line numbers, no fences, matched against nothing, verified by nothing. Truncate and elide freely. It is not a patch and must never be applied as one.",
+          "$comment": "related: comments.code, comments.suggestions.summary",
+          "type": "string",
+          "examples": ["resp, err := c.do(ctx, req)"]
+        }
+      }
+    }
+  }
+}

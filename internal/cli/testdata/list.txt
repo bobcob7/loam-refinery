@@ -1,0 +1,11 @@
+field  anchors, body, category, comments, comments.code,
+       comments.suggestions.code, comments.suggestions.summary, cons, effort,
+       end_line, field:summary, file, id, line, priority, pros, ref, scope,
+       suggestions, verdict, version
+check  schema, id-unique, anchor-range-ordered, anchor-path-safe, ref-format,
+       ref-unknown, anchor-file-missing, anchor-line-out-of-range, id-grouping,
+       ref-missing, body-thin, vacuous-body, suggestion-absent,
+       suggestion-no-cons, suggestion-no-pros, broad-scope-alone,
+       broad-scope-no-cons, summary-thin, priority-category-convention,
+       priority-flat, duplicate-anchor, duplicate-body, comment-flood
+topic  effort-vs-scope, ids, tiers, verification

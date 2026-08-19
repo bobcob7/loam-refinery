@@ -1,0 +1,58 @@
+{
+  "valid": false,
+  "strict": false,
+  "verification": {
+    "source": "repo",
+    "anchors": 7,
+    "verified": 6
+  },
+  "counts": {
+    "comments": 6,
+    "errors": 2,
+    "advisories": 2,
+    "skipped": 2
+  },
+  "skipped": [
+    {
+      "name": "priority-flat",
+      "reason": "2 comments have unusable priority"
+    },
+    {
+      "name": "comment-flood",
+      "reason": "2 comments have unusable priority"
+    }
+  ],
+  "diagnostics": [
+    {
+      "severity": "error",
+      "name": "anchor-file-missing",
+      "comment": "dropped-context-1",
+      "path": "/comments/0/anchors/0/file",
+      "message": "internal/fetch/client.go does not exist at 4f2c1a9"
+    },
+    {
+      "severity": "error",
+      "name": "schema",
+      "path": "/comments/1/priority",
+      "message": "12 is greater than the maximum of 10"
+    },
+    {
+      "severity": "advisory",
+      "name": "suggestion-no-cons",
+      "comment": "dropped-context-1",
+      "path": "/comments/0/suggestions/0/cons",
+      "message": "suggestion 1 (\"Pass the caller's context straight through\") lists no cons; state the tradeoff or say the fix is free"
+    },
+    {
+      "severity": "advisory",
+      "name": "priority-flat",
+      "message": "all 6 comments are priority 7; the scale is not being used"
+    }
+  ],
+  "lenses": [
+    "anchor-file-missing",
+    "priority",
+    "suggestion-no-cons",
+    "priority-flat"
+  ]
+}

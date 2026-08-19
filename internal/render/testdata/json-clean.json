@@ -1,0 +1,17 @@
+{
+  "valid": true,
+  "strict": false,
+  "verification": {
+    "source": "repo",
+    "anchors": 5,
+    "verified": 5
+  },
+  "counts": {
+    "comments": 5,
+    "errors": 0,
+    "advisories": 0,
+    "skipped": 0
+  },
+  "skipped": [],
+  "diagnostics": []
+}

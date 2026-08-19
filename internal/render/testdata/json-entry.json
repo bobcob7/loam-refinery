@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "name": "priority",
+      "namespace": "field",
+      "title": "Priority",
+      "body": "Integer 1-10, higher is more urgent.\n\n  before: 12\n  after:  9",
+      "example": "9",
+      "related": [
+        "category",
+        "id"
+      ],
+      "provider": ""
+    }
+  ]
+}

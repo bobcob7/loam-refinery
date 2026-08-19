@@ -1,0 +1,58 @@
+{
+  "version": "1",
+  "verdict": "request_changes",
+  "ref": "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d",
+  "summary": "The retry loop is sound, but the context deadline is not propagated to the downstream call.",
+  "comments": [
+    {
+      "id": "dropped-context-1",
+      "priority": 9,
+      "category": "correctness",
+      "body": "The retry loop calls c.do(context.Background(), req) rather than passing the caller's ctx, so a cancelled request keeps retrying.",
+      "anchors": [
+        {
+          "file": "internal/fetch/client.go",
+          "line": 88,
+          "end-line": 94
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Pass the caller's context straight through",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Deadlines propagate immediately"
+          ],
+          "cons": [
+            "Callers see a behaviour change"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "untested-cancellation-1",
+      "priority": 5,
+      "category": "testing",
+      "body": "No test covers cancellation mid-retry, which is why the dropped context above went unnoticed at review time.",
+      "anchors": [
+        {
+          "file": "internal/fetch/client_test.go"
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Add a case that cancels after the first attempt",
+          "effort": "small",
+          "scope": "file",
+          "pros": [
+            "Pins the behaviour"
+          ],
+          "cons": [
+            "Needs a controllable clock"
+          ]
+        }
+      ]
+    }
+  ]
+}

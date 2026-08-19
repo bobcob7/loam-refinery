@@ -1,0 +1,49 @@
+A review document is one JSON object. Unknown fields are rejected.
+
+root
+  version   "1"
+  verdict   approve | request_changes | comment
+  summary   1-3 sentences, 30-1500 chars
+  ref       40-char lowercase commit SHA; optional, read by every anchor
+  comments  array; empty only when verdict is approve
+
+comment
+  id           kebab slug + number, e.g. missing-context-2; unique
+  priority     1-10: 9-10 blocks, 7-8 should fix, 4-6 worth fixing, 1-3 optional
+  category     correctness | security | performance | maintainability | testing
+               | documentation | style
+  body         the finding and its rationale, 20-4000 chars
+  code         optional excerpt of the problem; soft
+  anchors      array of { file, line?, end_line? }; may be empty
+  suggestions  array; may be empty
+
+suggestion
+  summary  what to do, one sentence, 10-500 chars
+  effort   trivial | small | medium | large        — how much work
+  scope    line | block | file | module | project  — blast radius
+  pros     array of strings
+  cons     array of strings
+  code     optional excerpt of the fix; soft
+
+{"version":"1","verdict":"request_changes","ref":"<40 hex>","summary":"The retry
+loop drops the caller's deadline.","comments":[{"id":"dropped-context-1",
+"priority":9,"category":"correctness","body":"c.do is called with
+context.Background(), so a cancelled request keeps retrying.","anchors":
+[{"file":"internal/fetch/client.go","line":88,"end_line":94}],"suggestions":
+[{"summary":"Pass the caller's ctx through to c.do","effort":"trivial",
+"scope":"line","pros":["Deadlines propagate"],"cons":["Callers see a change"]}]
+}]}
+
+refinery describe --lens=NAME opens any name below.
+
+field  anchors, body, category, comments, comments.code,
+       comments.suggestions.code, comments.suggestions.summary, cons, effort,
+       end_line, field:summary, file, id, line, priority, pros, ref, scope,
+       suggestions, verdict, version
+check  schema, id-unique, anchor-range-ordered, anchor-path-safe, ref-format,
+       ref-unknown, anchor-file-missing, anchor-line-out-of-range, id-grouping,
+       ref-missing, body-thin, vacuous-body, suggestion-absent,
+       suggestion-no-cons, suggestion-no-pros, broad-scope-alone,
+       broad-scope-no-cons, summary-thin, priority-category-convention,
+       priority-flat, duplicate-anchor, duplicate-body, comment-flood
+topic  effort-vs-scope, ids, tiers, verification

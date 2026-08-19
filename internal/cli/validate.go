@@ -1,0 +1,106 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+
+	"github.com/bobcob7/refinery/internal/validate"
+)
+
+const validateUsage = `usage: refinery validate [path] [--strict] [--warn-only=NAME,...] [--disable=NAME,...] [--format text|json]
+`
+
+// validate checks one review document. Every check runs: a failure in one tier
+// never gates the next, so one call reports everything findable.
+func (a *App) validate(ctx context.Context, args []string) int {
+	set := a.flagSet("validate", validateUsage)
+	strict := set.Bool("strict", false, "treat advisories as errors")
+	warnOnly := set.String("warn-only", "", "demote the named verification checks")
+	disable := set.String("disable", "", "skip the named advisories")
+	format := set.String("format", "text", "output format: text or json")
+	if err := set.Parse(args); err != nil {
+		return usageOrHelp(err)
+	}
+	renderer, err := a.renderer(*format)
+	if err != nil {
+		a.fail(err)
+		return ExitUsage
+	}
+	if set.NArg() > 1 {
+		a.fail(fmt.Errorf("validate takes at most one path"))
+		return ExitUsage
+	}
+	options := validate.Options{Strict: *strict, Dir: a.dir}
+	if options.Disabled, err = a.checkNames(*disable, "--disable", a.names.Advisory, isSet(set, "disable")); err != nil {
+		a.fail(err)
+		return ExitUsage
+	}
+	if options.WarnOnly, err = a.checkNames(*warnOnly, "--warn-only", a.names.Verification, isSet(set, "warn-only")); err != nil {
+		a.fail(err)
+		return ExitUsage
+	}
+	source, err := a.read(set.Arg(0))
+	if err != nil {
+		a.fail(err)
+		return ExitUsage
+	}
+	result, err := a.validator.Validate(ctx, source, options)
+	if err != nil {
+		a.fail(err)
+		return ExitUsage
+	}
+	if err := renderer.Result(a.stdout, a.stderr, result); err != nil {
+		a.fail(err)
+		return ExitUsage
+	}
+	if result.Valid {
+		return ExitValid
+	}
+	return ExitInvalid
+}
+
+// checkNames validates a comma-separated list of check names against the tier
+// that accepts them. A typo is a usage error rather than a silent no-op.
+func (a *App) checkNames(value, flagName string, allowed []string, given bool) (map[string]bool, error) {
+	if !given {
+		return nil, nil
+	}
+	names, err := splitNames(value)
+	if err != nil {
+		return nil, fmt.Errorf("%s needs at least one check name", flagName)
+	}
+	selected := map[string]bool{}
+	for _, name := range names {
+		switch {
+		case contains(allowed, name):
+			selected[name] = true
+		case contains(a.names.Structural, name):
+			return nil, fmt.Errorf("%s: structural checks cannot be disabled or demoted (%s)", flagName, name)
+		case contains(a.names.Advisory, name):
+			return nil, fmt.Errorf("%s: %s is an advisory; advisories never fail a run, use --disable to silence it", flagName, name)
+		case contains(a.names.Verification, name):
+			return nil, fmt.Errorf("%s: %s is a verification check; it cannot be disabled, use --warn-only to demote it", flagName, name)
+		default:
+			return nil, fmt.Errorf("%s: unknown check %q", flagName, name)
+		}
+	}
+	return selected, nil
+}
+
+// read takes the document from a path, or from stdin for "-" and no path.
+func (a *App) read(path string) ([]byte, error) {
+	if path == "" || path == "-" {
+		source, err := io.ReadAll(a.stdin)
+		if err != nil {
+			return nil, fmt.Errorf("reading stdin: %w", err)
+		}
+		return source, nil
+	}
+	source, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	return source, nil
+}
