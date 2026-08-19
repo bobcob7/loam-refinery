@@ -1,4 +1,0 @@
-VALID  5 comments, 0 advisories, 3 skipped  [anchors unverified: not a git repository]
-
-skipped  ref-unknown, anchor-file-missing, anchor-line-out-of-range (not a git
-         repository)

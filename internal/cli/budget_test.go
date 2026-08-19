@@ -44,8 +44,8 @@ func TestCommandsStayWithinBudget(t *testing.T) {
 		budget int
 	}{
 		{name: "prime", args: []string{"prime"}, golden: "prime.txt", budget: 250},
-		{name: "describe", args: []string{"describe"}, golden: "describe.txt", budget: 625},
-		{name: "describe --list", args: []string{"describe", "--list"}, golden: "list.txt", budget: 200},
+		{name: "describe", args: []string{"describe"}, golden: "describe.txt", budget: 800},
+		{name: "describe --list", args: []string{"describe", "--list"}, golden: "list.txt", budget: 325},
 		{name: "schema", args: []string{"schema"}, budget: 1000},
 		{name: "schema --annotated", args: []string{"schema", "--annotated"}, budget: 5000},
 	}
@@ -64,7 +64,7 @@ func TestCommandsStayWithinBudget(t *testing.T) {
 
 func TestEveryLensStaysWithinBudget(t *testing.T) {
 	t.Parallel()
-	const budget = 250
+	const budget = 350
 	rendered := &strings.Builder{}
 	for _, name := range lensNames(t) {
 		out := runReal(t, "describe", "--lens="+name)
@@ -122,7 +122,6 @@ func runReal(t *testing.T, args ...string) string {
 	app := New(
 		&documentValidatorMock{},
 		realRegistry(t),
-		render.NewText(),
 		render.NewJSON(),
 		CheckNames{},
 		Build{Version: "test", Commit: "test", Schema: schema.Version()},

@@ -1,0 +1,8 @@
+{
+  "summary": "A review document is one JSON object.\n",
+  "index": {
+    "field": [
+      "priority"
+    ]
+  }
+}

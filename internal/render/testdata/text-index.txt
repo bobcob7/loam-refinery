@@ -1,2 +1,0 @@
-field  priority, category
-check  id-unique

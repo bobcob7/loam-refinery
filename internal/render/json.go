@@ -133,6 +133,19 @@ func (j *JSON) Index(w io.Writer, groups []entry.Group) error {
 	}{Index: index})
 }
 
+// Summary writes the document-shape prose and the lens index together, which
+// is what describe with no arguments has to say.
+func (j *JSON) Summary(w io.Writer, text string, groups []entry.Group) error {
+	index := map[string][]string{}
+	for _, group := range groups {
+		index[string(group.Namespace)] = group.Names
+	}
+	return write(w, struct {
+		Summary string              `json:"summary"`
+		Index   map[string][]string `json:"index"`
+	}{Summary: text, Index: index})
+}
+
 func write(w io.Writer, payload any) error {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")

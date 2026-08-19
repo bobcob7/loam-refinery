@@ -7,10 +7,9 @@ The loop:
 1. Write the review.
 2. refinery validate review.json   (- or no path reads stdin)
 3. Exit 0 — done. Exit 2 — the invocation is wrong, not the review.
-4. Exit 1 — every diagnostic names a check. Run
-   refinery describe --lens=<check-name> for the ones you do not understand,
-   fix, validate again. A failed run ends with that command already assembled:
-   copy it, do not recall it.
+4. Exit 1 — the JSON names a check per diagnostic and lists the ones worth
+   opening in "lenses". Run refinery describe --lens=<name> for those you
+   do not understand, fix, validate again. Read lenses, do not recall them.
 5. Unsure about a field? refinery describe --lens=<field>.
    Never guess at an enum or a scale.
 

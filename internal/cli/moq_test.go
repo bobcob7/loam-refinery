@@ -109,6 +109,9 @@ var _ renderer = &rendererMock{}
 //			ResultFunc: func(stdout io.Writer, stderr io.Writer, result *review.Result) error {
 //				panic("mock out the Result method")
 //			},
+//			SummaryFunc: func(w io.Writer, text string, groups []entry.Group) error {
+//				panic("mock out the Summary method")
+//			},
 //		}
 //
 //		// use mockedrenderer in code that requires renderer
@@ -124,6 +127,9 @@ type rendererMock struct {
 
 	// ResultFunc mocks the Result method.
 	ResultFunc func(stdout io.Writer, stderr io.Writer, result *review.Result) error
+
+	// SummaryFunc mocks the Summary method.
+	SummaryFunc func(w io.Writer, text string, groups []entry.Group) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -150,10 +156,20 @@ type rendererMock struct {
 			// Result is the result argument value.
 			Result *review.Result
 		}
+		// Summary holds details about calls to the Summary method.
+		Summary []struct {
+			// W is the w argument value.
+			W io.Writer
+			// Text is the text argument value.
+			Text string
+			// Groups is the groups argument value.
+			Groups []entry.Group
+		}
 	}
 	lockEntries sync.RWMutex
 	lockIndex   sync.RWMutex
 	lockResult  sync.RWMutex
+	lockSummary sync.RWMutex
 }
 
 // Entries calls EntriesFunc.
@@ -265,6 +281,46 @@ func (mock *rendererMock) ResultCalls() []struct {
 	mock.lockResult.RLock()
 	calls = mock.calls.Result
 	mock.lockResult.RUnlock()
+	return calls
+}
+
+// Summary calls SummaryFunc.
+func (mock *rendererMock) Summary(w io.Writer, text string, groups []entry.Group) error {
+	if mock.SummaryFunc == nil {
+		panic("rendererMock.SummaryFunc: method is nil but renderer.Summary was just called")
+	}
+	callInfo := struct {
+		W      io.Writer
+		Text   string
+		Groups []entry.Group
+	}{
+		W:      w,
+		Text:   text,
+		Groups: groups,
+	}
+	mock.lockSummary.Lock()
+	mock.calls.Summary = append(mock.calls.Summary, callInfo)
+	mock.lockSummary.Unlock()
+	return mock.SummaryFunc(w, text, groups)
+}
+
+// SummaryCalls gets all the calls that were made to Summary.
+// Check the length with:
+//
+//	len(mockedrenderer.SummaryCalls())
+func (mock *rendererMock) SummaryCalls() []struct {
+	W      io.Writer
+	Text   string
+	Groups []entry.Group
+} {
+	var calls []struct {
+		W      io.Writer
+		Text   string
+		Groups []entry.Group
+	}
+	mock.lockSummary.RLock()
+	calls = mock.calls.Summary
+	mock.lockSummary.RUnlock()
 	return calls
 }
 
