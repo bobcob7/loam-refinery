@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/bobcob7/refinery/internal/verify"
+	"github.com/bobcob7/loam-refinery/internal/verify"
 )
 
 // GitFinder discovers the git repository containing the working directory.

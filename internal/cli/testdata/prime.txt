@@ -1,21 +1,21 @@
-refinery checks a review document — one JSON object: a verdict, a summary, and
-comments carrying an id you choose, a priority, a category, a body, anchors,
-and competing suggestions.
+loam-refinery checks a review document — one JSON object: a verdict, a
+summary, and comments carrying an id you choose, a priority, a category, a
+body, anchors, and competing suggestions.
 
 The loop:
 
 1. Write the review.
-2. refinery validate review.json   (- or no path reads stdin)
+2. loam-refinery validate review.json   (- or no path reads stdin)
 3. Exit 0 — done. Exit 2 — the invocation is wrong, not the review.
 4. Exit 1 — the JSON names a check per diagnostic and lists the ones worth
-   opening in "lenses". Pass them together, refinery describe --lens=a,b,c,
-   for those you do not understand. Read lenses, do not recall them.
-5. Unsure about a field? refinery describe --lens=<field>.
-   Never guess at an enum or a scale.
+   opening in "lenses". Run loam-refinery describe --lens=a,b,c on those
+   you do not understand, fix, validate again.
+5. Unsure about a field? Same command, --lens=<field>. Never guess at an
+   enum or a scale.
 
-refinery describe          the document shape, enough to write one
-refinery describe --list   every name it can explain
-refinery schema            JSON Schema — for machines, not for learning
+loam-refinery describe          the document shape, enough to write one
+loam-refinery describe --list   every name it can explain
+loam-refinery schema            JSON Schema — for machines, not for learning
 
-Advisories report review quality and never fail the run; structural errors and
-anchors that point nowhere do.
+Advisories report review quality and never fail the run; structural errors
+and anchors that point nowhere do.

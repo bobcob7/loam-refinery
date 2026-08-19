@@ -3,8 +3,8 @@ package entry
 import (
 	"testing"
 
-	"github.com/bobcob7/refinery/internal/review"
-	"github.com/bobcob7/refinery/internal/schema"
+	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

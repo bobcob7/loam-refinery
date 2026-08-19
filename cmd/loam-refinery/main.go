@@ -1,4 +1,4 @@
-// Command refinery checks a review document: is it well-formed, and where does
+// Command loam-refinery checks a review document: is it well-formed, and where does
 // it fall short of being worth acting on.
 package main
 
@@ -10,15 +10,15 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/bobcob7/refinery/internal/advisory"
-	"github.com/bobcob7/refinery/internal/cli"
-	"github.com/bobcob7/refinery/internal/entry"
-	"github.com/bobcob7/refinery/internal/render"
-	"github.com/bobcob7/refinery/internal/review"
-	"github.com/bobcob7/refinery/internal/schema"
-	"github.com/bobcob7/refinery/internal/structural"
-	"github.com/bobcob7/refinery/internal/validate"
-	"github.com/bobcob7/refinery/internal/verify"
+	"github.com/bobcob7/loam-refinery/internal/advisory"
+	"github.com/bobcob7/loam-refinery/internal/cli"
+	"github.com/bobcob7/loam-refinery/internal/entry"
+	"github.com/bobcob7/loam-refinery/internal/render"
+	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/schema"
+	"github.com/bobcob7/loam-refinery/internal/structural"
+	"github.com/bobcob7/loam-refinery/internal/validate"
+	"github.com/bobcob7/loam-refinery/internal/verify"
 )
 
 // version is set at build time with -ldflags.
@@ -32,7 +32,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	log := newLogger(stderr)
 	app, err := wire(log, stdin, stdout, stderr)
 	if err != nil {
-		fmt.Fprintf(stderr, "refinery: %v\n", err)
+		fmt.Fprintf(stderr, "loam-refinery: %v\n", err)
 		return cli.ExitUsage
 	}
 	return app.Run(ctx, args)

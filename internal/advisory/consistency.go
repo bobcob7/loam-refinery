@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bobcob7/refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/review"
 )
 
 var idPattern = regexp.MustCompile(`^(.*)-([1-9][0-9]*)$`)

@@ -1,4 +1,4 @@
-module github.com/bobcob7/refinery
+module github.com/bobcob7/loam-refinery
 
 go 1.26.0
 

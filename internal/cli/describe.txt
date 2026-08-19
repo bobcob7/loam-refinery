@@ -34,4 +34,4 @@ context.Background(), so a cancelled request keeps retrying.","anchors":
 "scope":"line","pros":["Deadlines propagate"],"cons":["Callers see a change"]}]
 }]}
 
-refinery describe --lens=NAME opens any name below.
+loam-refinery describe --lens=NAME opens any name below.

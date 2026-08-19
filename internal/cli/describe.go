@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bobcob7/refinery/internal/entry"
+	"github.com/bobcob7/loam-refinery/internal/entry"
 )
 
 // isSet reports whether a flag was given, distinguishing --lens= from no --lens
@@ -25,7 +25,7 @@ func isSet(set *flag.FlagSet, name string) bool {
 //go:embed describe.txt
 var describeText string
 
-const describeUsage = `usage: refinery describe [--lens=NAME,...] [--list] [--format json]
+const describeUsage = `usage: loam-refinery describe [--lens=NAME,...] [--list] [--format json]
 `
 
 // describe explains the contract, disclosed progressively: the summary, one
@@ -100,7 +100,7 @@ func (a *App) resolveLenses(value string) ([]entry.Entry, int) {
 			// JSON object on the same stream as the prose above it, leaving
 			// neither parseable; the name of the command that prints it costs a
 			// caller one more call and keeps both streams honest.
-			a.fail(fmt.Errorf("unknown lens %q; refinery describe --list names every lens", unknown.Name))
+			a.fail(fmt.Errorf("unknown lens %q; loam-refinery describe --list names every lens", unknown.Name))
 			return nil, ExitUsage
 		case err != nil:
 			a.fail(err)

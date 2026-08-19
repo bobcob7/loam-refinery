@@ -13,7 +13,7 @@ var primeText string
 // prime teaches the workflow, not the contract. It is the one call that may be
 // pinned into a system prompt for a whole session, so it stays small.
 func (a *App) prime(args []string) int {
-	set := a.flagSet("prime", "usage: refinery prime\n")
+	set := a.flagSet("prime", "usage: loam-refinery prime\n")
 	if err := set.Parse(args); err != nil {
 		return usageOrHelp(err)
 	}

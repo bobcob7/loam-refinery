@@ -1,6 +1,6 @@
 package entry
 
-import "github.com/bobcob7/refinery/internal/review"
+import "github.com/bobcob7/loam-refinery/internal/review"
 
 // ChecksProvider contributes check:* entries straight from the check
 // registries, so a check is explainable the moment it is registered.

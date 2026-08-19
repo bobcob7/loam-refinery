@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/bobcob7/refinery/internal/review"
-	"github.com/bobcob7/refinery/internal/verify"
+	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/verify"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

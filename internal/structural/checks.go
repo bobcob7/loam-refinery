@@ -1,6 +1,6 @@
 package structural
 
-import "github.com/bobcob7/refinery/internal/review"
+import "github.com/bobcob7/loam-refinery/internal/review"
 
 // Checks returns the structural check registry: hard checks that decide whether
 // the input is a document at all. They cannot be disabled or demoted.
@@ -23,7 +23,7 @@ The usual causes are prose wrapped around the JSON, a fenced code block left
 in, and two documents concatenated into one stream. The message carries the
 decoder's own complaint, which names the byte offset:
 
-  refinery validate review.json
+  loam-refinery validate review.json
   invalid character 'h' looking for beginning of value
 
 This is a document to repair rather than a command line to fix, so it exits 1

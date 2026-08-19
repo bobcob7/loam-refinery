@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/bobcob7/refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/review"
 )
 
 var shaPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)

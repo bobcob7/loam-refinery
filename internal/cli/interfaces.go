@@ -4,9 +4,9 @@ import (
 	"context"
 	"io"
 
-	"github.com/bobcob7/refinery/internal/entry"
-	"github.com/bobcob7/refinery/internal/review"
-	"github.com/bobcob7/refinery/internal/validate"
+	"github.com/bobcob7/loam-refinery/internal/entry"
+	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/validate"
 )
 
 //go:generate moq -out moq_test.go . documentValidator renderer entryRegistry

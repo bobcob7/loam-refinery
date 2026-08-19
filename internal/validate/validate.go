@@ -10,8 +10,8 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/bobcob7/refinery/internal/review"
-	"github.com/bobcob7/refinery/internal/verify"
+	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/verify"
 )
 
 // Options are the per-run choices a caller makes with flags.

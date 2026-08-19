@@ -10,8 +10,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/bobcob7/refinery/internal/review"
-	"github.com/bobcob7/refinery/internal/structural"
+	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/structural"
 )
 
 // anchorChecks are the checks that need a resolved ref before they can run.

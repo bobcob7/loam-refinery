@@ -79,13 +79,13 @@ func New(
 	}
 }
 
-const usage = `refinery — check a review document
+const usage = `loam-refinery — check a review document
 
-  refinery prime                       the workflow, in one small call
-  refinery describe [--lens=NAME,...]  the contract, disclosed on demand
-  refinery validate [path]             check a review (- or omitted: stdin)
-  refinery schema [--annotated]        JSON Schema, for machines
-  refinery version
+  loam-refinery prime                       the workflow, in one small call
+  loam-refinery describe [--lens=NAME,...]  the contract, disclosed on demand
+  loam-refinery validate [path]             check a review (- or omitted: stdin)
+  loam-refinery schema [--annotated]        JSON Schema, for machines
+  loam-refinery version
 
 exit 0 valid, 1 revise the review, 2 fix the invocation
 `
@@ -129,7 +129,7 @@ func (a *App) flagSet(name, use string) *flag.FlagSet {
 }
 
 func (a *App) fail(err error) {
-	fmt.Fprintf(a.stderr, "refinery: %v\n", err)
+	fmt.Fprintf(a.stderr, "loam-refinery: %v\n", err)
 }
 
 // checkFormat accepts the one format there is. The flag outlived the choice it

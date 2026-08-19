@@ -1,8 +1,8 @@
-# refinery
+# loam-refinery
 
 Code review between agents only works if the feedback can be trusted, compared,
 and acted on — and there is otherwise no way to tell a real review from a hollow
-one. `refinery` exists to set that bar: it defines what a review has to deliver
+one. `loam-refinery` exists to set that bar: it defines what a review has to deliver
 to be worth acting on, and tells you whether a given review clears it. The goal
 is a review process that gets both more reliable and cheaper — where agents hand
 work to each other, and to humans, without anyone re-reading everything in
@@ -16,7 +16,7 @@ anchors go missing, a single vague suggestion arrives with no stated tradeoff,
 "LGTM" comes back as a substantive review. There is no cheap way to spot any of
 that, and no way to refer to one finding among twelve.
 
-`refinery` makes the contract explicit. A review is a JSON document: a verdict, a
+`loam-refinery` makes the contract explicit. A review is a JSON document: a verdict, a
 summary, and comments that each carry an ID, a numeric priority, a category,
 anchors, and competing suggestions — each with its level of effort, its blast
 radius, and its pros and cons. An embedded JSON Schema enforces the shape, and
@@ -39,17 +39,17 @@ errors for callers who want them to gate, but that's opt-in.
 ## Install
 
 ```sh
-go install github.com/bobcob7/refinery/cmd/refinery@latest
+go install github.com/bobcob7/loam-refinery/cmd/loam-refinery@latest
 ```
 
 ## Quickstart
 
-An agent asked to review code runs `refinery prime` — about 250 tokens teaching
-the loop, not the contract — then `refinery describe` for the document shape. It
+An agent asked to review code runs `loam-refinery prime` — about 250 tokens teaching
+the loop, not the contract — then `loam-refinery describe` for the document shape. It
 writes its review and checks it:
 
 ```sh
-refinery validate review.json
+loam-refinery validate review.json
 ```
 
 ```json
@@ -165,7 +165,7 @@ somewhere without a repository, verification is **skipped and reported as
 skipped** — `[anchors unverified: not a git repository]` — because a run that
 checked nothing must not look like a run that checked everything.
 
-`refinery` confirms an anchor points *somewhere*; it cannot tell you it points at
+`loam-refinery` confirms an anchor points *somewhere*; it cannot tell you it points at
 the *right* line, and it does not try — judging that means reading the code,
 which is the reviewer's job. What the SHA buys is that anyone else can:
 
@@ -181,12 +181,12 @@ with no cooperation from this tool and no state it had to keep.
 
 | Command | Purpose | ~Tokens |
 | --- | --- | --- |
-| `refinery prime` | The workflow: how to use the tool and when to reach for `describe` | 250 |
-| `refinery describe` | The contract in summary — enough to write a review | 600 |
-| `refinery describe --lens=NAME` | One field or one failed check, in full | 250 each |
-| `refinery describe --list` | Every name the binary can explain | 120 |
-| `refinery validate [path]` | Check a review (`-` or omitted reads stdin) | 15 clean |
-| `refinery schema` | Minimal JSON Schema, annotations stripped — for machines | 400 |
+| `loam-refinery prime` | The workflow: how to use the tool and when to reach for `describe` | 250 |
+| `loam-refinery describe` | The contract in summary — enough to write a review | 600 |
+| `loam-refinery describe --lens=NAME` | One field or one failed check, in full | 250 each |
+| `loam-refinery describe --list` | Every name the binary can explain | 120 |
+| `loam-refinery validate [path]` | Check a review (`-` or omitted reads stdin) | 15 clean |
+| `loam-refinery schema` | Minimal JSON Schema, annotations stripped — for machines | 400 |
 
 ## Progressive disclosure
 
@@ -206,7 +206,7 @@ what the tool can explain is free to grow — a planned knowledge base of review
 guidance arrives as `kb:*` entries under the same command, the same flag, and the
 same per-entry budget.
 
-`refinery schema` deliberately does *not* serve this path: it emits the minimal
+`loam-refinery schema` deliberately does *not* serve this path: it emits the minimal
 grammar for machines that need to validate or generate types. A model reading
 JSON Schema to learn what `priority` means is paying for structure to reach a
 sentence. `prime` says so.

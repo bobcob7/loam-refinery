@@ -17,5 +17,6 @@ stated cost, every comment at priority 9. Always run, never fatal. --strict
 promotes them, --disable silences named ones.
 
 Exit 0 is valid, exit 1 means revise the review, exit 2 means fix the
-invocation. Only document-unparseable gates the rest; otherwise one run reports everything
-findable, and checks that cannot run are listed as skipped, not passed.
+invocation. Only document-unparseable gates the rest; otherwise one run
+reports everything findable, and checks that cannot run are listed as
+skipped, not passed.

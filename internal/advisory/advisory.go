@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/bobcob7/refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/review"
 )
 
 // Advisory is one named soft check.

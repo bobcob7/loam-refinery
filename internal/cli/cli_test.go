@@ -13,11 +13,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bobcob7/refinery/internal/entry"
-	"github.com/bobcob7/refinery/internal/render"
-	"github.com/bobcob7/refinery/internal/review"
-	"github.com/bobcob7/refinery/internal/structural"
-	"github.com/bobcob7/refinery/internal/validate"
+	"github.com/bobcob7/loam-refinery/internal/entry"
+	"github.com/bobcob7/loam-refinery/internal/render"
+	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/structural"
+	"github.com/bobcob7/loam-refinery/internal/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -71,11 +71,11 @@ func TestRunDispatches(t *testing.T) {
 		stdout string
 		stderr string
 	}{
-		{name: "no arguments print usage", args: nil, code: ExitUsage, stderr: "refinery — check a review document"},
+		{name: "no arguments print usage", args: nil, code: ExitUsage, stderr: "loam-refinery — check a review document"},
 		{name: "an unknown command", args: []string{"lint"}, code: ExitUsage, stderr: `unknown command "lint"`},
-		{name: "help", args: []string{"--help"}, code: ExitValid, stdout: "refinery validate"},
-		{name: "prime", args: []string{"prime"}, code: ExitValid, stdout: "refinery describe --lens="},
-		{name: "version", args: []string{"version"}, code: ExitValid, stdout: "refinery 1.2.3\ncommit abc\nschema 1\n"},
+		{name: "help", args: []string{"--help"}, code: ExitValid, stdout: "loam-refinery validate"},
+		{name: "prime", args: []string{"prime"}, code: ExitValid, stdout: "loam-refinery describe --lens="},
+		{name: "version", args: []string{"version"}, code: ExitValid, stdout: "loam-refinery 1.2.3\ncommit abc\nschema 1\n"},
 		{name: "schema", args: []string{"schema"}, code: ExitValid, stdout: "minimal\n"},
 		{name: "annotated schema", args: []string{"schema", "--annotated"}, code: ExitValid, stdout: "annotated\n"},
 		{name: "a bad flag", args: []string{"validate", "--nope"}, code: ExitUsage},
@@ -129,7 +129,7 @@ func TestDescribeResolvesLenses(t *testing.T) {
 			name:   "an unknown lens prints the whole index",
 			args:   []string{"describe", "--lens=nonsense"},
 			code:   ExitUsage,
-			stderr: []string{`unknown lens "nonsense"`, "refinery describe --list"},
+			stderr: []string{`unknown lens "nonsense"`, "loam-refinery describe --list"},
 		},
 		{
 			name:   "an ambiguous lens prints the candidates alone",

@@ -26,8 +26,8 @@ the implementation.
 
 **Agents should not read this page.** It is the complete reference, written for
 people designing against the format. An agent writing a review gets the same
-material in the size it needs from `refinery describe`, and any single section here
-from `refinery describe --lens=<name>` — every field name and every check name below
+material in the size it needs from `loam-refinery describe`, and any single section here
+from `loam-refinery describe --lens=<name>` — every field name and every check name below
 is a valid lens. See [cli.md §2.2](cli.md#22-describe).
 
 ## 2. Concepts
@@ -102,7 +102,7 @@ state should **wrap** the document rather than decorate it:
 { "review": { "version": "1", ... }, "pipeline": { "attempt": 2 } }
 ```
 
-The review stays exactly what `refinery` validates, and the wrapper stays exactly
+The review stays exactly what `loam-refinery` validates, and the wrapper stays exactly
 what the pipeline owns. No extension namespace is reserved, because a reserved
 namespace is a slower way of arriving at the same wrapper with more ambiguity on
 the way.
@@ -201,7 +201,7 @@ optional, not absent — a review that carries line numbers with no ref anywhere
 raises `ref-missing` ([§11.3](#113-advisory-checks--soft)), because those line
 numbers cannot be verified by anyone, ever.
 
-`refinery` requires the `ref` to resolve before verifying anything. When it does
+`loam-refinery` requires the `ref` to resolve before verifying anything. When it does
 not, that is one `ref-unknown` error for the document, not one per anchor —
 nothing downstream is learned by repeating it.
 
@@ -312,7 +312,7 @@ the type level — same finding, different blast radius, and the orchestrator pi
 ## 8. Priority
 
 Integer, 1–10. Higher is more urgent. The bands below are the calibration
-reference `refinery prime` teaches; the value is stored as an integer so
+reference `loam-refinery prime` teaches; the value is stored as an integer so
 consumers can sort, threshold, and merge across reviewers without mapping enums.
 
 | Range | Meaning |
@@ -442,7 +442,7 @@ blocking band. See [§8.1](#81-priority-and-category).
 
 ## 11. Validity
 
-Every check name below is also a lens: `refinery describe --lens=id-unique` explains
+Every check name below is also a lens: `loam-refinery describe --lens=id-unique` explains
 one check, in isolation, well enough to fix it. That is the intended path when a
 review fails validation — the tables here are the index, not the explanation.
 
@@ -515,7 +515,7 @@ What they cannot check is whether the anchored line is the *right* line. A
 comment about a nil check that anchors a correct line number in the correct file,
 describing code that is not there, passes every check in this document.
 
-`refinery` does not close that gap, and should not try — deciding whether a
+`loam-refinery` does not close that gap, and should not try — deciding whether a
 comment describes the code it points at means reading and judging the code, which
 is the reviewer's job, not the referee's. What the format does is make the gap
 **auditable by ordinary git tooling**. Because a ref is an immutable commit SHA
@@ -529,7 +529,7 @@ git blame -L 88,94 4f2c1a9 -- internal/fetch/client.go
 
 That is the whole payoff of the ref restriction. Anyone — a person, a later
 agent, a CI job — can pull up precisely what the reviewer was looking at and
-judge the comment against it, with no cooperation from `refinery` and no state it
+judge the comment against it, with no cooperation from `loam-refinery` and no state it
 had to keep. A branch name would break this: the commands still run, they just
 answer a different question than the one the reviewer was asked.
 

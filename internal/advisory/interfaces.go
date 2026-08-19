@@ -1,6 +1,6 @@
 package advisory
 
-import "github.com/bobcob7/refinery/internal/review"
+import "github.com/bobcob7/loam-refinery/internal/review"
 
 // checkFunc is one advisory's implementation over a parsed document. It returns
 // the diagnostics it raised and the checks it could not run.
