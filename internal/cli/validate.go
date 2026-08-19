@@ -61,7 +61,7 @@ func (a *App) validate(ctx context.Context, args []string) int {
 		}
 		result = a.unparseable(err, *strict)
 	}
-	if err := a.renderer.Result(a.stdout, a.stderr, result); err != nil {
+	if err := a.renderer.Result(a.stdout, result); err != nil {
 		a.fail(err)
 		return ExitUsage
 	}

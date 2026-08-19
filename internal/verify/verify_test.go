@@ -781,8 +781,8 @@ func TestAPromisorItCannotReachDoesNotRefuteAnchors(t *testing.T) {
 	require.NotEmpty(t, skipped)
 }
 
-// The reason reaches a single-line status line, so it keeps git's first
-// sentence rather than its whole complaint.
+// The reason is read as one string, so it keeps git's first sentence rather
+// than its whole complaint.
 func TestAGitFailureReasonStaysOnOneLine(t *testing.T) {
 	t.Parallel()
 	failure := &gitError{
@@ -790,7 +790,7 @@ func TestAGitFailureReasonStaysOnOneLine(t *testing.T) {
 		stderr: "error: unable to open object pack directory: /x\nerror: again: /y\nfatal: could not get object info",
 		err:    refused(t, 128),
 	}
-	assert.NotContains(t, failure.Error(), "\n", "a multi-line reason breaks the status line it lands on")
+	assert.NotContains(t, failure.Error(), "\n", "a reason is one sentence, not a transcript")
 	assert.Contains(t, failure.Error(), "unable to open object pack directory")
 }
 

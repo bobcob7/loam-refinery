@@ -31,7 +31,7 @@ func TestJSONResult(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
-			require.NoError(t, NewJSON().Result(stdout, stderr, test.result))
+			require.NoError(t, NewJSON().Result(stdout, test.result))
 			assert.Empty(t, stderr.String(), "json output goes to stdout alone")
 			golden(t, test.golden+".json", stdout.String())
 		})
@@ -41,7 +41,7 @@ func TestJSONResult(t *testing.T) {
 func TestJSONAlwaysCarriesVerificationAndSkipped(t *testing.T) {
 	t.Parallel()
 	stdout := &bytes.Buffer{}
-	require.NoError(t, NewJSON().Result(stdout, &bytes.Buffer{}, clean()))
+	require.NoError(t, NewJSON().Result(stdout, clean()))
 	assert.Contains(t, stdout.String(), `"verification"`)
 	assert.Contains(t, stdout.String(), `"skipped": []`)
 	assert.NotContains(t, stdout.String(), `"lenses"`, "omitted when there are no diagnostics")
@@ -85,8 +85,8 @@ func TestAnAuthoredValueCannotForgeOutput(t *testing.T) {
 		Comment:  forged,
 		Message:  "a\nb",
 	}}}
-	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
-	require.NoError(t, NewJSON().Result(stdout, stderr, result))
+	stdout := &bytes.Buffer{}
+	require.NoError(t, NewJSON().Result(stdout, result))
 	assert.NotContains(t, stdout.String(), "forged-2\n", "a newline in an id must not survive as a newline")
 	assert.Contains(t, stdout.String(), `\nerror     anchor-file-missing`, "it survives escaped instead")
 	var payload struct {
@@ -157,4 +157,29 @@ func golden(t *testing.T, name, got string) {
 	want, err := os.ReadFile(path)
 	require.NoError(t, err, "run go test ./... -update to create %s", path)
 	assert.Equal(t, string(want), got)
+}
+
+// strict is the field that replaced the deleted status line's silence: under
+// --strict a run fails with zero errors, and only this says why.
+func TestStrictIsCarriedBesideValid(t *testing.T) {
+	t.Parallel()
+	stdout := &bytes.Buffer{}
+	require.NoError(t, NewJSON().Result(stdout, &review.Result{
+		Strict:      true,
+		Comments:    1,
+		Diagnostics: []review.Diagnostic{{Severity: review.SeverityAdvisory, Name: "body-thin", Message: "thin"}},
+	}))
+	var payload struct {
+		Valid  bool `json:"valid"`
+		Strict bool `json:"strict"`
+		Counts struct {
+			Errors     int `json:"errors"`
+			Advisories int `json:"advisories"`
+		} `json:"counts"`
+	}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &payload))
+	assert.True(t, payload.Strict, "a failing run with no errors is unreadable without this")
+	assert.False(t, payload.Valid)
+	assert.Zero(t, payload.Counts.Errors)
+	assert.Equal(t, 1, payload.Counts.Advisories)
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/bobcob7/refinery/internal/review"
 	"github.com/bobcob7/refinery/internal/schema"
 	"github.com/bobcob7/refinery/internal/structural"
+	"github.com/bobcob7/refinery/internal/validate"
 	"github.com/bobcob7/refinery/internal/verify"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,8 +46,8 @@ func TestCommandsStayWithinBudget(t *testing.T) {
 		budget int
 	}{
 		{name: "prime", args: []string{"prime"}, golden: "prime.txt", budget: 250},
-		{name: "describe", args: []string{"describe"}, golden: "describe.txt", budget: 800},
-		{name: "describe --list", args: []string{"describe", "--list"}, golden: "list.txt", budget: 325},
+		{name: "describe", args: []string{"describe"}, golden: "describe.txt", budget: 850},
+		{name: "describe --list", args: []string{"describe", "--list"}, golden: "list.txt", budget: 380},
 		{name: "schema", args: []string{"schema"}, budget: 1000},
 		{name: "schema --annotated", args: []string{"schema", "--annotated"}, budget: 5000},
 	}
@@ -60,6 +62,33 @@ func TestCommandsStayWithinBudget(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The validate rows in docs/cli.md 6.1 are the ones paid on every loop, and
+// were the only rows nothing measured — a limit nothing measures is a limit
+// that erodes, which is what the table above it says.
+func TestValidateStaysWithinBudget(t *testing.T) {
+	t.Parallel()
+	const (
+		cleanBudget         = 80
+		perDiagnosticBudget = 60
+	)
+	clean := `{"version":"1","verdict":"approve","summary":"The retry loop is sound and the deadline propagates to every call it makes.","comments":[]}`
+	out, code := runValidate(t, clean)
+	require.Equal(t, ExitValid, code, out)
+	assert.LessOrEqual(t, approxTokens(out), cleanBudget,
+		"a clean validate costs about %d tokens; its ceiling is %d", approxTokens(out), cleanBudget)
+	base := approxTokens(out)
+	flawed, code := runValidate(t, `{"version":"1","verdict":"comment","summary":"too short","comments":[]}`)
+	require.Equal(t, ExitInvalid, code, flawed)
+	var payload struct {
+		Diagnostics []struct{} `json:"diagnostics"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(flawed), &payload))
+	require.NotEmpty(t, payload.Diagnostics)
+	perDiagnostic := (approxTokens(flawed) - base) / len(payload.Diagnostics)
+	assert.LessOrEqual(t, perDiagnostic, perDiagnosticBudget,
+		"each diagnostic costs about %d tokens; the ceiling is %d", perDiagnostic, perDiagnosticBudget)
 }
 
 func TestEveryLensStaysWithinBudget(t *testing.T) {
@@ -116,6 +145,50 @@ func TestSchemaOutputIsValidJSON(t *testing.T) {
 
 // runReal drives the App wired exactly as main wires it, so the golden files
 // and the budgets measure what a caller actually gets.
+// runValidate runs a real validate over source on stdin and returns stdout with
+// its exit code, since validate is the one command whose cost depends on input.
+func runValidate(t *testing.T, source string) (string, int) {
+	t.Helper()
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+	app := New(
+		validate.New(structural.New(mustValidator(t), quietLog()), advisory.New(quietLog(), advisory.All()),
+			validate.NewGitFinder(quietLog()), quietLog()),
+		realRegistry(t),
+		render.NewJSON(),
+		CheckNames{},
+		Build{Version: "test", Commit: "test", Schema: schema.Version()},
+		func(bool) ([]byte, error) { return nil, nil },
+		gitDir(t),
+		strings.NewReader(source),
+		stdout,
+		stderr,
+		quietLog(),
+	)
+	code := app.Run(t.Context(), []string{"validate"})
+	return stdout.String(), code
+}
+
+// gitDir is a real repository, because the budget in docs/cli.md 6.1 is for the
+// loop an agent actually runs: inside the checkout it is reviewing. Outside one
+// the same document costs more, since every anchor check is reported skipped.
+func gitDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	cmd := exec.Command("git", "init", "--quiet")
+	cmd.Dir = dir
+	require.NoError(t, cmd.Run())
+	return dir
+}
+
+func quietLog() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }
+
+func mustValidator(t *testing.T) *schema.Validator {
+	t.Helper()
+	v, err := schema.NewValidator()
+	require.NoError(t, err)
+	return v
+}
+
 func runReal(t *testing.T, args ...string) string {
 	t.Helper()
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}

@@ -106,7 +106,7 @@ var _ renderer = &rendererMock{}
 //			IndexFunc: func(w io.Writer, groups []entry.Group) error {
 //				panic("mock out the Index method")
 //			},
-//			ResultFunc: func(stdout io.Writer, stderr io.Writer, result *review.Result) error {
+//			ResultFunc: func(w io.Writer, result *review.Result) error {
 //				panic("mock out the Result method")
 //			},
 //			SummaryFunc: func(w io.Writer, text string, groups []entry.Group) error {
@@ -126,7 +126,7 @@ type rendererMock struct {
 	IndexFunc func(w io.Writer, groups []entry.Group) error
 
 	// ResultFunc mocks the Result method.
-	ResultFunc func(stdout io.Writer, stderr io.Writer, result *review.Result) error
+	ResultFunc func(w io.Writer, result *review.Result) error
 
 	// SummaryFunc mocks the Summary method.
 	SummaryFunc func(w io.Writer, text string, groups []entry.Group) error
@@ -149,10 +149,8 @@ type rendererMock struct {
 		}
 		// Result holds details about calls to the Result method.
 		Result []struct {
-			// Stdout is the stdout argument value.
-			Stdout io.Writer
-			// Stderr is the stderr argument value.
-			Stderr io.Writer
+			// W is the w argument value.
+			W io.Writer
 			// Result is the result argument value.
 			Result *review.Result
 		}
@@ -245,23 +243,21 @@ func (mock *rendererMock) IndexCalls() []struct {
 }
 
 // Result calls ResultFunc.
-func (mock *rendererMock) Result(stdout io.Writer, stderr io.Writer, result *review.Result) error {
+func (mock *rendererMock) Result(w io.Writer, result *review.Result) error {
 	if mock.ResultFunc == nil {
 		panic("rendererMock.ResultFunc: method is nil but renderer.Result was just called")
 	}
 	callInfo := struct {
-		Stdout io.Writer
-		Stderr io.Writer
+		W      io.Writer
 		Result *review.Result
 	}{
-		Stdout: stdout,
-		Stderr: stderr,
+		W:      w,
 		Result: result,
 	}
 	mock.lockResult.Lock()
 	mock.calls.Result = append(mock.calls.Result, callInfo)
 	mock.lockResult.Unlock()
-	return mock.ResultFunc(stdout, stderr, result)
+	return mock.ResultFunc(w, result)
 }
 
 // ResultCalls gets all the calls that were made to Result.
@@ -269,13 +265,11 @@ func (mock *rendererMock) Result(stdout io.Writer, stderr io.Writer, result *rev
 //
 //	len(mockedrenderer.ResultCalls())
 func (mock *rendererMock) ResultCalls() []struct {
-	Stdout io.Writer
-	Stderr io.Writer
+	W      io.Writer
 	Result *review.Result
 } {
 	var calls []struct {
-		Stdout io.Writer
-		Stderr io.Writer
+		W      io.Writer
 		Result *review.Result
 	}
 	mock.lockResult.RLock()

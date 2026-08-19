@@ -22,8 +22,8 @@ caller who cannot accept that: a merge gate whose whole purpose is confirming
 the line numbers are real, where a review nobody verified is worth no more than
 no review.
 
-The status line carries the cause: "not a git repository" means cd, and an
-unavailable source means the machine rather than the review. --warn-only on the
+The verification block carries the cause: "not a git repository" means cd, and
+an unavailable source means the machine rather than the review. --warn-only on the
 check that explains the gap excuses it — ref-unknown for a commit this checkout
 never had. Nothing excuses a file git could not read.`,
 			Related: []string{"ref-unknown", "anchor-file-missing", "tiers"},

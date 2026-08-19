@@ -52,24 +52,35 @@ writes its review and checks it:
 refinery validate review.json
 ```
 
-```
-VALID  6 comments, 3 advisories
-
-advisory  suggestion-no-cons        dropped-context-1
-          suggestion 1 ("Pass the caller's context straight through") lists no
-          cons; state the tradeoff or say the fix is free
-advisory  priority-flat
-          all 6 comments are priority 7; the scale is not being used
-advisory  id-grouping               missing-context-3
-          slug "missing-context" has suffixes 1, 3; renumber contiguously
-
-refinery describe --lens=suggestion-no-cons,priority-flat,id-grouping
+```json
+{
+  "valid": true,
+  "strict": false,
+  "verification": { "source": "repo", "anchors": 9, "verified": 9 },
+  "counts": { "comments": 6, "errors": 0, "advisories": 3, "skipped": 0 },
+  "skipped": [],
+  "diagnostics": [
+    {
+      "severity": "advisory",
+      "name": "suggestion-no-cons",
+      "comment": "dropped-context-1",
+      "path": "/comments/0/suggestions/0/cons",
+      "message": "suggestion 1 lists no cons; state the tradeoff or say the fix is free"
+    },
+    {
+      "severity": "advisory",
+      "name": "priority-flat",
+      "message": "all 6 comments are priority 7; the scale is not being used"
+    }
+  ],
+  "lenses": ["suggestion-no-cons", "priority-flat"]
+}
 ```
 
 Exit 0 — the review is usable, and the agent knows where it was sloppy. It does
 not have to remember what `broad-scope-alone` means, or re-read the contract to
-find out. The last line is runnable, and it is the only recovery path the agent
-needs.
+find out. `lenses` names what to open, so the recovery path is a field to read
+rather than a line to parse.
 
 ## Comment IDs
 

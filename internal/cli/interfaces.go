@@ -20,7 +20,7 @@ type documentValidator interface {
 // and one format: two of either is how the same run came to be described two
 // different ways, which is the defect this interface no longer permits.
 type renderer interface {
-	Result(stdout, stderr io.Writer, result *review.Result) error
+	Result(w io.Writer, result *review.Result) error
 	Entries(w io.Writer, entries []entry.Entry) error
 	Index(w io.Writer, groups []entry.Group) error
 	Summary(w io.Writer, text string, groups []entry.Group) error

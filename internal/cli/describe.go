@@ -96,10 +96,11 @@ func (a *App) resolveLenses(value string) ([]entry.Entry, int) {
 			fmt.Fprintf(a.stderr, "%s\n", strings.Join(ambiguous.Candidates, "\n"))
 			return nil, ExitUsage
 		case errors.As(err, &unknown):
-			a.fail(fmt.Errorf("unknown lens %q", unknown.Name))
-			if err := a.renderer.Index(a.stderr, a.registry.Index()); err != nil {
-				a.fail(err)
-			}
+			// The index used to be dumped here. With one format that would put a
+			// JSON object on the same stream as the prose above it, leaving
+			// neither parseable; the name of the command that prints it costs a
+			// caller one more call and keeps both streams honest.
+			a.fail(fmt.Errorf("unknown lens %q; refinery describe --list names every lens", unknown.Name))
 			return nil, ExitUsage
 		case err != nil:
 			a.fail(err)

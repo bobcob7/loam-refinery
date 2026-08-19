@@ -145,7 +145,7 @@ how a caller ends up reading about the wrong field.
 
 **A bare final segment resolves when exactly one field ends with it.** So
 `--lens=priority` and `--lens=effort` work, and are what a model will normally
-emit and what the pointer line prints. `--lens=code` does not: two fields end in
+emit and what `lenses` names. `--lens=code` does not: two fields end in
 `code`, so it exits 2 listing `comments.code` and `comments.suggestions.code`.
 Short where short is unambiguous, explicit where it is not.
 
@@ -160,7 +160,7 @@ callers that want to skip resolution entirely, and is what will keep a future
 
 **Aliases.** An entry may carry alternate names, and an alias resolves silently
 to its entry. This is the rename escape hatch: a lens name is API — it is printed
-in pointer lines, cached in agent memory across sessions, and written into
+in the `lenses` field, cached in agent memory across sessions, and written into
 prompts — so an entry that gets renamed keeps its old name as an alias rather
 than breaking callers. Aliases are not dropped.
 
@@ -284,7 +284,7 @@ require an argument to do it. Pointing `refinery` at a different repository is
 `cd`, which every caller already has and no caller has to be taught.
 
 When no repository can answer, verification is **skipped and reported as
-skipped**, with the reason on the status line. It is never silently passed: a
+skipped**, with the reason in `verification`. It is never silently passed: a
 run that verified nothing must not look like a run that verified everything, or
 the tier is worse than absent — it would license confidence it never earned.
 
@@ -486,17 +486,19 @@ nothing measures is a limit that erodes.
 | Call | Budget | Frequency |
 | --- | --- | --- |
 | `prime` | 250 | Once per session, often pinned into a system prompt |
-| `describe` | 800 | Once per session that writes a review |
+| `describe` | 850 | Once per session that writes a review |
 | `describe --lens=NAME` | 350 each | Only on uncertainty or a failed check |
-| `describe --list` | 325 | Rare; discovery and the unknown-lens error |
+| `describe --list` | 380 | Rare; discovery and the unknown-lens error |
 | `schema` | 1,000 | Rare; machine consumers only |
 | `schema --annotated` | 5,000 | Rare; codegen only |
 | `validate`, clean | 80 | Every attempt |
 | `validate`, per diagnostic | 60 | Every failed attempt |
 
-These are roughly a third higher than the text format they replaced — clean
-`validate` moved from 20 to 80, the largest lens from 250 to 350 — and that is
-the price of having one renderer rather than two. Two implementations of the
+These are higher than the text format they replaced. Measured over a
+realistic write-validate-fix cycle it is about **2.1x**; a clean `validate`
+alone is the worst case at roughly **4x**, 14 tokens to 63, because there is a
+floor to how small a JSON object can be and almost nothing to say. That is the
+price of having one renderer rather than two. Two implementations of the
 same result disagreed about what a run found three separate times, each
 disagreement invisible to a green suite because no fixture pinned the shape
 that differed; one of them let an author-supplied comment id forge diagnostic
@@ -505,7 +507,7 @@ that, and no second implementation can drift from it. `prime` is unchanged,
 because it was never rendered — it is prose written to be pinned into a prompt,
 and so is the `summary` field of `describe`.
 
-Verification adds wall-clock, not tokens: its output is the same status line
+Verification adds wall-clock, not tokens: its output is the same `verification` block
 either way. Because it runs by default, that cost is paid on every loop — object
 lookups against a local database, one per distinct file, since the whole document
 shares one `ref`.
@@ -659,13 +661,13 @@ Deliberately deferred, recorded so the design leaves room for them.
   act rather than for a document, and the reason entries come from providers
   ([§2.2.3](#223-the-entry-registry)) — a knowledge base is a fourth provider
   registering `kb:*` entries. No new subcommand, no new flag, no change to the
-  pointer line, and `--list` grows to show it.
+  `lenses` field, and `--list` grows to show it.
 
   Two things have to hold when it lands. Bare-name resolution must stay
   predictable, which is what the namespace precedence and the ambiguity error in
   [§2.2.1](#221-lens-names) are for. And per-entry budgets must survive contact
   with prose written by hand rather than generated from a schema — a knowledge
-  base is exactly where 250-token entries quietly become 900-token ones, so the
+  base is exactly where 350-token entries quietly become 900-token ones, so the
   budget tests apply to `kb:*` from its first entry.
 
   A project-supplied knowledge base — conventions read from the repository rather

@@ -129,7 +129,7 @@ func TestDescribeResolvesLenses(t *testing.T) {
 			name:   "an unknown lens prints the whole index",
 			args:   []string{"describe", "--lens=nonsense"},
 			code:   ExitUsage,
-			stderr: []string{`unknown lens "nonsense"`, "comments.suggestions.code"},
+			stderr: []string{`unknown lens "nonsense"`, "refinery describe --list"},
 		},
 		{
 			name:   "an ambiguous lens prints the candidates alone",
@@ -407,5 +407,37 @@ func TestRequireVerificationReachesTheValidatorAndDefaultsOff(t *testing.T) {
 			require.Equal(t, ExitValid, h.app.Run(t.Context(), test.args))
 			assert.Equal(t, test.want, got.RequireVerification)
 		})
+	}
+}
+
+// The one format left is still a decision, and a wrong --format has to fail the
+// same way on both commands that take it. Nothing else in the suite would
+// notice the flag being ignored entirely.
+func TestFormatAcceptsOnlyJSON(t *testing.T) {
+	t.Parallel()
+	for _, command := range []string{"validate", "describe"} {
+		for _, test := range []struct {
+			name   string
+			value  string
+			code   int
+			stderr string
+		}{
+			{name: "json", value: "json", code: -1},
+			{name: "text says where it went", value: "text", code: ExitUsage, stderr: "the text format is gone"},
+			{name: "another format is unknown", value: "yaml", code: ExitUsage, stderr: `unknown format "yaml"`},
+			{name: "empty is unknown", value: "", code: ExitUsage, stderr: `unknown format ""`},
+		} {
+			t.Run(command+"/"+test.name, func(t *testing.T) {
+				t.Parallel()
+				h := newHarness(t, `{"version":"1"}`)
+				code := h.app.Run(t.Context(), []string{command, "--format=" + test.value})
+				if test.code == -1 {
+					assert.NotEqual(t, ExitUsage, code, "json is the format that works")
+					return
+				}
+				assert.Equal(t, test.code, code)
+				assert.Contains(t, h.stderr.String(), test.stderr)
+			})
+		}
 	}
 }

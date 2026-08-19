@@ -8,8 +8,8 @@ The loop:
 2. refinery validate review.json   (- or no path reads stdin)
 3. Exit 0 — done. Exit 2 — the invocation is wrong, not the review.
 4. Exit 1 — the JSON names a check per diagnostic and lists the ones worth
-   opening in "lenses". Run refinery describe --lens=<name> for those you
-   do not understand, fix, validate again. Read lenses, do not recall them.
+   opening in "lenses". Pass them together, refinery describe --lens=a,b,c,
+   for those you do not understand. Read lenses, do not recall them.
 5. Unsure about a field? refinery describe --lens=<field>.
    Never guess at an enum or a scale.
 
