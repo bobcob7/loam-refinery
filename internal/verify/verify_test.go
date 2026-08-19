@@ -2,6 +2,7 @@ package verify
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -242,4 +243,41 @@ func TestAnAnchorWithAnUnreadableLineIsNotCountedAsVerified(t *testing.T) {
 	assert.Zero(t, verification.Verified, "a line that cannot be read was never range checked")
 	require.NotEmpty(t, skipped)
 	assert.Equal(t, "unusable field on 1 anchor", skipped[0].Reason)
+}
+
+// gitFailure is what a git that never ran looks like: not an *exec.ExitError,
+// so nothing about the repository was established.
+var gitFailure = errors.New("exec: \"git\": executable file not found in $PATH")
+
+func TestAFailedBlobReadIsSkippedNotReportedAsAZeroLineFile(t *testing.T) {
+	t.Parallel()
+	git := &gitRunnerMock{runFunc: func(_ context.Context, args ...string) ([]byte, error) {
+		switch {
+		case args[1] == "-t" && !strings.Contains(args[2], ":"):
+			return []byte("commit\n"), nil
+		case args[1] == "-t":
+			return []byte("blob\n"), nil
+		default:
+			return nil, gitFailure
+		}
+	}}
+	doc := document(t, absentSHA, []map[string]any{{"file": "a.go", "line": 12}})
+	diagnostics, skipped, verification := New(git, logger()).Verify(t.Context(), doc)
+	assert.Empty(t, diagnostics, "a git that could not answer says nothing about the review")
+	assert.Zero(t, verification.Verified)
+	require.NotEmpty(t, skipped)
+	assert.Equal(t, "git could not read the file for 1 anchor", skipped[0].Reason)
+}
+
+func TestAFailedRefLookupIsSkippedNotReportedAsRefUnknown(t *testing.T) {
+	t.Parallel()
+	git := &gitRunnerMock{runFunc: func(_ context.Context, _ ...string) ([]byte, error) {
+		return nil, gitFailure
+	}}
+	doc := document(t, absentSHA, []map[string]any{{"file": "a.go", "line": 12}})
+	diagnostics, skipped, verification := New(git, logger()).Verify(t.Context(), doc)
+	assert.Empty(t, diagnostics, "a ref that could not be looked up is not a ref that does not resolve")
+	assert.Equal(t, "none", verification.Source)
+	require.NotEmpty(t, skipped)
+	assert.Equal(t, "git could not resolve the document ref", skipped[0].Reason)
 }

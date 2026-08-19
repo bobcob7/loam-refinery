@@ -26,7 +26,19 @@ type Verifier struct {
 type fileState struct {
 	kind  string
 	lines int
+	// err is set when git failed to answer at all, which is a fact about this
+	// machine rather than about the review, and must not become a diagnostic.
+	err error
 }
+
+// outcome is what checking one anchor established.
+type outcome int
+
+const (
+	verified outcome = iota
+	refuted
+	unchecked
+)
 
 // New returns a Verifier reading the supplied repository.
 func New(git gitRunner, log *slog.Logger) *Verifier {
@@ -45,7 +57,16 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 		return nil, skips(reason), verification
 	}
 	ref := doc.Ref.Value
-	if !v.refExists(ctx, ref) {
+	exists, err := v.refExists(ctx, ref)
+	if err != nil {
+		v.log.Debug("ref lookup failed", "ref", short(ref), "error", err)
+		verification = review.Verification{Source: "none", Anchors: verification.Anchors, Reason: err.Error()}
+		if verification.Anchors == 0 {
+			return nil, nil, verification
+		}
+		return nil, skips("git could not resolve the document ref"), verification
+	}
+	if !exists {
 		diagnostic := review.Diagnostic{
 			Severity: review.SeverityError,
 			Name:     "ref-unknown",
@@ -58,7 +79,7 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 		return []review.Diagnostic{diagnostic}, skips("the document ref does not resolve"), verification
 	}
 	diagnostics := []review.Diagnostic{}
-	unusable := 0
+	unusable, unreadable := 0, 0
 	for _, comment := range doc.Comments {
 		for _, anchor := range comment.Anchors {
 			if !anchor.Object {
@@ -68,17 +89,23 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 				unusable++
 				continue
 			}
-			diagnostic, ok := v.checkAnchor(ctx, comment, anchor, ref)
-			if ok {
+			diagnostic, result := v.checkAnchor(ctx, comment, anchor, ref)
+			switch result {
+			case verified:
 				verification.Verified++
-				continue
+			case unchecked:
+				unreadable++
+			default:
+				diagnostics = append(diagnostics, diagnostic)
 			}
-			diagnostics = append(diagnostics, diagnostic)
 		}
 	}
 	skipped := []review.Skipped{}
 	if unusable > 0 {
-		skipped = skips(fmt.Sprintf("unusable field on %s", plural(unusable, "anchor")))
+		skipped = append(skipped, skips(fmt.Sprintf("unusable field on %s", plural(unusable, "anchor")))...)
+	}
+	if unreadable > 0 {
+		skipped = append(skipped, skips(fmt.Sprintf("git could not read the file for %s", plural(unreadable, "anchor")))...)
 	}
 	v.log.Debug("verification complete", "anchors", verification.Anchors, "verified", verification.Verified)
 	return diagnostics, skipped, verification
@@ -112,9 +139,12 @@ func (v *Verifier) refUsable(doc *review.Document) (string, bool) {
 	return "", true
 }
 
-func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anchor review.Anchor, ref string) (review.Diagnostic, bool) {
+func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anchor review.Anchor, ref string) (review.Diagnostic, outcome) {
 	file := anchor.File.Value
 	state := v.fileAt(ctx, ref, file)
+	if state.err != nil {
+		return review.Diagnostic{}, unchecked
+	}
 	switch state.kind {
 	case "":
 		return review.Diagnostic{
@@ -123,7 +153,7 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 			Comment:  commentID(comment),
 			Path:     anchor.Path + "/file",
 			Message:  fmt.Sprintf("%s does not exist at %s", file, short(ref)),
-		}, false
+		}, refuted
 	case "blob":
 	default:
 		return review.Diagnostic{
@@ -132,7 +162,7 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 			Comment:  commentID(comment),
 			Path:     anchor.Path + "/file",
 			Message:  fmt.Sprintf("%s is a directory at %s, not a file", file, short(ref)),
-		}, false
+		}, refuted
 	}
 	for _, candidate := range []struct {
 		name  string
@@ -148,14 +178,20 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 			Path:     anchor.Path + "/" + candidate.name,
 			Message: fmt.Sprintf("%s %d is out of range in a %d-line file at %s",
 				candidate.name, candidate.field.Value, state.lines, short(ref)),
-		}, false
+		}, refuted
 	}
-	return review.Diagnostic{}, true
+	return review.Diagnostic{}, verified
 }
 
-func (v *Verifier) refExists(ctx context.Context, ref string) bool {
+func (v *Verifier) refExists(ctx context.Context, ref string) (bool, error) {
 	out, err := v.git.run(ctx, "cat-file", "-t", ref)
-	return err == nil && strings.TrimSpace(string(out)) == "commit"
+	if err != nil {
+		if answered(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) == "commit", nil
 }
 
 // fileAt looks a path up at the ref, once per distinct path.
@@ -166,13 +202,22 @@ func (v *Verifier) fileAt(ctx context.Context, ref, file string) fileState {
 	}
 	state := fileState{}
 	out, err := v.git.run(ctx, "cat-file", "-t", key)
-	if err == nil {
+	switch {
+	case err == nil:
 		state.kind = strings.TrimSpace(string(out))
+	case !answered(err):
+		state.err = err
 	}
 	if state.kind == "blob" {
-		if content, err := v.git.run(ctx, "cat-file", "blob", key); err == nil {
+		content, err := v.git.run(ctx, "cat-file", "blob", key)
+		if err != nil {
+			state.err = err
+		} else {
 			state.lines = countLines(content)
 		}
+	}
+	if state.err != nil {
+		v.log.Debug("git could not read a file", "file", file, "ref", short(ref), "error", state.err)
 	}
 	v.files[key] = state
 	return state
