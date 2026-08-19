@@ -288,3 +288,39 @@ func parseError(t *testing.T) error {
 	require.True(t, review.IsDocumentError(err))
 	return fmt.Errorf("reading review document: %w", err)
 }
+
+func TestFlagsMayFollowThePath(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	var got validate.Options
+	h.validator.ValidateFunc = func(_ context.Context, _ []byte, options validate.Options) (*review.Result, error) {
+		got = options
+		return &review.Result{Valid: true}, nil
+	}
+	path := filepath.Join(t.TempDir(), "review.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"version":"1"}`), 0o644))
+	assert.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"validate", path, "--strict"}))
+	assert.True(t, got.Strict, "a flag written after the path is still a flag")
+}
+
+func TestSubcommandsRejectStrayArguments(t *testing.T) {
+	t.Parallel()
+	tests := map[string][]string{
+		"version":          {"version", "foo"},
+		"list with a lens": {"describe", "--list", "--lens=verdict"},
+	}
+	for name, args := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, "")
+			assert.Equal(t, ExitUsage, h.app.Run(t.Context(), args))
+		})
+	}
+}
+
+func TestAnEmptyElementIsNotReportedAsAnEmptyList(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, `{"version":"1"}`)
+	assert.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"validate", "--disable=body-thin,,vacuous-body"}))
+	assert.Contains(t, h.stderr.String(), "empty name")
+}

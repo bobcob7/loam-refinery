@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,7 +22,8 @@ func (a *App) validate(ctx context.Context, args []string) int {
 	warnOnly := set.String("warn-only", "", "demote the named verification checks")
 	disable := set.String("disable", "", "skip the named advisories")
 	format := set.String("format", "text", "output format: text or json")
-	if err := set.Parse(args); err != nil {
+	paths, err := parseAnywhere(set, args)
+	if err != nil {
 		return usageOrHelp(err)
 	}
 	renderer, err := a.renderer(*format)
@@ -29,8 +31,8 @@ func (a *App) validate(ctx context.Context, args []string) int {
 		a.fail(err)
 		return ExitUsage
 	}
-	if set.NArg() > 1 {
-		a.fail(fmt.Errorf("validate takes at most one path"))
+	if len(paths) > 1 {
+		a.fail(fmt.Errorf("validate takes at most one path, got %d", len(paths)))
 		return ExitUsage
 	}
 	options := validate.Options{Strict: *strict, Dir: a.dir}
@@ -42,7 +44,11 @@ func (a *App) validate(ctx context.Context, args []string) int {
 		a.fail(err)
 		return ExitUsage
 	}
-	source, err := a.read(set.Arg(0))
+	path := ""
+	if len(paths) == 1 {
+		path = paths[0]
+	}
+	source, err := a.read(path)
 	if err != nil {
 		a.fail(err)
 		return ExitUsage
@@ -72,8 +78,11 @@ func (a *App) checkNames(value, flagName string, allowed []string, given bool) (
 		return nil, nil
 	}
 	names, err := splitNames(value)
-	if err != nil {
+	if errors.Is(err, errNoNames) {
 		return nil, fmt.Errorf("%s needs at least one check name", flagName)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", flagName, err)
 	}
 	selected := map[string]bool{}
 	for _, name := range names {

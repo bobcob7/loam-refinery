@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -141,11 +142,33 @@ func (a *App) renderer(format string) (renderer, error) {
 	return chosen, nil
 }
 
+// errNoNames marks a flag given with nothing in it, which each caller names in
+// its own vocabulary. An empty element inside a list is a different mistake and
+// keeps its own message.
+var errNoNames = errors.New("the list is empty")
+
+// parseAnywhere parses flags that appear after the positional argument, which
+// the flag package otherwise stops at. "validate review.json --strict" is the
+// order a person writes, and rejecting it teaches nothing.
+func parseAnywhere(set *flag.FlagSet, args []string) ([]string, error) {
+	positional := []string{}
+	for {
+		if err := set.Parse(args); err != nil {
+			return nil, err
+		}
+		if set.NArg() == 0 {
+			return positional, nil
+		}
+		positional = append(positional, set.Arg(0))
+		args = set.Args()[1:]
+	}
+}
+
 // splitNames parses a comma-separated flag value, rejecting an empty element so
 // a typo surfaces instead of being ignored.
 func splitNames(value string) ([]string, error) {
 	if strings.TrimSpace(value) == "" {
-		return nil, fmt.Errorf("empty value")
+		return nil, errNoNames
 	}
 	names := []string{}
 	for _, part := range strings.Split(value, ",") {

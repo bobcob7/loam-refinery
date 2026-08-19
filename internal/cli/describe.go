@@ -49,6 +49,10 @@ func (a *App) describe(args []string) int {
 		return ExitUsage
 	}
 	if *list {
+		if isSet(set, "lens") {
+			a.fail(fmt.Errorf("--list prints the index and --lens opens an entry; use one"))
+			return ExitUsage
+		}
 		if err := renderer.Index(a.stdout, a.registry.Index()); err != nil {
 			a.fail(err)
 			return ExitUsage
@@ -74,8 +78,12 @@ func (a *App) describe(args []string) int {
 // qualified candidates. Neither is ever guessed at.
 func (a *App) resolveLenses(value string) ([]entry.Entry, int) {
 	names, err := splitNames(value)
-	if err != nil {
+	if errors.Is(err, errNoNames) {
 		a.fail(fmt.Errorf("--lens needs at least one name"))
+		return nil, ExitUsage
+	}
+	if err != nil {
+		a.fail(fmt.Errorf("--lens: %w", err))
 		return nil, ExitUsage
 	}
 	entries := []entry.Entry{}
