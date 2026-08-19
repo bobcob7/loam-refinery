@@ -1,0 +1,29 @@
+package validate
+
+import (
+	"context"
+
+	"github.com/bobcob7/refinery/internal/review"
+)
+
+//go:generate moq -out moq_test.go . structuralChecker advisoryRunner repositoryFinder verifier
+
+// structuralChecker runs the hard checks over a parsed document.
+type structuralChecker interface {
+	Check(doc *review.Document) []review.Diagnostic
+}
+
+// advisoryRunner runs every advisory the caller did not disable.
+type advisoryRunner interface {
+	Run(doc *review.Document, disabled map[string]bool) ([]review.Diagnostic, []review.Skipped)
+}
+
+// repositoryFinder discovers the repository containing dir, the way git does.
+type repositoryFinder interface {
+	Find(ctx context.Context, dir string) (verifier, error)
+}
+
+// verifier resolves anchor claims against a repository.
+type verifier interface {
+	Verify(ctx context.Context, doc *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification)
+}

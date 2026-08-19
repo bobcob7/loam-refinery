@@ -1,0 +1,158 @@
+{
+  "version": "1",
+  "verdict": "request_changes",
+  "ref": "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d",
+  "summary": "The retry loop is sound, but the context deadline is not propagated to the downstream call, so a cancelled request keeps retrying.",
+  "comments": [
+    {
+      "id": "dropped-context-1",
+      "priority": 7,
+      "category": "correctness",
+      "body": "The retry loop calls c.do(context.Background(), req) rather than passing the caller's ctx, so a cancelled request keeps retrying for the full backoff schedule.",
+      "anchors": [
+        {
+          "file": "internal/fetch/client.go",
+          "line": 88,
+          "end_line": 94
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Pass the caller's context straight through to c.do",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Deadlines propagate immediately"
+          ],
+          "cons": [
+            "Callers relying on the old behaviour see a change"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "untested-cancellation-1",
+      "priority": 7,
+      "category": "testing",
+      "body": "No test covers cancellation mid-retry, which is why the dropped context above went unnoticed at review time and would regress silently.",
+      "anchors": [
+        {
+          "file": "internal/fetch/client_test.go"
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Add a case that cancels the context after the first attempt",
+          "effort": "small",
+          "scope": "file",
+          "pros": [
+            "Pins the behaviour the fix introduces"
+          ],
+          "cons": [
+            "Needs a controllable clock"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-1",
+      "priority": 7,
+      "category": "documentation",
+      "body": "The godoc on Fetch still describes the old two-argument signature, which has not been correct since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 12
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "unchecked-error-1",
+      "priority": 7,
+      "category": "documentation",
+      "body": "The error returned by w.Flush is dropped, so a short write at the end of a response is reported to nobody and looks like success.",
+      "anchors": [
+        {
+          "file": "internal/fetch/writer.go",
+          "line": 22
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-2",
+      "priority": 7,
+      "category": "documentation",
+      "body": "The README still documents the removed retry budget flag, which nothing reads any more and which new callers keep trying to set.",
+      "anchors": [
+        {
+          "file": "README.md",
+          "line": 40
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "unbounded-buffer-1",
+      "priority": 7,
+      "category": "documentation",
+      "body": "The response body is read into memory in full before it is parsed, so a large upstream reply can pin an arbitrary amount of heap per request.",
+      "anchors": [
+        {
+          "file": "internal/fetch/client.go",
+          "line": 130
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,658 @@
+{
+  "version": "1",
+  "verdict": "request_changes",
+  "ref": "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d",
+  "summary": "The retry loop is sound, but the context deadline is not propagated to the downstream call, so a cancelled request keeps retrying.",
+  "comments": [
+    {
+      "id": "stale-doc-comment-1",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 1: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 1
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-2",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 2: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 2
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-3",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 3: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 3
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-4",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 4: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 4
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-5",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 5: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 5
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-6",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 6: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 6
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-7",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 7: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 7
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-8",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 8: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 8
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-9",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 9: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 9
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-10",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 10: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 10
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-11",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 11: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 11
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-12",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 12: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 12
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-13",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 13: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 13
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-14",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 14: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 14
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-15",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 15: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 15
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-16",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 16: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 16
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-17",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 17: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 17
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-18",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 18: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 18
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-19",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 19: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 19
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-20",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 20: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 20
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-21",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 21: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 21
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-22",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 22: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 22
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-23",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 23: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 23
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-24",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 24: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 24
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-25",
+      "priority": 3,
+      "category": "documentation",
+      "body": "Finding number 25: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 25
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stale-doc-comment-26",
+      "priority": 4,
+      "category": "documentation",
+      "body": "Finding number 26: the godoc on this symbol describes behaviour the code has not had since the context parameter was added.",
+      "anchors": [
+        {
+          "file": "internal/fetch/doc.go",
+          "line": 26
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Update the godoc to match the current signature",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a claim that is now false"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+refinery checks a review document — one JSON object: a verdict, a summary, and
+comments carrying an id you choose, a priority, a category, a body, anchors,
+and competing suggestions.
+
+The loop:
+
+1. Write the review.
+2. refinery validate review.json   (- or no path reads stdin)
+3. Exit 0 — done. Exit 2 — the invocation is wrong, not the review.
+4. Exit 1 — every diagnostic names a check. Run
+   refinery describe --lens=<check-name> for the ones you do not understand,
+   fix, validate again. A failed run ends with that command already assembled:
+   copy it, do not recall it.
+5. Unsure about a field? refinery describe --lens=<field>.
+   Never guess at an enum or a scale.
+
+refinery describe          the document shape, enough to write one
+refinery describe --list   every name it can explain
+refinery schema            JSON Schema — for machines, not for learning
+
+Advisories report review quality and never fail the run; structural errors and
+anchors that point nowhere do.
