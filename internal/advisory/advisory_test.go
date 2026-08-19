@@ -1,10 +1,12 @@
 package advisory
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bobcob7/refinery/internal/review"
@@ -28,7 +30,7 @@ func TestEveryAdvisoryFiresOnItsFixture(t *testing.T) {
 		message string
 	}{
 		{name: "id-grouping", message: `slug "dropped-context" has suffixes 1, 3; renumber contiguously`},
-		{name: "ref-missing", message: "anchor 1 carries line 88 and the document has no ref; nobody can verify it"},
+		{name: "ref-missing", message: "2 anchors carry a line number and the document has no ref; nobody can verify them"},
 		{name: "body-thin", message: "body is 33 characters; state the finding and what follows from it"},
 		{name: "vacuous-body", message: `body ("Consider refactoring.") says nothing a consumer can act on`},
 		{name: "suggestion-absent", message: "priority 9 with no suggestions; propose a way out"},
@@ -149,6 +151,72 @@ func run(t *testing.T, file string, disabled map[string]bool) ([]review.Diagnost
 func parse(t *testing.T, file string) *review.Document {
 	t.Helper()
 	source, err := os.ReadFile(filepath.Join("testdata", file))
+	require.NoError(t, err)
+	doc, err := review.Parse(source)
+	require.NoError(t, err)
+	return doc
+}
+
+func TestVacuousBodyJudgesEveryClause(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		body  string
+		fires bool
+	}{
+		"fillers joined to clear the floor": {"Looks good to me. LGTM.", true},
+		"one stock phrase":                  {"Consider refactoring", true},
+		"a hedge in front of a finding":     {"Looks good overall, but the retry loop drops the caller's deadline.", false},
+		"a real finding":                    {"c.do is called with context.Background(), so a cancelled request keeps retrying.", false},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			doc := build(t, map[string]any{"body": test.body})
+			diagnostics, _ := vacuousBody(doc)
+			assert.Equal(t, test.fires, len(diagnostics) == 1)
+		})
+	}
+}
+
+func TestFileLevelAnchorsAreNotDuplicateSpans(t *testing.T) {
+	t.Parallel()
+	doc := build(t,
+		map[string]any{"id": "a-1", "anchors": []any{map[string]any{"file": "a.go"}}},
+		map[string]any{"id": "b-1", "anchors": []any{map[string]any{"file": "a.go"}}},
+	)
+	diagnostics, _ := duplicateAnchor(doc)
+	assert.Empty(t, diagnostics, "ref-missing tells writers to anchor at file level; that must not earn an advisory")
+}
+
+func TestRefMissingReportsTheRootFieldOnce(t *testing.T) {
+	t.Parallel()
+	doc := build(t,
+		map[string]any{"id": "a-1", "anchors": []any{
+			map[string]any{"file": "a.go", "line": 3},
+			map[string]any{"file": "b.go", "line": 9},
+		}},
+		map[string]any{"id": "b-1", "anchors": []any{map[string]any{"file": "c.go", "line": 4}}},
+	)
+	diagnostics, _ := refMissing(doc)
+	require.Len(t, diagnostics, 1, "one missing root field is one finding, not one per anchor")
+	assert.Equal(t, "/ref", diagnostics[0].Path)
+	assert.Contains(t, diagnostics[0].Message, "3 anchors carry")
+}
+
+func TestBodyThinCatchesAWhitespaceOnlyBody(t *testing.T) {
+	t.Parallel()
+	doc := build(t, map[string]any{"body": strings.Repeat(" ", 24)})
+	diagnostics, _ := bodyThin(doc)
+	assert.Len(t, diagnostics, 1, "a body that normalizes to nothing is the thinnest body there is")
+}
+
+// build assembles a document in memory so a test can state the one shape it is
+// about, rather than adding a fixture file per case.
+func build(t *testing.T, comments ...map[string]any) *review.Document {
+	t.Helper()
+	source, err := json.Marshal(map[string]any{
+		"version": "1", "verdict": "comment", "comments": comments,
+	})
 	require.NoError(t, err)
 	doc, err := review.Parse(source)
 	require.NoError(t, err)

@@ -129,18 +129,25 @@ func join(values []int) string {
 }
 
 func refMissing(doc *review.Document) ([]review.Diagnostic, []review.Skipped) {
-	diagnostics := []review.Diagnostic{}
+	if doc.Ref.Present {
+		return nil, nil
+	}
+	anchored := 0
 	for _, comment := range doc.Comments {
 		for _, anchor := range comment.Anchors {
-			if !anchor.Line.OK {
-				continue
+			if anchor.Line.OK {
+				anchored++
 			}
-			if doc.Ref.Present {
-				continue
-			}
-			diagnostics = append(diagnostics, diagnostic("ref-missing", comment, anchor.Path,
-				fmt.Sprintf("anchor %d carries line %d and the document has no ref; nobody can verify it", anchor.Index+1, anchor.Line.Value)))
 		}
 	}
-	return diagnostics, nil
+	if anchored == 0 {
+		return nil, nil
+	}
+	carry, them := "carries", "it"
+	if anchored > 1 {
+		carry, them = "carry", "them"
+	}
+	return []review.Diagnostic{documentDiagnostic("ref-missing", "/ref",
+		fmt.Sprintf("%s %s a line number and the document has no ref; nobody can verify %s",
+			plural(anchored, "anchor"), carry, them))}, nil
 }

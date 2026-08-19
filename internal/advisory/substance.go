@@ -2,6 +2,7 @@ package advisory
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/bobcob7/refinery/internal/review"
 )
@@ -219,7 +220,7 @@ func bodyThin(doc *review.Document) ([]review.Diagnostic, []review.Skipped) {
 			continue
 		}
 		length := len([]rune(normalize(comment.Body.Value)))
-		if length == 0 || length >= bodyFloor {
+		if length >= bodyFloor {
 			continue
 		}
 		diagnostics = append(diagnostics, diagnostic("body-thin", comment, comment.Path+"/body",
@@ -234,15 +235,11 @@ func vacuousBody(doc *review.Document) ([]review.Diagnostic, []review.Skipped) {
 		if !comment.Body.OK {
 			continue
 		}
-		folded := fold(comment.Body.Value)
-		for _, phrase := range vacuousPhrases {
-			if folded != phrase {
-				continue
-			}
-			diagnostics = append(diagnostics, diagnostic("vacuous-body", comment, comment.Path+"/body",
-				fmt.Sprintf("body (%q) says nothing a consumer can act on", clip(comment.Body.Value, 40))))
-			break
+		if !allClausesVacuous(comment.Body.Value) {
+			continue
 		}
+		diagnostics = append(diagnostics, diagnostic("vacuous-body", comment, comment.Path+"/body",
+			fmt.Sprintf("body (%q) says nothing a consumer can act on", clip(comment.Body.Value, 40))))
 	}
 	return diagnostics, nil
 }
@@ -336,4 +333,38 @@ func summaryThin(doc *review.Document) ([]review.Diagnostic, []review.Skipped) {
 	}
 	return []review.Diagnostic{documentDiagnostic("summary-thin", "/summary",
 		fmt.Sprintf("summary is %d characters with %s; expand it", length, plural(len(doc.Comments), "comment")))}, nil
+}
+
+// allClausesVacuous reports whether every sentence in a body is a stock phrase.
+// Comparing the whole body against the list missed the shape that actually
+// occurs -- two fillers joined to clear the schema's 20-character floor, as in
+// "Looks good to me. LGTM." -- because no single phrase is that long. Judging
+// any one sentence instead would flag "Looks good overall, but the retry loop
+// drops the deadline", which is a real finding.
+func allClausesVacuous(body string) bool {
+	vacuous := false
+	for _, clause := range strings.FieldsFunc(body, endsClause) {
+		folded := fold(clause)
+		if folded == "" {
+			continue
+		}
+		if !isVacuousPhrase(folded) {
+			return false
+		}
+		vacuous = true
+	}
+	return vacuous
+}
+
+func endsClause(r rune) bool {
+	return r == '.' || r == '!' || r == '?' || r == ';' || r == '\n'
+}
+
+func isVacuousPhrase(folded string) bool {
+	for _, phrase := range vacuousPhrases {
+		if folded == phrase {
+			return true
+		}
+	}
+	return false
 }

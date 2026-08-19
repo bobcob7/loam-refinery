@@ -610,10 +610,11 @@ related: priority, category
 
 check:priority-flat — Flat priority distribution
 
-Fires when four or more comments carry one identical priority. It suggests the
-scale was not used: the field exists so a consumer can sort, threshold and merge
-across reviewers, and a review where everything is a 7 gives it nothing to sort
-by.
+Fires when a review carries four or more comments and every one of them has the
+same priority. A subset sharing a priority is ordinary and says nothing; it is
+the absence of any spread across the whole review that suggests the scale was
+not used: the field exists so a consumer can sort, threshold and merge across
+reviewers, and a review where everything is a 7 gives it nothing to sort by.
 
 Spread the findings across the bands you actually mean. 9-10 must fix before
 merge. 7-8 should fix, a real defect. 4-6 worth fixing, does not block. 1-3

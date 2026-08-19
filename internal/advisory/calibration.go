@@ -45,10 +45,12 @@ There is no floor: a security finding at priority 2 is fine.`,
 			Meta: review.Check{
 				Name:    "priority-flat",
 				Tier:    review.TierAdvisory,
-				Summary: "four or more comments all carry the same priority",
+				Summary: "every comment in a review of four or more carries one priority",
 				Title:   "Flat priority distribution",
-				Body: `Fires when four or more comments carry one identical priority. It suggests the
-scale was not used: the field exists so a consumer can sort, threshold and merge
+				Body: `Fires when a review carries four or more comments and every one of them has the
+same priority. A subset sharing a priority is ordinary and says nothing; it is
+the absence of any spread across the whole review that suggests the scale was
+not used: the field exists so a consumer can sort, threshold and merge
 across reviewers, and a review where everything is a 7 gives it nothing to sort
 by.
 
@@ -184,7 +186,7 @@ func duplicateAnchor(doc *review.Document) ([]review.Diagnostic, []review.Skippe
 	diagnostics := []review.Diagnostic{}
 	for _, comment := range doc.Comments {
 		for _, anchor := range comment.Anchors {
-			if !anchor.File.OK {
+			if !anchor.File.OK || !anchor.Line.OK {
 				continue
 			}
 			key := fmt.Sprintf("%s\x00%d\x00%d", anchor.File.Value, anchor.Line.Value, anchor.EndLine.Value)
