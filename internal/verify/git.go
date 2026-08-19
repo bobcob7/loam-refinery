@@ -37,6 +37,40 @@ var errNotAnswered = errors.New("git did not answer")
 // nobody ever checked.
 var ErrNoRepository = errors.New("not a git repository")
 
+// gitError is a git call that failed, carrying what git said on stderr. The
+// status alone is not enough to tell a refusal from a complaint: cat-file -e
+// exits 1 both for an object that is absent and for one it could not look for,
+// and only the silence of stderr separates them.
+type gitError struct {
+	args   []string
+	stderr string
+	err    error
+}
+
+func (e *gitError) Error() string {
+	if e.stderr == "" {
+		return fmt.Sprintf("git %s: %v", strings.Join(e.args, " "), e.err)
+	}
+	return fmt.Sprintf("git %s: %v: %s", strings.Join(e.args, " "), e.err, e.stderr)
+}
+
+func (e *gitError) Unwrap() error { return e.err }
+
+// stderrOf returns what git wrote to stderr before failing, or "" when it wrote
+// nothing. An empty result is a claim about git's silence, so anything that is
+// not a recognised git failure reports empty rather than guessing.
+func stderrOf(err error) string {
+	var failure *gitError
+	if errors.As(err, &failure) {
+		return failure.stderr
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return strings.TrimSpace(string(exit.Stderr))
+	}
+	return ""
+}
+
 // Repository is a git repository discovered from the working directory.
 type Repository struct {
 	root string
@@ -140,7 +174,7 @@ func (r *Repository) run(ctx context.Context, args ...string) ([]byte, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		failure := fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+		failure := &gitError{args: args, stderr: strings.TrimSpace(stderr.String()), err: err}
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("%w: %w", errNotAnswered, failure)
 		}

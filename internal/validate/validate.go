@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/bobcob7/refinery/internal/review"
 	"github.com/bobcob7/refinery/internal/verify"
@@ -53,7 +54,7 @@ func (v *Validator) Validate(ctx context.Context, source []byte, options Options
 	result.Diagnostics = append(result.Diagnostics, v.structural.Check(doc)...)
 	verified, skipped, verification := v.verify(ctx, doc, options)
 	if options.RequireVerification {
-		verified = append(verified, unverified(verification, skipped)...)
+		verified = append(verified, unverified(verification, skipped, verified, options.WarnOnly)...)
 	}
 	result.Diagnostics = append(result.Diagnostics, demote(verified, options.WarnOnly)...)
 	result.Skipped = append(result.Skipped, skipped...)
@@ -80,10 +81,10 @@ func (v *Validator) verify(ctx context.Context, doc *review.Document, options Op
 	switch {
 	case errors.Is(err, verify.ErrNoRepository):
 		v.log.Debug("verification skipped", "reason", err)
-		return nil, verify.SkipAll(err.Error()), review.Verification{Source: "none", Reason: err.Error()}
+		return nil, verify.SkipAll(err.Error()), review.Verification{Source: "none", Reason: err.Error(), Anchors: doc.AnchorCount()}
 	case err != nil:
 		v.log.Debug("verification unavailable", "reason", err)
-		return nil, verify.SkipAll(err.Error()), review.Verification{Source: "unavailable", Reason: err.Error()}
+		return nil, verify.SkipAll(err.Error()), review.Verification{Source: "unavailable", Reason: err.Error(), Anchors: doc.AnchorCount()}
 	}
 	return repository.Verify(ctx, doc)
 }
@@ -97,13 +98,19 @@ func (v *Validator) verify(ctx context.Context, doc *review.Document, options Op
 // like any other verification check. Asking for both is contradictory, but it is
 // contradictory on the command line where a reader can see it, which beats a
 // flag that silently outranks another.
-func unverified(verification review.Verification, skipped []review.Skipped) []review.Diagnostic {
+func unverified(verification review.Verification, skipped []review.Skipped, found []review.Diagnostic, warnOnly map[string]bool) []review.Diagnostic {
+	if verification.Anchors == 0 {
+		return nil
+	}
 	if verification.Source == "repo" && len(skipped) == 0 {
 		return nil
 	}
+	if excused(found, warnOnly) {
+		return nil
+	}
 	reason := verification.Reason
-	if reason == "" && len(skipped) > 0 {
-		reason = skipped[0].Reason
+	if reason == "" {
+		reason = strings.Join(reasons(skipped), "; ")
 	}
 	if reason == "" {
 		reason = "no repository answered"
@@ -113,6 +120,43 @@ func unverified(verification review.Verification, skipped []review.Skipped) []re
 		Name:     "verification-required",
 		Message:  fmt.Sprintf("the anchors were not verified: %s", reason),
 	}}
+}
+
+// excused reports whether the caller already accepted the condition that
+// stopped verification. --warn-only=ref-unknown says a repository legitimately
+// lacking the reviewed commit is not a failure; the anchor checks it skips are
+// that same fact reported again, and failing on them would make the two flags
+// impossible to combine — the caller could never say "verify these, but I know
+// this commit is gone".
+//
+// Only a gap git actually explained can be excused. No repository at all, or a
+// file git could not read, produces no diagnostic to demote and so is never
+// waved through by a flag naming some other check.
+func excused(found []review.Diagnostic, warnOnly map[string]bool) bool {
+	if len(found) == 0 {
+		return false
+	}
+	for _, diagnostic := range found {
+		if !warnOnly[diagnostic.Name] {
+			return false
+		}
+	}
+	return true
+}
+
+// reasons lists the distinct causes, in the order verification reported them,
+// so a document-side skip cannot hide a machine-side one behind it.
+func reasons(skipped []review.Skipped) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, skip := range skipped {
+		if skip.Reason == "" || seen[skip.Reason] {
+			continue
+		}
+		seen[skip.Reason] = true
+		out = append(out, skip.Reason)
+	}
+	return out
 }
 
 // demote turns the verification checks a caller named in --warn-only into

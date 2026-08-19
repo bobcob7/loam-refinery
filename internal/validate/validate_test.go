@@ -15,6 +15,12 @@ import (
 
 const document = `{"version":"1","verdict":"comment","summary":"a summary long enough for the schema to accept it","comments":[]}`
 
+// anchored carries one anchor, because a document with nothing to verify is not
+// a document verification can be required of.
+const anchored = `{"version":"1","verdict":"comment","summary":"a summary long enough for the schema to accept it",` +
+	`"comments":[{"id":"a-1","priority":5,"category":"correctness","body":"a body long enough for the schema to accept it",` +
+	`"anchors":[{"file":"a.go","line":1}],"suggestions":[]}]}`
+
 func TestNoTierGatesAnother(t *testing.T) {
 	t.Parallel()
 	structural := &structuralCheckerMock{CheckFunc: func(*review.Document) []review.Diagnostic {
@@ -212,7 +218,7 @@ func TestRequireVerificationFailsOnlyWhenNothingWasChecked(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			options := Options{RequireVerification: test.require}
-			result, err := validator(passing(), quiet(), test.finder).Validate(t.Context(), []byte(document), options)
+			result, err := validator(passing(), quiet(), test.finder).Validate(t.Context(), []byte(anchored), options)
 			require.NoError(t, err)
 			assert.Equal(t, test.valid, result.Valid)
 			if test.valid {
@@ -235,9 +241,76 @@ func TestWarnOnlyDemotesTheVerificationRequirement(t *testing.T) {
 		return nil, verify.ErrNoRepository
 	}}
 	options := Options{RequireVerification: true, WarnOnly: map[string]bool{"verification-required": true}}
-	result, err := validator(passing(), quiet(), absent).Validate(t.Context(), []byte(document), options)
+	result, err := validator(passing(), quiet(), absent).Validate(t.Context(), []byte(anchored), options)
 	require.NoError(t, err)
 	assert.Zero(t, result.Errors())
 	assert.Equal(t, 1, result.Advisories())
 	assert.True(t, result.Valid)
+}
+
+// A document with nothing to verify must get the same answer wherever it is
+// validated. Deciding on Source alone made one file pass inside a repository
+// and fail outside it, over anchors that do not exist either way.
+func TestRequireVerificationIgnoresADocumentWithNoAnchors(t *testing.T) {
+	t.Parallel()
+	inside := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return nil, nil, review.Verification{Source: "repo"}
+	}}
+	outside := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
+		return nil, verify.ErrNoRepository
+	}}
+	options := Options{RequireVerification: true}
+	within, err := validator(passing(), quiet(), finder(inside)).Validate(t.Context(), []byte(document), options)
+	require.NoError(t, err)
+	without, err := validator(passing(), quiet(), outside).Validate(t.Context(), []byte(document), options)
+	require.NoError(t, err)
+	assert.True(t, within.Valid)
+	assert.True(t, without.Valid, "the same document cannot be valid in one directory and not in another")
+}
+
+// --warn-only names a condition the caller accepts. The anchor checks it skips
+// are that same condition reported again, so requiring verification must not
+// fail on them — otherwise the two flags can never be combined.
+func TestRequireVerificationRespectsAnExcusedCondition(t *testing.T) {
+	t.Parallel()
+	lacking := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return []review.Diagnostic{{Severity: review.SeverityError, Name: "ref-unknown", Message: "absent"}},
+			[]review.Skipped{{Name: "anchor-file-missing", Reason: "the document ref does not resolve"}},
+			review.Verification{Source: "repo", Anchors: 1}
+	}}
+	options := Options{RequireVerification: true, WarnOnly: map[string]bool{"ref-unknown": true}}
+	result, err := validator(passing(), quiet(), finder(lacking)).Validate(t.Context(), []byte(anchored), options)
+	require.NoError(t, err)
+	assert.Zero(t, result.Errors(), "a commit the caller knows is gone was already excused")
+	assert.True(t, result.Valid)
+	t.Run("but an unexcused gap still fails", func(t *testing.T) {
+		t.Parallel()
+		absent := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
+			return nil, verify.ErrNoRepository
+		}}
+		options := Options{RequireVerification: true, WarnOnly: map[string]bool{"ref-unknown": true}}
+		result, err := validator(passing(), quiet(), absent).Validate(t.Context(), []byte(anchored), options)
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.Errors(),
+			"demoting one check does not excuse there being no repository at all")
+	})
+}
+
+// The diagnostic names every distinct cause, so a document-side skip reported
+// first cannot hide a machine-side one behind it.
+func TestTheVerificationRequirementNamesEveryCause(t *testing.T) {
+	t.Parallel()
+	mixed := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return nil, []review.Skipped{
+			{Name: "anchor-line-out-of-range", Reason: "unusable field on 1 anchor"},
+			{Name: "anchor-file-missing", Reason: "git could not read the file for 1 anchor"},
+		}, review.Verification{Source: "repo", Anchors: 2}
+	}}
+	options := Options{RequireVerification: true}
+	result, err := validator(passing(), quiet(), finder(mixed)).Validate(t.Context(), []byte(anchored), options)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Errors())
+	assert.Contains(t, result.Diagnostics[0].Message, "unusable field on 1 anchor")
+	assert.Contains(t, result.Diagnostics[0].Message, "git could not read the file for 1 anchor",
+		"a broken object store must not be hidden behind a malformed field")
 }

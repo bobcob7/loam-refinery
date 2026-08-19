@@ -553,13 +553,21 @@ func TestAbsenceIsStillReportedAgainstAHealthyRepository(t *testing.T) {
 		require.Len(t, diagnostics, 1)
 		assert.Equal(t, "anchor-file-missing", diagnostics[0].Name)
 	})
-	t.Run("a wildcard never matches a path it did not name", func(t *testing.T) {
+	t.Run("a path git spells differently is still found", func(t *testing.T) {
 		t.Parallel()
-		doc := document(t, sha, []map[string]any{{"file": "internal/fetch/*.go"}})
-		diagnostics, _, _ := New(repository, logger()).Verify(t.Context(), doc)
+		doc := document(t, sha, []map[string]any{{"file": "./internal/fetch/client.go", "line": 3}})
+		diagnostics, _, verification := New(repository, logger()).Verify(t.Context(), doc)
+		assert.Empty(t, diagnostics, "git answers with the path it stores, not the one it was handed")
+		assert.Equal(t, 1, verification.Verified)
+	})
+	t.Run("pathspec magic is read as a name, not as a pattern", func(t *testing.T) {
+		t.Parallel()
+		doc := document(t, sha, []map[string]any{{"file": ":(glob)internal/fetch/client.go"}})
+		diagnostics, skipped, _ := New(repository, logger()).Verify(t.Context(), doc)
 		require.Len(t, diagnostics, 1)
 		assert.Equal(t, "anchor-file-missing", diagnostics[0].Name,
-			"a pathspec wildcard must not verify an anchor against some other file")
+			"a colon-prefixed anchor must be an absent file, not a failed git call")
+		assert.Empty(t, skipped)
 	})
 }
 
@@ -590,5 +598,83 @@ func TestAGitCallReturnsEvenWhenAChildHoldsItsPipes(t *testing.T) {
 		assert.Less(t, time.Since(start), waitDelay+10*time.Second)
 	case <-time.After(waitDelay + 15*time.Second):
 		t.Fatal("the git call outlived its deadline: WaitDelay is not bounding the wait")
+	}
+}
+
+// cat-file -e exits 1 for an absent object and for several ways of failing to
+// look for one. Only git's silence separates them, so these pin the layouts
+// where the status alone would refute a correct ref: the earlier corruption
+// tests all damage loose objects, the one layout where -e never has to read.
+func TestAnObjectStoreItCannotSearchIsNotAnAbsentRef(t *testing.T) {
+	t.Parallel()
+	t.Run("an unreadable alternates store", func(t *testing.T) {
+		t.Parallel()
+		origin, sha := repo(t)
+		clone := t.TempDir()
+		run(t, clone, "clone", "--quiet", "--shared", origin.Root(), clone)
+		require.NoError(t, os.Chmod(filepath.Join(origin.Root(), ".git", "objects"), 0o000))
+		t.Cleanup(func() { _ = os.Chmod(filepath.Join(origin.Root(), ".git", "objects"), 0o755) })
+		repository, err := Discover(t.Context(), clone)
+		require.NoError(t, err)
+		doc := document(t, sha, []map[string]any{{"file": "internal/fetch/client.go"}})
+		diagnostics, skipped, verification := New(repository, logger()).Verify(t.Context(), doc)
+		assert.Empty(t, diagnostics, "a store git could not search is not a ref that does not resolve")
+		assert.Equal(t, "none", verification.Source)
+		require.NotEmpty(t, skipped)
+	})
+	t.Run("a damaged pack index", func(t *testing.T) {
+		t.Parallel()
+		repository, sha := repo(t)
+		run(t, repository.Root(), "repack", "-adq")
+		packs, err := filepath.Glob(filepath.Join(repository.Root(), ".git", "objects", "pack", "*.idx"))
+		require.NoError(t, err)
+		require.NotEmpty(t, packs)
+		for _, pack := range packs {
+			require.NoError(t, os.Chmod(pack, 0o644))
+			require.NoError(t, os.WriteFile(pack, []byte("too small to be an index"), 0o644))
+		}
+		doc := document(t, sha, []map[string]any{{"file": "internal/fetch/client.go"}})
+		diagnostics, skipped, verification := New(repository, logger()).Verify(t.Context(), doc)
+		assert.Empty(t, diagnostics, "a damaged pack index is not a ref that does not resolve")
+		assert.Equal(t, "none", verification.Source)
+		require.NotEmpty(t, skipped)
+	})
+}
+
+// The deadline classification cannot fail on Unix through answered() alone,
+// because a killed process already reports Exited() false there. This pins the
+// marker itself, which is what carries the answer on Windows.
+func TestADeadlineIsNeverReadAsGitAnswering(t *testing.T) {
+	t.Parallel()
+	exited := refused(t, 1)
+	require.True(t, answered(exited), "a real exit is git answering")
+	timedOut := fmt.Errorf("%w: %w", errNotAnswered, exited)
+	assert.False(t, answered(timedOut),
+		"a call abandoned at its deadline is not an answer, whatever the platform says about the process")
+	assert.False(t, objectAbsent(timedOut), "and it is certainly not proof the object is absent")
+}
+
+// refinery-0v1 asks for both call sites, and Repository.run is the one every
+// anchor goes through.
+func TestRepositoryRunReturnsWhenAChildHoldsItsPipes(t *testing.T) {
+	dir := t.TempDir()
+	shim := filepath.Join(dir, "git")
+	require.NoError(t, os.WriteFile(shim, []byte("#!/bin/sh\n/bin/sleep 120 &\n/bin/sleep 120\n"), 0o755))
+	t.Setenv("PATH", dir)
+	repository := &Repository{root: dir}
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := repository.run(ctx, "cat-file", "-e", absentSHA)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.False(t, answered(err))
+		assert.False(t, objectAbsent(err), "a call that never finished never found the object absent")
+	case <-time.After(waitDelay + 15*time.Second):
+		t.Fatal("Repository.run outlived its deadline: WaitDelay is not bounding the wait")
 	}
 }

@@ -68,7 +68,8 @@ Explicitly out of scope:
 ```
 refinery prime
 refinery describe [--lens=NAME[,NAME...]] [--format text|json]
-refinery validate [path] [--strict] [--warn-only=…] [--disable=…]
+refinery validate [path] [--strict] [--require-verification] [--warn-only=…]
+                  [--disable=…]
                          [--format text|json]
 refinery schema   [--annotated]
 refinery version
@@ -365,6 +366,7 @@ setup.
 ```
 --strict                  treat advisories as errors (exit 1)        validate
 --warn-only=NAME[,NAME…]  demote the named verification checks       validate
+--require-verification    fail if the anchors were not checked       validate
 --disable=NAME[,NAME...]  skip the named advisories                  validate
 --lens=NAME[,NAME...]     open one entry in full                     describe
 --list                    print the lens index, no bodies            describe
@@ -374,7 +376,9 @@ setup.
 
 Structural checks cannot be disabled or demoted. Verification checks can be
 demoted with `--warn-only` but not disabled: they run whenever a repository is
-found, and when none is, the skip is reported rather than chosen. Naming an unknown check
+found, and when none is, the skip is reported rather than chosen. The one
+exception is `verification-required`, which runs only when asked for, and asks
+about that skip rather than about the document. Naming an unknown check
 in `--disable` or `--warn-only` is a usage error (exit 2) rather than a silent
 no-op, so typos surface immediately.
 

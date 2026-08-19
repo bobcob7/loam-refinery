@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path"
 	"strings"
 
 	"github.com/bobcob7/refinery/internal/review"
@@ -184,13 +185,14 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 }
 
 // refExists asks whether the commit is present without asking git to read it.
-// cat-file -e answers that with an exit status rather than a sentence: 1 means
-// the object is not there, and every other failure means git could not look,
-// which says nothing about the review. Reading a corrupt object store as an
-// absent commit would fail a correct document over a bad disk.
+// cat-file -e reports an absent object as exit 1, but it also exits 1 when it
+// could not look — an unreadable alternates directory, a damaged pack index, a
+// promisor clone that cannot reach its remote — so the status alone would fail a
+// correct document over a bad disk. What separates them is that git complains
+// first: absence is the silent answer. See objectAbsent.
 func (v *Verifier) refExists(ctx context.Context, ref string) (bool, error) {
 	if _, err := v.git.run(ctx, "cat-file", "-e", ref); err != nil {
-		if status, exited := exitStatus(err); exited && status == 1 {
+		if objectAbsent(err) {
 			return false, nil
 		}
 		return false, err
@@ -200,6 +202,15 @@ func (v *Verifier) refExists(ctx context.Context, ref string) (bool, error) {
 		return false, err
 	}
 	return strings.TrimSpace(string(out)) == "commit", nil
+}
+
+// objectAbsent reports git's one answer that means the object is not in this
+// repository: exit 1 with nothing said. Every way git fails to look says so on
+// stderr first, so silence carries the claim rather than the status, and a git
+// that grows a new diagnostic is read as unable to look rather than as certain.
+func objectAbsent(err error) bool {
+	status, exited := exitStatus(err)
+	return exited && status == 1 && stderrOf(err) == ""
 }
 
 // fileAt looks a path up at the ref, once per distinct path.
@@ -223,9 +234,10 @@ func (v *Verifier) fileAt(ctx context.Context, ref, file string) fileState {
 // exit 128 and leaving only an English sentence to tell a missing file from an
 // unreadable one — so a corrupt object turned a correct anchor into a finding.
 func (v *Verifier) lookUp(ctx context.Context, ref, file string) fileState {
-	// -z drops the c-style quoting ls-tree otherwise applies to unusual paths,
-	// and --literal-pathspecs stops a path containing a wildcard from matching
-	// entries the anchor never named.
+	// -z drops the c-style quoting ls-tree otherwise applies to unusual paths.
+	// --literal-pathspecs stops an anchor being read as pathspec magic: without
+	// it a file whose name begins with a colon is parsed as ":(glob)..." and
+	// fails the whole call, which would be reported as an unreadable file.
 	out, err := v.git.run(ctx, "--literal-pathspecs", "ls-tree", "-z", ref, "--", file)
 	if err != nil {
 		return fileState{err: err}
@@ -248,13 +260,18 @@ func (v *Verifier) lookUp(ctx context.Context, ref, file string) fileState {
 // "<mode> <type> <object>\t<path>". Anything else — no entry, several entries,
 // or a name that is not the one asked for — is reported as not found, which
 // skips the anchor rather than inventing a claim about it.
+//
+// The names are compared cleaned, because git answers with the path it stores
+// rather than the one it was handed: "./internal/x.go" and "internal//x.go"
+// both come back as "internal/x.go", and refuting those would call a legal
+// anchor missing over a spelling git itself does not keep.
 func treeEntry(out, file string) (kind, object string, ok bool) {
 	entries := strings.Split(strings.TrimRight(out, "\x00"), "\x00")
 	if len(entries) != 1 || entries[0] == "" {
 		return "", "", false
 	}
 	meta, name, found := strings.Cut(entries[0], "\t")
-	if !found || name != file {
+	if !found || path.Clean(name) != path.Clean(file) {
 		return "", "", false
 	}
 	fields := strings.Fields(meta)

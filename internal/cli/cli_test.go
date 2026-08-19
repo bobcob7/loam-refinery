@@ -382,3 +382,30 @@ func TestTheUnparseableCheckNameIsTheRegisteredOne(t *testing.T) {
 	assert.Contains(t, names, checkDocumentUnparseable,
 		"the name the CLI reports must be a check describe --lens can open")
 }
+
+// The flag has to reach the validator, and has to be off unless asked for.
+// Nothing else in the suite would notice it defaulting to true.
+func TestRequireVerificationReachesTheValidatorAndDefaultsOff(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "absent by default", args: []string{"validate"}},
+		{name: "given", args: []string{"validate", "--require-verification"}, want: true},
+		{name: "given as false", args: []string{"validate", "--require-verification=false"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, `{"version":"1"}`)
+			var got validate.Options
+			h.validator.ValidateFunc = func(_ context.Context, _ []byte, options validate.Options) (*review.Result, error) {
+				got = options
+				return &review.Result{Valid: true}, nil
+			}
+			require.Equal(t, ExitValid, h.app.Run(t.Context(), test.args))
+			assert.Equal(t, test.want, got.RequireVerification)
+		})
+	}
+}
