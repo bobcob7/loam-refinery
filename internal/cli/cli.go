@@ -19,6 +19,15 @@ const (
 	ExitValid   = 0
 	ExitInvalid = 1
 	ExitUsage   = 2
+	// ExitTool marks the tool-error band: the tool's own state could not be
+	// read or written, and neither revising the review nor fixing the
+	// command line will help. It covers a config file that could not be
+	// read or parsed, a store that could not be created or written, and a
+	// store directory that could not be read. Everything the caller typed
+	// still exits ExitUsage; ExitTool is for what the caller did not type.
+	// Codes 102-125 are reserved for finer distinctions within the same
+	// band and are unassigned today.
+	ExitTool = 101
 )
 
 // Build is what version reports.
@@ -38,22 +47,26 @@ type CheckNames struct {
 
 // App holds the wired dependencies for one process.
 type App struct {
-	validator  documentValidator
-	registry   entryRegistry
-	renderer   renderer
-	names      CheckNames
-	build      Build
-	dir        string
-	stdin      io.Reader
-	stdout     io.Writer
-	stderr     io.Writer
-	log        *slog.Logger
-	schemaText func(annotated bool) ([]byte, error)
+	validator   documentValidator
+	store       documentStore
+	reviewStore reviewStore
+	registry    entryRegistry
+	renderer    renderer
+	names       CheckNames
+	build       Build
+	dir         string
+	stdin       io.Reader
+	stdout      io.Writer
+	stderr      io.Writer
+	log         *slog.Logger
+	schemaText  func(annotated bool) ([]byte, error)
 }
 
 // New wires an App. Everything it needs is passed in; nothing is package state.
 func New(
 	validator documentValidator,
+	store documentStore,
+	reviewStore reviewStore,
 	registry entryRegistry,
 	structured renderer,
 	names CheckNames,
@@ -65,17 +78,19 @@ func New(
 	log *slog.Logger,
 ) *App {
 	return &App{
-		validator:  validator,
-		registry:   registry,
-		renderer:   structured,
-		names:      names,
-		build:      build,
-		schemaText: schemaText,
-		dir:        dir,
-		stdin:      stdin,
-		stdout:     stdout,
-		stderr:     stderr,
-		log:        log,
+		validator:   validator,
+		store:       store,
+		reviewStore: reviewStore,
+		registry:    registry,
+		renderer:    structured,
+		names:       names,
+		build:       build,
+		schemaText:  schemaText,
+		dir:         dir,
+		stdin:       stdin,
+		stdout:      stdout,
+		stderr:      stderr,
+		log:         log,
 	}
 }
 
@@ -84,10 +99,11 @@ const usage = `loam-refinery — check a review document
   loam-refinery prime                       the workflow, in one small call
   loam-refinery describe [--lens=NAME,...]  the contract, disclosed on demand
   loam-refinery validate [path]             check a review (- or omitted: stdin)
+  loam-refinery reviews [--repo=NAME]       what an earlier validate stored
   loam-refinery schema [--annotated]        JSON Schema, for machines
   loam-refinery version
 
-exit 0 valid, 1 revise the review, 2 fix the invocation
+exit 0 valid, 1 revise the review, 2 fix the invocation, 101 the tool failed
 `
 
 // Run dispatches one invocation and returns its exit code.
@@ -104,6 +120,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return a.describe(rest)
 	case "validate":
 		return a.validate(ctx, rest)
+	case "reviews":
+		return a.reviews(ctx, rest)
 	case "schema":
 		return a.schema(rest)
 	case "version":

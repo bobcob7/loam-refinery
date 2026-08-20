@@ -16,6 +16,7 @@ import (
 	"github.com/bobcob7/loam-refinery/internal/entry"
 	"github.com/bobcob7/loam-refinery/internal/render"
 	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/store"
 	"github.com/bobcob7/loam-refinery/internal/structural"
 	"github.com/bobcob7/loam-refinery/internal/validate"
 	"github.com/stretchr/testify/assert"
@@ -25,6 +26,8 @@ import (
 type harness struct {
 	app       *App
 	validator *documentValidatorMock
+	store     *documentStoreMock
+	reviews   *reviewStoreMock
 	stdout    *bytes.Buffer
 	stderr    *bytes.Buffer
 }
@@ -37,8 +40,14 @@ func newHarness(t *testing.T, stdin string) *harness {
 			return &review.Result{Valid: true, Comments: 1, Verification: review.Verification{Source: "repo"}}, nil
 		},
 	}
+	storeMock := &documentStoreMock{
+		SaveFunc: func(context.Context, StoreInput) error { return nil },
+	}
+	reviewsMock := noopReviewStore()
 	app := New(
 		validator,
+		storeMock,
+		reviewsMock,
 		testRegistry(t),
 		render.NewJSON(),
 		CheckNames{
@@ -59,7 +68,26 @@ func newHarness(t *testing.T, stdin string) *harness {
 		stderr,
 		slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	)
-	return &harness{app: app, validator: validator, stdout: stdout, stderr: stderr}
+	return &harness{app: app, validator: validator, store: storeMock, reviews: reviewsMock, stdout: stdout, stderr: stderr}
+}
+
+// noopReviewStore stands in for reviewStore wherever a test drives a command
+// other than reviews itself: an empty, known-nothing store that never errors.
+func noopReviewStore() *reviewStoreMock {
+	return &reviewStoreMock{
+		RepoNameFunc: func(context.Context, string) (string, bool, error) { return "", false, nil },
+		KnownFunc:    func(context.Context, string) (bool, error) { return false, nil },
+		ListReviewsFunc: func(context.Context, string, string, int) ([]store.Review, int, error) {
+			return nil, 0, nil
+		},
+		ListFailedRunsFunc: func(context.Context, string, string, int) ([]store.FailedRun, int, error) {
+			return nil, 0, nil
+		},
+		ListReposFunc: func(context.Context) ([]store.RepoCount, error) { return nil, nil },
+		ReadContentFunc: func(string) ([]byte, error) {
+			return nil, errors.New("noopReviewStore: no content")
+		},
+	}
 }
 
 func TestRunDispatches(t *testing.T) {
@@ -89,6 +117,26 @@ func TestRunDispatches(t *testing.T) {
 			assert.Contains(t, h.stdout.String(), test.stdout)
 			assert.Contains(t, h.stderr.String(), test.stderr)
 		})
+	}
+}
+
+func TestExitToolIsTheReservedToolErrorBand(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, 101, ExitTool)
+	assert.NotEqual(t, ExitUsage, ExitTool, "a caller-typed mistake must not share a code with a machine failure")
+}
+
+// TestUsageBannerNamesEveryExitCode reproduces refinery-a96.27: the banner an
+// unknown command and a no-argument invocation both print used to enumerate
+// only three exit codes, so a reader who takes it as the list would map 101
+// onto nothing, or worse onto 2 — the exact mistake docs/cli.md §4 warns
+// against.
+func TestUsageBannerNamesEveryExitCode(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	h.app.Run(t.Context(), nil)
+	for _, code := range []string{"0", "1", "2", "101"} {
+		assert.Contains(t, h.stderr.String(), code, "the usage banner must name exit %s", code)
 	}
 }
 
@@ -189,6 +237,106 @@ func TestValidateExitCodes(t *testing.T) {
 			assert.Equal(t, test.code, h.app.Run(t.Context(), []string{"validate"}))
 		})
 	}
+}
+
+// A store that cannot be established, written, or recorded to exits
+// ExitTool with nothing on stdout (docs/config.md §5.1) — storing happens
+// before rendering specifically so a caller can never see a clean-looking
+// result for a run that failed.
+func TestStoreFailureExitsToolWithEmptyStdout(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name  string
+		valid bool
+	}{
+		{name: "a passing run", valid: true},
+		{name: "a failing run", valid: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, `{"version":"1"}`)
+			h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
+				return &review.Result{Valid: test.valid}, nil
+			}
+			h.store.SaveFunc = func(context.Context, StoreInput) error {
+				return errors.New("read-only home directory")
+			}
+			assert.Equal(t, ExitTool, h.app.Run(t.Context(), []string{"validate"}))
+			assert.Empty(t, h.stdout.String())
+			assert.Contains(t, h.stderr.String(), "read-only home directory")
+		})
+	}
+}
+
+// A run that never reads a document creates nothing (docs/config.md §2.2,
+// §5): a usage error before the read, or one that fails the read itself,
+// must never reach the store.
+func TestValidateNeverStoresWithoutReadingADocument(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		args []string
+	}{
+		{name: "a bad flag", args: []string{"validate", "--nope"}},
+		{name: "an unreadable path", args: []string{"validate", "/nope/review.json"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, "")
+			h.app.Run(t.Context(), test.args)
+			assert.Empty(t, h.store.SaveCalls())
+		})
+	}
+}
+
+// The "wiring failure" branch of TestValidateExitCodes reports a validator
+// error that never reached a document, and it must not store either — the
+// same reasoning as an unreadable path, one call earlier in the pipeline.
+func TestValidateNeverStoresOnAWiringFailure(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, `{"version":"1"}`)
+	h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
+		return nil, errors.New("no repository finder")
+	}
+	require.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"validate"}))
+	assert.Empty(t, h.store.SaveCalls())
+}
+
+// Ref and verdict are not on review.Result, so validate has to read them off
+// the document itself for the store — and only when they are actually
+// there, so a document missing either still stores cleanly.
+func TestValidateSendsRefAndVerdictToTheStore(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, `{"version":"1","verdict":"approve","ref":"4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f","comments":[]}`)
+	h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
+		return &review.Result{Valid: true, Comments: 2}, nil
+	}
+	require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"validate"}))
+	require.Len(t, h.store.SaveCalls(), 1)
+	in := h.store.SaveCalls()[0].In
+	assert.True(t, in.Valid)
+	assert.Equal(t, "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", in.Ref)
+	assert.Equal(t, "approve", in.Verdict)
+	assert.Equal(t, 2, in.Comments)
+	assert.NotEmpty(t, in.Dir, "repository identity is resolved from the working directory")
+}
+
+// An unparseable document never yields a ref or a verdict — there is no
+// document to read either off of — and it still reaches the store, since
+// exit 1 keeps the rejected input regardless.
+func TestValidateSendsNoRefOrVerdictForAnUnparseableDocument(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "nonsense")
+	h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
+		return nil, parseError(t)
+	}
+	require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"validate"}))
+	require.Len(t, h.store.SaveCalls(), 1)
+	in := h.store.SaveCalls()[0].In
+	assert.False(t, in.Valid)
+	assert.Empty(t, in.Ref)
+	assert.Empty(t, in.Verdict)
+	assert.Equal(t, []byte("nonsense"), in.Source)
 }
 
 func TestValidateReadsStdinOrAPath(t *testing.T) {

@@ -127,9 +127,12 @@ func anchorUsable(anchor review.Anchor) bool {
 	return true
 }
 
-// refUsable reports whether the document carries a ref worth looking up. A
-// missing one is the advisory ref-missing's business and a malformed one is
-// ref-format's; neither is repeated here.
+// refUsable reports whether the document carries a ref worth looking up. The
+// schema requires the field, so a document missing it already earns a schema
+// diagnostic from the structural tier; since no tier gates another, this one
+// may still see it and quietly skips rather than repeating that finding. A
+// present but malformed ref is ref-format's business and is not repeated
+// here either.
 func (v *Verifier) refUsable(doc *review.Document) (string, bool) {
 	switch {
 	case !doc.Ref.Present:

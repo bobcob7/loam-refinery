@@ -7,6 +7,7 @@ import (
 	"context"
 	"github.com/bobcob7/loam-refinery/internal/entry"
 	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/store"
 	"github.com/bobcob7/loam-refinery/internal/validate"
 	"io"
 	"sync"
@@ -418,5 +419,411 @@ func (mock *entryRegistryMock) ResolveCalls() []struct {
 	mock.lockResolve.RLock()
 	calls = mock.calls.Resolve
 	mock.lockResolve.RUnlock()
+	return calls
+}
+
+// Ensure, that documentStoreMock does implement documentStore.
+// If this is not the case, regenerate this file with moq.
+var _ documentStore = &documentStoreMock{}
+
+// documentStoreMock is a mock implementation of documentStore.
+//
+//	func TestSomethingThatUsesdocumentStore(t *testing.T) {
+//
+//		// make and configure a mocked documentStore
+//		mockeddocumentStore := &documentStoreMock{
+//			SaveFunc: func(ctx context.Context, in StoreInput) error {
+//				panic("mock out the Save method")
+//			},
+//		}
+//
+//		// use mockeddocumentStore in code that requires documentStore
+//		// and then make assertions.
+//
+//	}
+type documentStoreMock struct {
+	// SaveFunc mocks the Save method.
+	SaveFunc func(ctx context.Context, in StoreInput) error
+
+	// calls tracks calls to the methods.
+	calls struct {
+		// Save holds details about calls to the Save method.
+		Save []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// In is the in argument value.
+			In StoreInput
+		}
+	}
+	lockSave sync.RWMutex
+}
+
+// Save calls SaveFunc.
+func (mock *documentStoreMock) Save(ctx context.Context, in StoreInput) error {
+	if mock.SaveFunc == nil {
+		panic("documentStoreMock.SaveFunc: method is nil but documentStore.Save was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+		In  StoreInput
+	}{
+		Ctx: ctx,
+		In:  in,
+	}
+	mock.lockSave.Lock()
+	mock.calls.Save = append(mock.calls.Save, callInfo)
+	mock.lockSave.Unlock()
+	return mock.SaveFunc(ctx, in)
+}
+
+// SaveCalls gets all the calls that were made to Save.
+// Check the length with:
+//
+//	len(mockeddocumentStore.SaveCalls())
+func (mock *documentStoreMock) SaveCalls() []struct {
+	Ctx context.Context
+	In  StoreInput
+} {
+	var calls []struct {
+		Ctx context.Context
+		In  StoreInput
+	}
+	mock.lockSave.RLock()
+	calls = mock.calls.Save
+	mock.lockSave.RUnlock()
+	return calls
+}
+
+// Ensure, that reviewStoreMock does implement reviewStore.
+// If this is not the case, regenerate this file with moq.
+var _ reviewStore = &reviewStoreMock{}
+
+// reviewStoreMock is a mock implementation of reviewStore.
+//
+//	func TestSomethingThatUsesreviewStore(t *testing.T) {
+//
+//		// make and configure a mocked reviewStore
+//		mockedreviewStore := &reviewStoreMock{
+//			KnownFunc: func(ctx context.Context, repo string) (bool, error) {
+//				panic("mock out the Known method")
+//			},
+//			ListFailedRunsFunc: func(ctx context.Context, repo string, ref string, limit int) ([]store.FailedRun, int, error) {
+//				panic("mock out the ListFailedRuns method")
+//			},
+//			ListReposFunc: func(ctx context.Context) ([]store.RepoCount, error) {
+//				panic("mock out the ListRepos method")
+//			},
+//			ListReviewsFunc: func(ctx context.Context, repo string, ref string, limit int) ([]store.Review, int, error) {
+//				panic("mock out the ListReviews method")
+//			},
+//			ReadContentFunc: func(path string) ([]byte, error) {
+//				panic("mock out the ReadContent method")
+//			},
+//			RepoNameFunc: func(ctx context.Context, dir string) (string, bool, error) {
+//				panic("mock out the RepoName method")
+//			},
+//		}
+//
+//		// use mockedreviewStore in code that requires reviewStore
+//		// and then make assertions.
+//
+//	}
+type reviewStoreMock struct {
+	// KnownFunc mocks the Known method.
+	KnownFunc func(ctx context.Context, repo string) (bool, error)
+
+	// ListFailedRunsFunc mocks the ListFailedRuns method.
+	ListFailedRunsFunc func(ctx context.Context, repo string, ref string, limit int) ([]store.FailedRun, int, error)
+
+	// ListReposFunc mocks the ListRepos method.
+	ListReposFunc func(ctx context.Context) ([]store.RepoCount, error)
+
+	// ListReviewsFunc mocks the ListReviews method.
+	ListReviewsFunc func(ctx context.Context, repo string, ref string, limit int) ([]store.Review, int, error)
+
+	// ReadContentFunc mocks the ReadContent method.
+	ReadContentFunc func(path string) ([]byte, error)
+
+	// RepoNameFunc mocks the RepoName method.
+	RepoNameFunc func(ctx context.Context, dir string) (string, bool, error)
+
+	// calls tracks calls to the methods.
+	calls struct {
+		// Known holds details about calls to the Known method.
+		Known []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Repo is the repo argument value.
+			Repo string
+		}
+		// ListFailedRuns holds details about calls to the ListFailedRuns method.
+		ListFailedRuns []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Repo is the repo argument value.
+			Repo string
+			// Ref is the ref argument value.
+			Ref string
+			// Limit is the limit argument value.
+			Limit int
+		}
+		// ListRepos holds details about calls to the ListRepos method.
+		ListRepos []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+		}
+		// ListReviews holds details about calls to the ListReviews method.
+		ListReviews []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Repo is the repo argument value.
+			Repo string
+			// Ref is the ref argument value.
+			Ref string
+			// Limit is the limit argument value.
+			Limit int
+		}
+		// ReadContent holds details about calls to the ReadContent method.
+		ReadContent []struct {
+			// Path is the path argument value.
+			Path string
+		}
+		// RepoName holds details about calls to the RepoName method.
+		RepoName []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Dir is the dir argument value.
+			Dir string
+		}
+	}
+	lockKnown          sync.RWMutex
+	lockListFailedRuns sync.RWMutex
+	lockListRepos      sync.RWMutex
+	lockListReviews    sync.RWMutex
+	lockReadContent    sync.RWMutex
+	lockRepoName       sync.RWMutex
+}
+
+// Known calls KnownFunc.
+func (mock *reviewStoreMock) Known(ctx context.Context, repo string) (bool, error) {
+	if mock.KnownFunc == nil {
+		panic("reviewStoreMock.KnownFunc: method is nil but reviewStore.Known was just called")
+	}
+	callInfo := struct {
+		Ctx  context.Context
+		Repo string
+	}{
+		Ctx:  ctx,
+		Repo: repo,
+	}
+	mock.lockKnown.Lock()
+	mock.calls.Known = append(mock.calls.Known, callInfo)
+	mock.lockKnown.Unlock()
+	return mock.KnownFunc(ctx, repo)
+}
+
+// KnownCalls gets all the calls that were made to Known.
+// Check the length with:
+//
+//	len(mockedreviewStore.KnownCalls())
+func (mock *reviewStoreMock) KnownCalls() []struct {
+	Ctx  context.Context
+	Repo string
+} {
+	var calls []struct {
+		Ctx  context.Context
+		Repo string
+	}
+	mock.lockKnown.RLock()
+	calls = mock.calls.Known
+	mock.lockKnown.RUnlock()
+	return calls
+}
+
+// ListFailedRuns calls ListFailedRunsFunc.
+func (mock *reviewStoreMock) ListFailedRuns(ctx context.Context, repo string, ref string, limit int) ([]store.FailedRun, int, error) {
+	if mock.ListFailedRunsFunc == nil {
+		panic("reviewStoreMock.ListFailedRunsFunc: method is nil but reviewStore.ListFailedRuns was just called")
+	}
+	callInfo := struct {
+		Ctx   context.Context
+		Repo  string
+		Ref   string
+		Limit int
+	}{
+		Ctx:   ctx,
+		Repo:  repo,
+		Ref:   ref,
+		Limit: limit,
+	}
+	mock.lockListFailedRuns.Lock()
+	mock.calls.ListFailedRuns = append(mock.calls.ListFailedRuns, callInfo)
+	mock.lockListFailedRuns.Unlock()
+	return mock.ListFailedRunsFunc(ctx, repo, ref, limit)
+}
+
+// ListFailedRunsCalls gets all the calls that were made to ListFailedRuns.
+// Check the length with:
+//
+//	len(mockedreviewStore.ListFailedRunsCalls())
+func (mock *reviewStoreMock) ListFailedRunsCalls() []struct {
+	Ctx   context.Context
+	Repo  string
+	Ref   string
+	Limit int
+} {
+	var calls []struct {
+		Ctx   context.Context
+		Repo  string
+		Ref   string
+		Limit int
+	}
+	mock.lockListFailedRuns.RLock()
+	calls = mock.calls.ListFailedRuns
+	mock.lockListFailedRuns.RUnlock()
+	return calls
+}
+
+// ListRepos calls ListReposFunc.
+func (mock *reviewStoreMock) ListRepos(ctx context.Context) ([]store.RepoCount, error) {
+	if mock.ListReposFunc == nil {
+		panic("reviewStoreMock.ListReposFunc: method is nil but reviewStore.ListRepos was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+	}{
+		Ctx: ctx,
+	}
+	mock.lockListRepos.Lock()
+	mock.calls.ListRepos = append(mock.calls.ListRepos, callInfo)
+	mock.lockListRepos.Unlock()
+	return mock.ListReposFunc(ctx)
+}
+
+// ListReposCalls gets all the calls that were made to ListRepos.
+// Check the length with:
+//
+//	len(mockedreviewStore.ListReposCalls())
+func (mock *reviewStoreMock) ListReposCalls() []struct {
+	Ctx context.Context
+} {
+	var calls []struct {
+		Ctx context.Context
+	}
+	mock.lockListRepos.RLock()
+	calls = mock.calls.ListRepos
+	mock.lockListRepos.RUnlock()
+	return calls
+}
+
+// ListReviews calls ListReviewsFunc.
+func (mock *reviewStoreMock) ListReviews(ctx context.Context, repo string, ref string, limit int) ([]store.Review, int, error) {
+	if mock.ListReviewsFunc == nil {
+		panic("reviewStoreMock.ListReviewsFunc: method is nil but reviewStore.ListReviews was just called")
+	}
+	callInfo := struct {
+		Ctx   context.Context
+		Repo  string
+		Ref   string
+		Limit int
+	}{
+		Ctx:   ctx,
+		Repo:  repo,
+		Ref:   ref,
+		Limit: limit,
+	}
+	mock.lockListReviews.Lock()
+	mock.calls.ListReviews = append(mock.calls.ListReviews, callInfo)
+	mock.lockListReviews.Unlock()
+	return mock.ListReviewsFunc(ctx, repo, ref, limit)
+}
+
+// ListReviewsCalls gets all the calls that were made to ListReviews.
+// Check the length with:
+//
+//	len(mockedreviewStore.ListReviewsCalls())
+func (mock *reviewStoreMock) ListReviewsCalls() []struct {
+	Ctx   context.Context
+	Repo  string
+	Ref   string
+	Limit int
+} {
+	var calls []struct {
+		Ctx   context.Context
+		Repo  string
+		Ref   string
+		Limit int
+	}
+	mock.lockListReviews.RLock()
+	calls = mock.calls.ListReviews
+	mock.lockListReviews.RUnlock()
+	return calls
+}
+
+// ReadContent calls ReadContentFunc.
+func (mock *reviewStoreMock) ReadContent(path string) ([]byte, error) {
+	if mock.ReadContentFunc == nil {
+		panic("reviewStoreMock.ReadContentFunc: method is nil but reviewStore.ReadContent was just called")
+	}
+	callInfo := struct {
+		Path string
+	}{
+		Path: path,
+	}
+	mock.lockReadContent.Lock()
+	mock.calls.ReadContent = append(mock.calls.ReadContent, callInfo)
+	mock.lockReadContent.Unlock()
+	return mock.ReadContentFunc(path)
+}
+
+// ReadContentCalls gets all the calls that were made to ReadContent.
+// Check the length with:
+//
+//	len(mockedreviewStore.ReadContentCalls())
+func (mock *reviewStoreMock) ReadContentCalls() []struct {
+	Path string
+} {
+	var calls []struct {
+		Path string
+	}
+	mock.lockReadContent.RLock()
+	calls = mock.calls.ReadContent
+	mock.lockReadContent.RUnlock()
+	return calls
+}
+
+// RepoName calls RepoNameFunc.
+func (mock *reviewStoreMock) RepoName(ctx context.Context, dir string) (string, bool, error) {
+	if mock.RepoNameFunc == nil {
+		panic("reviewStoreMock.RepoNameFunc: method is nil but reviewStore.RepoName was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+		Dir string
+	}{
+		Ctx: ctx,
+		Dir: dir,
+	}
+	mock.lockRepoName.Lock()
+	mock.calls.RepoName = append(mock.calls.RepoName, callInfo)
+	mock.lockRepoName.Unlock()
+	return mock.RepoNameFunc(ctx, dir)
+}
+
+// RepoNameCalls gets all the calls that were made to RepoName.
+// Check the length with:
+//
+//	len(mockedreviewStore.RepoNameCalls())
+func (mock *reviewStoreMock) RepoNameCalls() []struct {
+	Ctx context.Context
+	Dir string
+} {
+	var calls []struct {
+		Ctx context.Context
+		Dir string
+	}
+	mock.lockRepoName.RLock()
+	calls = mock.calls.RepoName
+	mock.lockRepoName.RUnlock()
 	return calls
 }

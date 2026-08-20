@@ -6,14 +6,55 @@ import (
 
 	"github.com/bobcob7/loam-refinery/internal/entry"
 	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/store"
 	"github.com/bobcob7/loam-refinery/internal/validate"
 )
 
-//go:generate moq -out moq_test.go . documentValidator renderer entryRegistry
+//go:generate moq -out moq_test.go . documentValidator renderer entryRegistry documentStore reviewStore
 
 // documentValidator runs every check tier over one document.
 type documentValidator interface {
 	Validate(ctx context.Context, source []byte, options validate.Options) (*review.Result, error)
+}
+
+// StoreInput is what validate has learned about one run by the time storing
+// happens (docs/config.md §5). Ref and Verdict are read straight off the
+// submitted document, unvalidated — a documentStore applies whatever rules
+// keep them safe to record, the same way it applies docs/config.md §4.8 to
+// the repository name.
+type StoreInput struct {
+	// Dir is where repository identity is resolved from (docs/config.md
+	// §4.2), the same directory verification already starts from.
+	Dir string
+	// Source is the exact bytes submitted, addressed and stored verbatim.
+	Source []byte
+	// Valid says whether this run exits 0 or 1 — which tree, if either,
+	// keeps the bytes (docs/config.md §5).
+	Valid bool
+	// Ref and Verdict come from the document as submitted; both are "" when
+	// the field was absent or not a string.
+	Ref     string
+	Verdict string
+	// Comments, Errors, Advisories, and Skipped are the run's counts,
+	// always known by the time storing happens.
+	Comments   int
+	Errors     int
+	Advisories int
+	Skipped    int
+	// ToolVersion and SchemaVersion are recorded on every row.
+	ToolVersion   string
+	SchemaVersion string
+}
+
+// documentStore persists one run per docs/config.md §5: exit 0 keeps the
+// review, exit 1 keeps the input unless it is oversized, and every call
+// records a row. A nil error covers both a run that stored something and one
+// with nothing to keep — store.enabled:false, most likely — so validate
+// cannot tell the two apart and does not need to. A non-nil error means the
+// store could not be established, written, or recorded to; the caller exits
+// ExitTool with nothing on stdout (docs/config.md §5.1).
+type documentStore interface {
+	Save(ctx context.Context, in StoreInput) error
 }
 
 // renderer writes everything a command has to say. There is one implementation
@@ -30,4 +71,34 @@ type renderer interface {
 type entryRegistry interface {
 	Resolve(name string) (entry.Entry, error)
 	Index() []entry.Group
+}
+
+// reviewStore answers docs/config.md §6 queries against store.db. Every
+// method only reads: a store that has not been created yet is answered as
+// empty rather than being created (docs/config.md §2.2, §6.2), and the
+// trees are opened only by ReadContent, for a file a caller asked for
+// (docs/config.md §6.3).
+type reviewStore interface {
+	// RepoName resolves --repo's default the way verification finds a
+	// repository, named per docs/config.md §4.2. ok is false outside a
+	// repository, where reviews has no default to offer.
+	RepoName(ctx context.Context, dir string) (name string, ok bool, err error)
+	// Known reports whether the store has any row at all for repo, so a
+	// mistyped repository can be told apart from one with nothing recent
+	// (docs/config.md §6.2).
+	Known(ctx context.Context, repo string) (bool, error)
+	// ListReviews returns up to limit passing runs for repo, newest first,
+	// and the total matching before limit was applied. ref, when non-empty,
+	// restricts the result to one commit; limit of 0 means unlimited.
+	ListReviews(ctx context.Context, repo, ref string, limit int) ([]store.Review, int, error)
+	// ListFailedRuns is ListReviews' counterpart for runs that stored no
+	// review (docs/config.md §6, --failed).
+	ListFailedRuns(ctx context.Context, repo, ref string, limit int) ([]store.FailedRun, int, error)
+	// ListRepos returns every repository the store has a row for, with its
+	// review and failed-run counts, ordered by name (docs/config.md §6,
+	// --list).
+	ListRepos(ctx context.Context) ([]store.RepoCount, error)
+	// ReadContent reads the file at path, as named by a Review's or
+	// FailedRun's Path (docs/config.md §6.1, --content).
+	ReadContent(path string) ([]byte, error)
 }

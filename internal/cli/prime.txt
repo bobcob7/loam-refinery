@@ -6,16 +6,17 @@ The loop:
 
 1. Write the review.
 2. loam-refinery validate review.json   (- or no path reads stdin)
-3. Exit 0 — done. Exit 2 — the invocation is wrong, not the review.
-4. Exit 1 — the JSON names a check per diagnostic and lists the ones worth
-   opening in "lenses". Run loam-refinery describe --lens=a,b,c on those
-   you do not understand, fix, validate again.
+3. Exit 0 — done. Exit 2 — fix the invocation, not the review. Exit 101 —
+   the tool itself failed; stop and report, do not retry.
+4. Exit 1 — each diagnostic names a check, listed in "lenses". Run
+   loam-refinery describe --lens=a,b,c on the ones you do not understand,
+   fix, validate again.
 5. Unsure about a field? Same command, --lens=<field>. Never guess at an
    enum or a scale.
 
-loam-refinery describe          the document shape, enough to write one
+loam-refinery describe          the document shape
 loam-refinery describe --list   every name it can explain
-loam-refinery schema            JSON Schema — for machines, not for learning
+loam-refinery schema            JSON Schema, for machines
 
 Advisories report review quality and never fail the run; structural errors
 and anchors that point nowhere do.

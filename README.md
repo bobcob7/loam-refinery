@@ -182,11 +182,43 @@ with no cooperation from this tool and no state it had to keep.
 | Command | Purpose | ~Tokens |
 | --- | --- | --- |
 | `loam-refinery prime` | The workflow: how to use the tool and when to reach for `describe` | 250 |
-| `loam-refinery describe` | The contract in summary — enough to write a review | 600 |
-| `loam-refinery describe --lens=NAME` | One field or one failed check, in full | 250 each |
-| `loam-refinery describe --list` | Every name the binary can explain | 120 |
-| `loam-refinery validate [path]` | Check a review (`-` or omitted reads stdin) | 15 clean |
-| `loam-refinery schema` | Minimal JSON Schema, annotations stripped — for machines | 400 |
+| `loam-refinery describe` | The contract in summary — enough to write a review | 850 |
+| `loam-refinery describe --lens=NAME` | One field or one failed check, in full | 350 each |
+| `loam-refinery describe --list` | Every name the binary can explain | 380 |
+| `loam-refinery validate [path]` | Check a review (`-` or omitted reads stdin) | 80 clean |
+| `loam-refinery reviews` | Reviews already stored for this repository | 60 + 45/row |
+| `loam-refinery reviews --failed` | Runs that produced no review, and the input | 60 + 55/row |
+| `loam-refinery schema` | Minimal JSON Schema, annotations stripped — for machines | 1,000 |
+
+Budgets are ceilings, enforced by tests that fail when a command grows past
+them — a limit nothing measures is a limit that erodes.
+
+## Keeping reviews
+
+A passing review is a conclusion about a commit, and without somewhere to put it
+that conclusion lives only in whatever pipe you were holding. Every review that
+validates clean is written to a local store — the document byte for byte in a
+JSON file, and a row in a SQLite database recording what the run found:
+
+```console
+$ loam-refinery validate review.json
+$ loam-refinery reviews --ref=4f2c1a9
+$ loam-refinery reviews --failed        # runs that produced no review
+```
+
+Failed runs are kept too — the row, and the input exactly as submitted, under
+`rejected/`. An agent that emits `{}` is not making three mistakes, it is making
+one, and no count of diagnostics says that as plainly as the four bytes do.
+Repeats cost nothing: files are addressed by content, so fifty identical
+failures are one file and fifty rows.
+
+`validate` says nothing about any of this — its output describes the review, and
+where a copy landed is a question for `reviews`. The store is created on first
+use, under `~/.local/share/loam-refinery/`, and nothing is ever written inside
+the repository. There is no flag: storing is what `validate` does, and one line
+of config turns it off for a whole machine. A store that *cannot* be written
+fails the command (exit 101) rather than silently keeping nothing. Full
+specification in [docs/config.md](docs/config.md).
 
 ## Progressive disclosure
 
@@ -217,12 +249,15 @@ Full accounting in [docs/cli.md §6](docs/cli.md#6-token-economy).
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Structurally valid. Advisories may be present |
-| 1 | Structurally invalid, or advisories present under `--strict` |
-| 2 | Usage or I/O error |
+| 0 | Structurally valid, and anchors verified where a repository was available. Advisories may be present |
+| 1 | Structurally invalid, a verification failure, or advisories present under `--strict` |
+| 2 | Usage error — unknown flag, unknown check name, an unreadable input path |
+| 101 | Tool error — the config or the store could not be read or written |
 
-Exit 1 means *revise the review*; exit 2 means *fix the invocation*. An agent must
-be able to tell those apart without parsing prose.
+Exit 1 means *revise the review*, exit 2 means *fix the command*, and exit 101
+means neither will help — the machine failed. An agent must be able to tell the
+three apart without parsing prose, which is why the tool-error band starts above
+the crowded low codes (a shell already uses 2, 126, 127, and 128+N).
 
 ## Non-goals
 
@@ -230,6 +265,8 @@ be able to tell those apart without parsing prose.
 - Posting comments to GitHub or any other forge
 - Judging whether a review's *claims* are correct — only whether the review is
   well-formed and internally consistent
+- Merging, ranking, or reconciling reviews. Passing reviews can be *kept*
+  ([docs/config.md](docs/config.md)) — side by side, never combined
 - Acting as an MCP server (see [docs/cli.md](docs/cli.md#8-future-considerations))
 
 ## Documentation
@@ -238,3 +275,5 @@ be able to tell those apart without parsing prose.
   field, the priority/effort/scope ladders, and what makes a review valid
 - [docs/cli.md](docs/cli.md) — the tool: commands, flags, exit codes, output
   formats, and implementation notes
+- [docs/config.md](docs/config.md) — settings and the review store: where they
+  live, what a stored review looks like, and how to read one back

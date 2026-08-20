@@ -30,7 +30,6 @@ func TestEveryAdvisoryFiresOnItsFixture(t *testing.T) {
 		message string
 	}{
 		{name: "id-grouping", message: `slug "dropped-context" has suffixes 1, 3; renumber contiguously`},
-		{name: "ref-missing", message: "2 anchors carry a line number and the document has no ref; nobody can verify them"},
 		{name: "body-thin", message: "body is 33 characters; state the finding and what follows from it"},
 		{name: "vacuous-body", message: `body ("Consider refactoring.") says nothing a consumer can act on`},
 		{name: "suggestion-absent", message: "priority 9 with no suggestions; propose a way out"},
@@ -185,22 +184,7 @@ func TestFileLevelAnchorsAreNotDuplicateSpans(t *testing.T) {
 		map[string]any{"id": "b-1", "anchors": []any{map[string]any{"file": "a.go"}}},
 	)
 	diagnostics, _ := duplicateAnchor(doc)
-	assert.Empty(t, diagnostics, "ref-missing tells writers to anchor at file level; that must not earn an advisory")
-}
-
-func TestRefMissingReportsTheRootFieldOnce(t *testing.T) {
-	t.Parallel()
-	doc := build(t,
-		map[string]any{"id": "a-1", "anchors": []any{
-			map[string]any{"file": "a.go", "line": 3},
-			map[string]any{"file": "b.go", "line": 9},
-		}},
-		map[string]any{"id": "b-1", "anchors": []any{map[string]any{"file": "c.go", "line": 4}}},
-	)
-	diagnostics, _ := refMissing(doc)
-	require.Len(t, diagnostics, 1, "one missing root field is one finding, not one per anchor")
-	assert.Equal(t, "/ref", diagnostics[0].Path)
-	assert.Contains(t, diagnostics[0].Message, "3 anchors carry")
+	assert.Empty(t, diagnostics, "file-level anchors sharing a file must not earn an advisory")
 }
 
 func TestBodyThinCatchesAWhitespaceOnlyBody(t *testing.T) {

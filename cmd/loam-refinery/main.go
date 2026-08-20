@@ -22,7 +22,7 @@ import (
 )
 
 // version is set at build time with -ldflags.
-var version = "0.1.0-dev"
+var version = "0.2.0-dev"
 
 func main() {
 	os.Exit(run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -76,6 +76,8 @@ func wire(log *slog.Logger, stdin io.Reader, stdout, stderr io.Writer) (*cli.App
 	}
 	return cli.New(
 		validator,
+		newStoreAdapter(log),
+		newReviewsAdapter(log),
 		registry,
 		render.NewJSON(),
 		checkNames(),
