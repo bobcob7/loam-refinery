@@ -78,6 +78,7 @@ func wire(log *slog.Logger, stdin io.Reader, stdout, stderr io.Writer) (*cli.App
 		validator,
 		newStoreAdapter(log),
 		newReviewsAdapter(log),
+		newProfilesAdapter(),
 		registry,
 		render.NewJSON(),
 		checkNames(),

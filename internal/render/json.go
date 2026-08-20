@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/bobcob7/loam-refinery/internal/entry"
+	"github.com/bobcob7/loam-refinery/internal/profile"
 	"github.com/bobcob7/loam-refinery/internal/review"
 )
 
@@ -172,6 +173,27 @@ func (j *JSON) Summary(w io.Writer, text string, groups []entry.Group) error {
 		Summary string      `json:"summary"`
 		Index   []jsonGroup `json:"index"`
 	}{Summary: text, Index: groupIndex(groups)})
+}
+
+// jsonProfile is one row of prime --list: name and description, no body
+// (docs/cli.md §2.1.5 - bodies are never part of the index).
+type jsonProfile struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// Profiles writes prime --list's profile index. profiles is never nil going
+// in (internal/profile.Reader.List guarantees that), and the payload's own
+// slice is initialized empty rather than left nil either way, so a missing
+// or empty profile directory renders "profiles":[] and never "profiles":null.
+func (j *JSON) Profiles(w io.Writer, profiles []profile.Profile) error {
+	payload := struct {
+		Profiles []jsonProfile `json:"profiles"`
+	}{Profiles: []jsonProfile{}}
+	for _, p := range profiles {
+		payload.Profiles = append(payload.Profiles, jsonProfile{Name: p.Name, Description: p.Description})
+	}
+	return write(w, payload)
 }
 
 func write(w io.Writer, payload any) error {

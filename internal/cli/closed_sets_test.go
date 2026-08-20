@@ -62,3 +62,13 @@ func TestValidateFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
 	sort.Strings(want)
 	assert.Equal(t, want, flagNames(t, "validate"), "docs/cli.md §3: validate accepts exactly these five flags, and none about storing")
 }
+
+// TestPrimeFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's table
+// for prime: --profile and --list, and nothing else - no --format, since
+// prime is prose rather than the one JSON renderer (docs/cli.md §5.1).
+func TestPrimeFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
+	t.Parallel()
+	want := []string{"list", "profile"}
+	sort.Strings(want)
+	assert.Equal(t, want, flagNames(t, "prime"), "docs/cli.md §3: prime accepts exactly --profile and --list")
+}
