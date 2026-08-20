@@ -34,7 +34,7 @@ var dashRun = regexp.MustCompile(`-{2,}`)
 var scpLike = regexp.MustCompile(`^(?:[^@/]+@)?([^:/]+):(.+)$`)
 
 // ValidateName reports whether name is a valid repository name per
-// config.md section 4.8: 1 to 4 segments joined by "/", each matching
+// config.md section 4.8: 1 to 3 segments joined by "/", each matching
 // ^[a-z0-9][a-z0-9._-]*$, at most 64 characters, never "." or "..", and the
 // whole name at most 200 characters total. It performs no normalization —
 // a name that comes from a person is checked as written, not corrected,
@@ -48,8 +48,8 @@ func ValidateName(name string) error {
 		return fmt.Errorf("repository name %q is %d characters, more than the 200 allowed", name, len(name))
 	}
 	segments := strings.Split(name, "/")
-	if len(segments) > 4 {
-		return fmt.Errorf("repository name %q has %d segments, more than the 4 allowed", name, len(segments))
+	if len(segments) > 3 {
+		return fmt.Errorf("repository name %q has %d segments, more than the 3 allowed", name, len(segments))
 	}
 	for _, seg := range segments {
 		if err := validateSegment(seg); err != nil {
@@ -121,13 +121,13 @@ func isAlnum(r rune) bool {
 // normalizeName runs every element of segments through normalizeSegment and
 // joins the result with "/". It fails — telling the caller to try the next
 // derivation, or fall back to no-repo — when any segment normalizes empty,
-// when the joined name is empty, when it has more than 4 segments, when it
+// when the joined name is empty, when it has more than 3 segments, when it
 // is over 200 characters, or when it equals the reserved no-repo (config.md
 // sections 4.2 and 4.8). None of those is possible for a name accepted by
 // ValidateName, but a derived name has not been validated by a person and
 // must be rejected on its shape rather than trusted.
 func normalizeName(segments []string) (string, bool) {
-	if len(segments) == 0 || len(segments) > 4 {
+	if len(segments) == 0 || len(segments) > 3 {
 		return "", false
 	}
 	out := make([]string, 0, len(segments))

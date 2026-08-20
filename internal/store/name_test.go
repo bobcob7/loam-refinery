@@ -33,6 +33,7 @@ func TestValidateName_Invalid(t *testing.T) {
 		"empty":                "",
 		"traversal segment":    "github.com/../etc",
 		"dot segment":          "github.com/./x",
+		"four segments":        "a/b/c/d",
 		"five segments":        "a/b/c/d/e",
 		"uppercase":            "GitHub.com/x",
 		"leading dash":         "-github.com",
@@ -220,6 +221,47 @@ func TestRepoName_RemoteNormalizingToNoRepoFallsBack(t *testing.T) {
 	name, err := RepoName(t.Context(), git, "/home/me/scratch", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "local/scratch", name, "the colliding remote-derived name is rejected and falls back to local/<basename>")
+}
+
+// TestRepoName_FourSegmentRemoteFallsBackToNoRepo proves config.md section
+// 4.8's cap of 3 segments (host + owner + repo): a remote with a fourth path
+// segment fails remote derivation, and when the git root's basename also
+// fails to normalize there is no further fallback, so the name is the
+// reserved no-repo (config.md section 4.2). "---" is the same
+// always-empty-after-normalization value TestNormalizeSegment_
+// EmptyResultSignalsFallback uses, isolating the segment cap as the thing
+// under test rather than some other basename quirk.
+func TestRepoName_FourSegmentRemoteFallsBackToNoRepo(t *testing.T) {
+	t.Parallel()
+	git := &gitRunnerMock{
+		rootFunc: func(ctx context.Context, dir string) (string, error) {
+			return "---", nil
+		},
+		originURLFunc: func(ctx context.Context, root string) (string, error) {
+			return "https://gitlab.com/group/sub/project", nil
+		},
+	}
+	name, err := RepoName(t.Context(), git, "---", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "no-repo", name)
+}
+
+// TestRepoName_ThreeSegmentRemoteUnaffected proves the three-segment case —
+// host + owner + repo, the common case config.md section 4.8's cap of 3 was
+// chosen to keep working — is accepted and passes through unchanged.
+func TestRepoName_ThreeSegmentRemoteUnaffected(t *testing.T) {
+	t.Parallel()
+	git := &gitRunnerMock{
+		rootFunc: func(ctx context.Context, dir string) (string, error) {
+			return "/repo/root", nil
+		},
+		originURLFunc: func(ctx context.Context, root string) (string, error) {
+			return "https://github.com/owner/repo", nil
+		},
+	}
+	name, err := RepoName(t.Context(), git, "/repo/root", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "github.com/owner/repo", name)
 }
 
 func TestRepoName_GitFailurePropagates(t *testing.T) {

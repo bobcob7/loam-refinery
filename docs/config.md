@@ -706,7 +706,7 @@ adjacent data in any workflow that reviews code it did not write.
 
 - Each segment matches `^[a-z0-9][a-z0-9._-]*$`, is at most 64 characters, and
   is never `.` or `..`.
-- A repository name has 1 to 4 segments and is at most 200 characters total.
+- A repository name has 1 to 3 segments and is at most 200 characters total.
 - A ref is exactly 40 lowercase hex characters.
 - `no-repo` is reserved ([§4.2](#42-repository-identity)); a derived name may
   not equal it.
