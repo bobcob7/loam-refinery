@@ -35,9 +35,13 @@ Explicitly out of scope:
 
 - Fetching anything over a network — PRs, diffs, remote refs
 - Posting to GitHub or any forge
-- Reading file *contents*. Verification asks a checkout whether a path and line
-  number exist at a ref; it never looks at what is on the line, because judging
-  that would make `loam-refinery` a reviewer rather than a referee.
+- Reading file *contents* to judge them. Verification asks a checkout whether a
+  path and line number exist at a ref, and reads the working-tree copy of an
+  anchored file — but only to tell whether it is still the file `ref` names,
+  never to decide whether the anchor itself is right
+  ([§2.3.1](#231-verifying-anchors)). Judging what a line *does* would make
+  `loam-refinery` a reviewer rather than a referee, and that boundary has not
+  moved. Amended; see [Amendments](#amendments) below.
 - Assessing the *truth* of a review's claims. `loam-refinery` cannot know whether
   "this nil check is missing" is correct; it only knows the comment is anchored,
   prioritized, substantive, and honest about what its suggestions cost.
@@ -49,12 +53,16 @@ Explicitly out of scope:
 
 1. **Offline, and read-only about the repository.** No network, ever. `loam-refinery`
    reads the repository it is run in to verify anchors
-   ([§2.3.1](#231-verifying-anchors)), and reads only what it takes to answer
-   "does this path exist at this ref, and does it have this many lines?" It never
-   reads a diff, never forms an opinion about code, and never carries repository
-   content into or out of a review. It never writes inside the repository
-   either: the store is a directory under the user's home
-   ([config.md §2](config.md#2-locations)).
+   ([§2.3.1](#231-verifying-anchors)): does this path exist at this ref, does it
+   have this many lines, and — to know whether that question can even be asked
+   — does the working-tree copy of the file still match the one at `ref`. It
+   never reads a diff, never forms an opinion about code, and never carries
+   repository content into or out of a review: the working tree is consulted
+   to decide whether `ref` is still authoritative for a file, never treated as
+   a second source of truth to verify against. It never writes inside the
+   repository either: the store is a directory under the user's home
+   ([config.md §2](config.md#2-locations)). Amended; see
+   [Amendments](#amendments) below.
 2. **The schema is the documentation.** Field descriptions and examples live in
    the annotated schema, and `describe` renders from it, so explanation cannot
    drift from enforcement.
@@ -76,6 +84,30 @@ Explicitly out of scope:
    *directory* holds one other thing a person may write — reviewer profiles
    ([§2.1.1](#211-reviewer-profiles)) — and the same rule binds them: they
    change what `prime` prints, never what `validate` decides.
+
+### Amendments
+
+Design principles are revised in the open, not contradicted quietly — the same
+posture [config.md §1.1](config.md#11-what-this-changes-about-the-design-principles)
+uses for its own promises. Consulting the working tree to decide whether an
+anchor is checkable ([§2.3.1](#231-verifying-anchors)) touches four
+statements made above:
+
+| Principle | Standing |
+| --- | --- |
+| Verification reads only whether a path and line exist, never file content (design principle 1) | **Amended.** Verifying an anchor now also reads the working-tree copy of the anchored file, to compare it against the blob at `ref` — git's own comparison, filters applied, not a raw byte diff. What survives is the reason the principle existed: `loam-refinery` compares the file against `ref` to decide whether `ref` is still authoritative for it, and never reads to interpret what a line means — reading to decide checkability is not reading to review. |
+| Reading file contents is out of scope (§1, explicitly out of scope) | **Amended, narrowly.** Reading to *compare* — is this, right now, the file `ref` names — is now in scope, for the one purpose the check exists for. Reading to *judge* — forming an opinion about what a line does — remains out of scope, and that narrower boundary is the one that actually matters: it is what keeps `loam-refinery` a referee rather than a reviewer. |
+| Anchors resolve only against the object database, never a working tree ([§2.3.1](#231-verifying-anchors)) | **Amended.** The working tree is consulted once, and only when `ref` is `HEAD`, to decide whether an anchor is checkable at all — whether the file at `ref` and the file on disk are still the same file. It never supplies an answer of its own: it can only withhold a verification, never grant one, so a diverged file is reported unverified rather than checked against the working tree in the object database's place. |
+| Exit 0 means anchors verified where a repository was available ([§4](#4-exit-codes)) | **Amended.** A repository being available no longer implies every anchor was verified: `anchor-worktree-diverged` ([§2.3.1](#231-verifying-anchors)) is a routine, non-fatal reason some are not, in a live checkout. Exit 0 now means every anchor was either verified or, where the working tree could not confirm one, reported unverified and why — never silently counted as either. |
+
+Two things do not move. `loam-refinery` still forms no opinion about what an
+anchored line *does* — a match says the file on disk is still the one `ref`
+names, not that the comment about it is correct, and judging that remains the
+reviewer's job, not the referee's
+([review-document.md §11.2](review-document.md#112-verification-checks--conditional)).
+And the tool still never writes inside the repository, and still opens no
+socket: comparing a working-tree file against a blob touches neither
+promise.
 
 ## 2. Commands
 
@@ -465,12 +497,16 @@ Verification is the only check tier that catches it.
 
 It runs **by default**, against the git repository containing the working
 directory, discovered the way git itself discovers one — walking up from the CWD
-until a repository root is found. There is no flag. Anchors resolve against the
-object database — `git ls-tree` for the path, `git cat-file` for the object
-behind it, and never a working tree. No ref resolution is
+until a repository root is found. There is no flag. Path and line existence
+resolve against the object database — `git ls-tree` for the path, `git
+cat-file` for the object behind it. No ref resolution is
 involved, because a ref is already a SHA; there is nothing to disambiguate and no
 chance of resolving to a different commit than the reviewer saw. Commits that are
-not checked out still work.
+not checked out still work, and that stays true without qualification: the
+working tree is consulted only when `ref` **is** the checked-out commit, never
+otherwise, and even then only to decide whether the object database still has
+the last word on a given file — never as a second place to check an anchor
+against; see below.
 
 Verifying by default rather than on request is the deliberate part. An opt-in
 check makes the plain invocation the weak one, and the plain invocation is what
@@ -486,8 +522,9 @@ the tier is worse than absent — it would license confidence it never earned.
 A caller who cannot accept an unchecked document passes
 `--require-verification`, which turns "nobody confirmed these anchors" into a
 `verification-required` error and exit 1. It fires whenever the anchor claims
-went unchecked — no repository, an unreachable one, or a single file git could
-not read — because those are one answer to the question the flag asks. It is
+went unchecked — no repository, an unreachable one, a single file git could
+not read, or an anchor into a file that has diverged from `ref` in the
+working tree — because those are one answer to the question the flag asks. It is
 off by default: a document is not wrong for being checked somewhere that could
 not check it, and only the caller knows whether it needed a repository to.
 `--warn-only=verification-required` demotes it like any other verification
@@ -520,10 +557,74 @@ names as refs rules out a manifest as a source of truth: something that resolves
 but not provably to what was reviewed, is worse than nothing because it reads as
 confirmation.
 
-Verification checks are errors by default because they are factual, not matters
-of judgment. `--warn-only` demotes them for the legitimate case of a repository that lacks the
-reviewed commit — a shallow clone, or a branch deleted and garbage-collected
-since.
+The working tree answers a different question from the one path and line
+existence already answer, and only when `ref` **is** the checked-out commit.
+When `ref` names some other commit, the working tree has nothing to do with
+what the reviewer read, and consulting it anyway would silence anchors the
+object database can already answer perfectly — the opposite of what "commits
+that are not checked out still work" promises earlier in this section.
+Restricting the comparison to `ref == HEAD` is what keeps that promise true
+rather than merely repeated.
+
+The property that licenses consulting the working tree at all is
+**monotonicity**: the working tree can only ever *withhold* a verification,
+never *grant* one. Every verified result is still computed against `ref` from
+the object database, exactly as before; the most the working tree can do is
+turn a would-be answer into no answer. That is the opposite of the failure
+the paragraph above rejects for a caller-supplied file list — a list "would
+verify anchors against *some* revision and **report success**," and success
+is precisely what the working tree is never allowed to manufacture.
+Withholding is safe in a way granting is not, and that asymmetry is the whole
+argument: nothing here is offered as a second source of truth, only as a
+reason `ref`'s answer might not apply.
+
+"Differs" means git's own answer to *has this file changed since `ref`* — not
+a raw content hash, which would invent a second definition of "changed" that
+disagrees with git's own: under `core.autocrlf=true`, a byte comparison sees
+line-ending normalization that git's own comparison already accounts for, so
+every tracked file would read as diverged and the check would be worse than
+useless. `git diff <ref>` already answers this question, filters applied;
+`git status` does not — it compares the working tree against `HEAD` and the
+index, not against an arbitrary `ref`, which is one more reason the
+comparison only runs when `ref` **is** `HEAD`.
+
+Verifying an anchor is therefore three cases, not two, and they are disjoint:
+
+| Case | Result | Why |
+| --- | --- | --- |
+| Path absent at `ref` | `anchor-file-missing`, error | Unchanged from today. The working tree is not consulted and cannot soften it — softening a definite answer from `ref` is exactly what monotonicity forbids. |
+| `ref` is `HEAD`, path present at `ref`, a working-tree copy exists, and it differs from `ref` | `anchor-worktree-diverged`, unverified | The file the reviewer may have read is not the file at `ref`. Checking the anchor's lines against either copy would mean checking it against a file the reviewer may never have seen. Requiring a working-tree copy to *exist* keeps this disjoint from the row above: git reports a deletion as a difference too, but a file missing from the working tree says nothing about what the reviewer read, so a deleted file falls through to the row below rather than landing here. |
+| Everything else | Checked normally | Either `ref` is not `HEAD`, so the working tree is irrelevant, or it is `HEAD` and the file matches or is absent from the working tree, so nothing contradicts `ref`. Path and line existence resolve exactly as they always have, against the object database. |
+
+`anchor-worktree-diverged` is a verification check, named the way
+`anchor-file-missing` and `anchor-line-out-of-range` are, and it is a lens
+like every other check name ([§2.2](#22-describe)) — but it is not, by
+default, an error: monotonicity means firing it can only remove an anchor
+from `verified`, never add one to a failing count, so it reports and moves
+on. It is the fourth member of the set `--require-verification` already
+fires on, named above, needing no new flag and no new exit-code meaning; and
+because it has its own name, a caller under `--require-verification` can
+demote it alone with `--warn-only=anchor-worktree-diverged`, the same way
+`--warn-only=ref-unknown` already excuses only the gap that check explains,
+without also excusing a missing repository or an unreadable file. Its place
+is [`verification`](#52-the-result-object), not `diagnostics`: the outcome is
+a fact about whether one anchor could be checked, which is what that block
+already reports, and not `skipped`, which groups by reason for the whole run
+rather than per anchor.
+
+An anchor `anchor-worktree-diverged` reports is never line-checked at all —
+not against `ref`, not against the working tree. That is deliberate: a file
+that has only grown since `ref` would otherwise fail
+`anchor-line-out-of-range` against a length that was never the review's
+problem, an error about the state of the checkout rather than about the
+review.
+
+Verification checks are errors by default because they are factual, not
+matters of judgment — `anchor-worktree-diverged` is the one exception,
+non-fatal by construction, because withholding a verification is not a claim
+that the anchor is wrong. `--warn-only` demotes the others for the legitimate
+case of a repository that lacks the reviewed commit — a shallow clone, or a
+branch deleted and garbage-collected since.
 
 Verification is not the only audit path, and deliberately not the last word.
 Because a ref is an immutable SHA, every anchor in a passing review remains
@@ -631,7 +732,7 @@ whether a document is valid may be set from configuration, which is why
 
 | Code | Meaning | Whose problem |
 | --- | --- | --- |
-| 0 | Structurally valid, and anchors verified where a repository was available. Advisories may be present. | Nobody's |
+| 0 | Structurally valid, with anchors verified — or reported unverified, where the working tree could not confirm one ([§2.3.1](#231-verifying-anchors)) — wherever a repository was available. Advisories may be present. | Nobody's |
 | 1 | Structurally invalid, unparseable, a verification failure, unverified anchors under `--require-verification`, or advisories present under `--strict`. | The review |
 | 2 | Usage error: unknown flag or command, unknown check name, an unknown or malformed profile name, an unreadable input path, a malformed `--repo` or `--ref`, `--list` combined with another `reviews` flag or with `--profile`. | The invocation |
 | 101 | Tool error: the tool's own state could not be read or written — an unparseable config file, a store that could not be created, a store directory that could not be read, a profile that exists but could not be read or parsed. | The machine |
@@ -709,9 +810,10 @@ The prose that remains is prose because it is written to be read, not rendered:
 `comment` carries the comment ID when the diagnostic concerns one comment;
 omitted otherwise. `path` is a JSON Pointer into the input document; omitted for
 document-level checks. `lenses` is the deduplicated set of lens names covering
-the diagnostics, so a caller can fetch explanations without guessing at
-names. Omitted when
-there are no diagnostics.
+the diagnostics and any unverified anchors
+([§2.3.1](#231-verifying-anchors)), so a caller can fetch explanations
+without guessing at names. Omitted when there are no diagnostics and nothing
+unverified.
 
 `skipped` groups the checks that could not run **by reason**, not one entry
 per check: `{ "reason": "...", "checks": [...] }`. One cause commonly stops
@@ -766,6 +868,39 @@ unverified anchors were not checked rather than found sound. A caller that treat
 `verification` block as "verified" is reading an older version, which is why the
 field is required rather than omitted when empty.
 
+Inside a repository, `verified` can still be less than `anchors`, for two
+different reasons and only one of them new. A hard verification error —
+`anchor-file-missing`, `anchor-line-out-of-range` — counts an anchor without
+verifying it, exactly as today. `verification.unverified` is the new one: one
+entry per anchor a dirty working tree kept from being checked
+([§2.3.1](#231-verifying-anchors)), each carrying the same three things a
+`diagnostics` entry does — a check name, the comment it belongs to, and a
+JSON Pointer into the document — but living here rather than in `diagnostics`,
+because the outcome is a fact about verification's coverage, not a diagnostic
+about the review. It is omitted when empty, the convention `diagnostics` and
+`lenses` already use:
+
+```json
+{
+  "source": "repo",
+  "anchors": 4,
+  "verified": 3,
+  "unverified": [
+    {
+      "name": "anchor-worktree-diverged",
+      "comment": "dropped-context-1",
+      "path": "/comments/0/anchors/0",
+      "message": "internal/fetch/client.go differs from ref in the working tree"
+    }
+  ]
+}
+```
+
+An unverified anchor is not a skipped check: `skipped` is for checks that
+never ran at all, and `anchor-worktree-diverged` did run — it just could not
+confirm this one anchor, which is exactly why it belongs in `verification`
+rather than in either of the other two.
+
 The whole object goes to stdout; nothing is written to stderr except on a
 failing exit, where stdout carries nothing.
 
@@ -800,6 +935,7 @@ nothing measures is a limit that erodes.
 | `schema --annotated` | 5,000 | Rare; codegen only |
 | `validate`, clean | 80 | Every attempt |
 | `validate`, clean, no repository | 140 | Common; not a rare edge case |
+| `validate`, clean, N anchors unverified (dirty checkout) | 80 + 60 per unverified anchor | Common in a live checkout; not yet measured, but the shape is the same as a diagnostic — a check name, a comment, and a reason — so it reuses that cost |
 | `validate`, per diagnostic | 60 | Every failed attempt |
 | `reviews` | 60 + 150 per row | Rare; only where a store is used |
 | `reviews --failed` | 60 + 120 per row | Rare; diagnosing a reviewing agent |
@@ -819,18 +955,25 @@ that, and no second implementation can drift from it. `prime` is unchanged,
 because it was never rendered — it is prose written to be pinned into a prompt,
 and so is the `summary` field of `describe`.
 
-Verification adds wall-clock, not tokens, when a repository can answer: the
-`verification` block is the same size whether zero anchors needed checking
-or several. Because it runs by default, that cost is paid on every loop —
-object lookups against a local database, one per distinct file, since the
-whole document shares one `ref`. Outside a repository the shape changes and
+Verification adds wall-clock, not tokens, when a repository can answer and
+every anchored file matches `ref`: the `verification` block is the same size
+whether zero anchors needed checking or several. Because it runs by default,
+that cost is paid on every loop — object lookups against a local database,
+plus, once per anchored file when `ref` is `HEAD`, a working-tree read and
+comparison to decide whether `ref` still applies
+([§2.3.1](#231-verifying-anchors)). Outside a repository the shape changes and
 the cost stops being free: `SkipAll` stops three checks for one reason, and
 `skipped` prints that reason once with all three check names beside it —
-real content the in-repository case never has to print. That is the
+real content the clean in-repository case never has to print. That is the
 no-repository row above, and it is measured, not guessed, at 115 —
 trimming what `SkipAll` reports would shrink the number,
 but a run that verified nothing would then look like a run that verified
-everything, which [§2.3.1](#231-verifying-anchors) rules out on purpose.
+everything, which [§2.3.1](#231-verifying-anchors) rules out on purpose. A
+dirty checkout costs real content too, and for a related reason: an
+unverified anchor is real content the fully-clean in-repository case never
+has to print either, one `verification.unverified` entry per anchor a
+diverged file kept from being checked ([§5.2](#52-the-result-object)). That
+is the dirty-checkout row above.
 
 A profile's body is unbudgeted, like `reviews --content` and for the same
 reason: it is content the caller wrote, and a ceiling on it would be this tool
@@ -1029,11 +1172,22 @@ Deliberately deferred, recorded so the design leaves room for them.
   it needs a `base` field on the document and a decision about whether commenting
   on unchanged code is an error at all — sometimes the bug is in what the change
   failed to touch.
-- **Content-aware verification.** Recording a hash of the anchored span alongside
-  the ref would let a consumer detect that the anchored code changed after the
-  review was written, rather than merely that the line still exists. Deferred
-  because it puts repository content inside the review document, which every
-  other decision here has avoided.
+- **Content-aware verification.** Superseded by a narrower, separate proposal:
+  a **provenance hash**, computed by `loam-refinery` itself at ingest time —
+  never supplied by the reviewer, never a document field, and not the
+  `digest` column [config.md §4.5.1](config.md#451-what-it-holds) already
+  uses for the submitted document's filename; same word would name two
+  unrelated things, so this one is named differently on purpose — recorded
+  alongside a passing review in the store
+  ([config.md §4](config.md#4-the-store)), so a later consumer can tell
+  whether the anchored code has drifted since the review passed, rather than
+  merely that the line still exists today. This answers a different question
+  from verification and must never be collapsed with it: verification asks
+  whether the review is internally consistent with the ref it names, at the
+  moment `validate` runs ([§2.3.1](#231-verifying-anchors)); a provenance
+  hash asks, after the fact and from the store, whether the world has moved
+  on since. Tracked as its own proposal for that reason, and touches the store,
+  not the review-document schema.
 - **Review merging.** A `loam-refinery merge` subcommand combining several subagent
   reviews into one. Comment IDs and slug grouping are what make this tractable:
   merge by slug, keep the highest priority per group, and union the suggestions.

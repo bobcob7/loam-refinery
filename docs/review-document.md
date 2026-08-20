@@ -541,14 +541,25 @@ verification is reported as skipped, never as a pass.
 | `ref-unknown` | The document `ref` does not resolve in the repository. Reported once, not once per anchor. |
 | `anchor-file-missing` | `file` does not exist at the document `ref`. |
 | `anchor-line-out-of-range` | `line` or `end_line` exceeds the file's line count at the document `ref`. |
+| `anchor-worktree-diverged` | The anchored file's working-tree copy exists and differs from `ref`. Only checked when `ref` is `HEAD`. |
 
-These are errors, not advisories: an anchor that points nowhere makes its comment
-unactionable, and no amount of good judgment elsewhere in the review repairs it.
-A caller that wants them non-fatal demotes them explicitly. The case that
-warrants it is a source of truth that does not *contain* the reviewed commit — a
-shallow clone, or a commit never fetched because its branch was deleted. Note
-that a working tree moving on is not such a case: a ref is an immutable SHA, so
-later commits cannot affect whether an anchor resolves.
+Three of these four are errors, not advisories: an anchor that points nowhere
+makes its comment unactionable, and no amount of good judgment elsewhere in the
+review repairs it. `anchor-worktree-diverged` is the exception — it can only
+remove an anchor from `verified`, never turn a passing document into a failing
+one, so it has nothing to be an error about
+([cli.md §2.3.1](cli.md#231-verifying-anchors) has the full argument).
+
+A caller that wants the other three non-fatal demotes them explicitly. The
+case that warrants it is a source of truth that does not *contain* the
+reviewed commit — a shallow clone, or a commit never fetched because its
+branch was deleted. A working tree moving on does not change whether an
+anchor *resolves*: a ref is an immutable SHA, so later commits cannot affect
+that. It can change whether the anchor gets *checked* at all — a
+working-tree copy that no longer matches `ref` is the leading reason an
+anchor goes unverified rather than verified, and the leading
+`--require-verification` trigger in a live checkout — which is a fact about
+checkability, not about resolution.
 
 What they cannot check is whether the anchored line is the *right* line. A
 comment about a nil check that anchors a correct line number in the correct file,

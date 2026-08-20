@@ -604,14 +604,20 @@ a name referred to; neither is worth carrying for the life of a store, and
 [§4.2](#42-repository-identity) says plainly what identity the name does and
 does not establish.
 
-**Nothing records whether the anchors were verified.** The result object says
+**Nothing records how many anchors were verified.** The result object says
 ([cli.md §5.2](cli.md#52-the-result-object)) and the row does not, so a store
-cannot currently distinguish a review whose claims were checked against a
-repository from one validated outside any repository at all. That is a real gap
-and a deliberate one: it is held back until there is a question being asked of
-it, on the same reasoning as the check table. It returns as a nullable column
-whenever that changes, and rows written before then read as NULL — unknown,
-which is exactly what they are.
+cannot currently tell a review whose anchors were all checked against a
+repository from one validated outside any repository at all — or, now, from
+one checked from inside the right repository with some anchors deliberately
+left unverified because their files had diverged in the working tree
+([cli.md §2.3.1](cli.md#231-verifying-anchors)). That is at least three states,
+not two, which is why the column this returns as is a **count**, not a flag —
+`num_verified` beside the existing `num_comments`, not a boolean that a third
+state would already overflow. This is a real gap and a deliberate one: it is
+held back until there is a question being asked of it, on the same reasoning
+as the check table. It returns as that nullable count whenever that changes,
+and rows written before then read as NULL — unknown, which is exactly what
+they are.
 
 #### 4.5.2 Constrained values
 
