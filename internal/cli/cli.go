@@ -103,7 +103,7 @@ const usage = `loam-refinery — check a review document
   loam-refinery schema [--annotated]        JSON Schema, for machines
   loam-refinery version
 
-exit 0 valid, 1 revise the review, 2 fix the invocation
+exit 0 valid, 1 revise the review, 2 fix the invocation, 101 the tool failed
 `
 
 // Run dispatches one invocation and returns its exit code.

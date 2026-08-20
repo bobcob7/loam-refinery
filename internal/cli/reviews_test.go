@@ -214,6 +214,147 @@ func TestReviews_UnreadableFileIsCountedAndDroppedFromContent(t *testing.T) {
 	assert.False(t, hasReview, "an unreadable file leaves the row without a review field")
 }
 
+// TestReviews_UnparseableFileIsCountedNotFatal reproduces refinery-a96.36:
+// json.RawMessage validates at marshal time, so embedding one corrupt
+// stored file verbatim used to fail the whole encoding and take every other
+// row down with it, exiting 2 as if the invocation were wrong. A corrupt
+// file is unreadable the same way a missing one is.
+func TestReviews_UnparseableFileIsCountedNotFatal(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	h.reviews.KnownFunc = func(context.Context, string) (bool, error) { return true, nil }
+	h.reviews.ListReviewsFunc = func(context.Context, string, string, int) ([]store.Review, int, error) {
+		return []store.Review{
+			{Ref: testRef, Digest: "bad", Verdict: "approve", Path: "/tmp/bad.json"},
+			{Ref: testRef, Digest: "good", Verdict: "approve", Path: "/tmp/good.json"},
+		}, 2, nil
+	}
+	h.reviews.ReadContentFunc = func(path string) ([]byte, error) {
+		if path == "/tmp/bad.json" {
+			return []byte("oops"), nil
+		}
+		return []byte(`{"version":"1"}`), nil
+	}
+	code := h.app.Run(t.Context(), []string{"reviews", "--repo=some/repo", "--content"})
+	require.Equal(t, ExitValid, code, h.stderr.String())
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(h.stdout.Bytes(), &raw))
+	assert.Equal(t, float64(1), raw["unreadable"], "the corrupt file is counted, the good one is not")
+	reviews := raw["reviews"].([]any)
+	require.Len(t, reviews, 2, "the good row survives alongside the bad one")
+	bad := reviews[0].(map[string]any)
+	_, hasReview := bad["review"]
+	assert.False(t, hasReview, "the corrupt file's row has no review field")
+	good := reviews[1].(map[string]any)
+	review, ok := good["review"].(map[string]any)
+	require.True(t, ok, "the good file's row still embeds its content")
+	assert.Equal(t, "1", review["version"])
+}
+
+// TestReviews_EmptyStoredFileIsCountedNotVanished reproduces the quiet half
+// of refinery-a96.36: a zero-byte stored file reads without error, so it used
+// to be dropped by omitempty and reported as though nothing were lost.
+func TestReviews_EmptyStoredFileIsCountedNotVanished(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	h.reviews.KnownFunc = func(context.Context, string) (bool, error) { return true, nil }
+	h.reviews.ListReviewsFunc = func(context.Context, string, string, int) ([]store.Review, int, error) {
+		return []store.Review{{Ref: testRef, Digest: "empty", Verdict: "approve", Path: "/tmp/empty.json"}}, 1, nil
+	}
+	h.reviews.ReadContentFunc = func(string) ([]byte, error) { return []byte{}, nil }
+	code := h.app.Run(t.Context(), []string{"reviews", "--repo=some/repo", "--content"})
+	require.Equal(t, ExitValid, code, h.stderr.String())
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(h.stdout.Bytes(), &raw))
+	assert.Equal(t, float64(1), raw["unreadable"], "an empty file must be counted, not silently dropped")
+	reviews := raw["reviews"].([]any)
+	require.Len(t, reviews, 1)
+	row := reviews[0].(map[string]any)
+	_, hasReview := row["review"]
+	assert.False(t, hasReview)
+}
+
+// TestReviews_FailedEmptyContentIsDistinctFromNoPath checks the concern
+// refinery-a96.36 raised about --failed: a zero-byte kept input reads
+// successfully and is wrapped as a string, so it must not collapse into the
+// same shape as a row that never had a path to read at all.
+func TestReviews_FailedEmptyContentIsDistinctFromNoPath(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	h.reviews.KnownFunc = func(context.Context, string) (bool, error) { return true, nil }
+	h.reviews.ListFailedRunsFunc = func(context.Context, string, string, int) ([]store.FailedRun, int, error) {
+		return []store.FailedRun{
+			{ExitCode: 1, Path: "/tmp/empty-input.json"},
+			{ExitCode: 1, Path: ""},
+		}, 2, nil
+	}
+	h.reviews.ReadContentFunc = func(string) ([]byte, error) { return []byte{}, nil }
+	code := h.app.Run(t.Context(), []string{"reviews", "--repo=some/repo", "--failed", "--content"})
+	require.Equal(t, ExitValid, code, h.stderr.String())
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(h.stdout.Bytes(), &raw))
+	failed := raw["failed"].([]any)
+	require.Len(t, failed, 2)
+	kept := failed[0].(map[string]any)
+	review, hasReview := kept["review"]
+	require.True(t, hasReview, "a zero-byte kept input is still read and reported")
+	assert.Equal(t, "", review)
+	notKept := failed[1].(map[string]any)
+	_, hasReviewOnMissing := notKept["review"]
+	assert.False(t, hasReviewOnMissing, "a row with no path never had a file to read")
+	assert.Equal(t, float64(0), raw["unreadable"], "reading succeeded for the one file that was opened")
+}
+
+// TestReviews_UnreadableOmittedWhenNoFileWasOpened reproduces refinery-a96.25:
+// --content on a query that matched nothing never opens a file, so
+// unreadable must be omitted rather than printed as 0.
+func TestReviews_UnreadableOmittedWhenNoFileWasOpened(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	h.reviews.KnownFunc = func(context.Context, string) (bool, error) { return false, nil }
+	h.reviews.ListReviewsFunc = func(context.Context, string, string, int) ([]store.Review, int, error) {
+		return nil, 0, nil
+	}
+	require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"reviews", "--repo=example.com/no/such", "--content"}))
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(h.stdout.Bytes(), &raw))
+	_, has := raw["unreadable"]
+	assert.False(t, has, "no file was opened, so unreadable must not appear")
+}
+
+// TestReviews_FailedUnreadableOmittedWhenNoFileWasOpened is
+// TestReviews_UnreadableOmittedWhenNoFileWasOpened's --failed counterpart.
+func TestReviews_FailedUnreadableOmittedWhenNoFileWasOpened(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	h.reviews.KnownFunc = func(context.Context, string) (bool, error) { return true, nil }
+	h.reviews.ListFailedRunsFunc = func(context.Context, string, string, int) ([]store.FailedRun, int, error) {
+		return nil, 0, nil
+	}
+	require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"reviews", "--repo=some/repo", "--failed", "--content"}))
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(h.stdout.Bytes(), &raw))
+	_, has := raw["unreadable"]
+	assert.False(t, has, "no file was opened, so unreadable must not appear")
+}
+
+// TestReviews_FailedUnreadableOmittedWhenNoRowHasAPath covers rows that did
+// come back but every one of them lacks a kept input: --content never opens
+// a file, so unreadable must still be omitted (refinery-a96.25).
+func TestReviews_FailedUnreadableOmittedWhenNoRowHasAPath(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	h.reviews.KnownFunc = func(context.Context, string) (bool, error) { return true, nil }
+	h.reviews.ListFailedRunsFunc = func(context.Context, string, string, int) ([]store.FailedRun, int, error) {
+		return []store.FailedRun{{ExitCode: 1, Path: ""}}, 1, nil
+	}
+	require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"reviews", "--repo=some/repo", "--failed", "--content"}))
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(h.stdout.Bytes(), &raw))
+	_, has := raw["unreadable"]
+	assert.False(t, has, "the one row had no path, so no file was opened")
+}
+
 func TestReviews_ContentIsUnbudgetedAndUsesTheFullReviewField(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, "")

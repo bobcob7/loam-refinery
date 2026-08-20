@@ -182,6 +182,7 @@ func (a *App) reviewsDefault(ctx context.Context, repo, ref string, limit int, k
 	}
 	out := reviewsEnvelope{Repo: repoInfo{Name: repo, Known: known}, Total: total, Reviews: []reviewRow{}}
 	unreadable := 0
+	opened := false
 	for _, r := range rows {
 		row := reviewRow{
 			At:      r.At.UTC().Format(time.RFC3339),
@@ -192,8 +193,14 @@ func (a *App) reviewsDefault(ctx context.Context, repo, ref string, limit int, k
 			Path:    r.Path,
 		}
 		if content {
+			opened = true
+			// A read failure and a file that is present but empty or not
+			// valid JSON are both unreadable (docs/config.md §6.3): a
+			// stored review is never zero bytes, and embedding invalid
+			// JSON verbatim would fail the whole encode below, taking
+			// every other row down with it.
 			data, err := a.reviewStore.ReadContent(r.Path)
-			if err != nil {
+			if err != nil || !json.Valid(data) {
 				unreadable++
 			} else {
 				row.Review = json.RawMessage(data)
@@ -201,7 +208,7 @@ func (a *App) reviewsDefault(ctx context.Context, repo, ref string, limit int, k
 		}
 		out.Reviews = append(out.Reviews, row)
 	}
-	if content {
+	if opened {
 		out.Unreadable = &unreadable
 	}
 	return a.writeReviews(out)
@@ -217,6 +224,7 @@ func (a *App) reviewsFailed(ctx context.Context, repo, ref string, limit int, kn
 	}
 	out := failedEnvelope{Repo: repoInfo{Name: repo, Known: known}, Total: total, Failed: []failedRow{}}
 	unreadable := 0
+	opened := false
 	for _, r := range rows {
 		row := failedRow{
 			At:       r.At.UTC().Format(time.RFC3339),
@@ -229,17 +237,23 @@ func (a *App) reviewsFailed(ctx context.Context, repo, ref string, limit int, kn
 		// that was never written is not unreadable, it simply has nothing to
 		// add.
 		if content && r.Path != "" {
+			opened = true
 			data, err := a.reviewStore.ReadContent(r.Path)
 			if err != nil {
 				unreadable++
 			} else {
+				// A stored string, unlike the embedded document above,
+				// never fails to marshal, so an empty read is kept as an
+				// empty string rather than folded into unreadable — its
+				// presence (as opposed to the omitted field on a row with
+				// no path at all) is the signal that it was read.
 				text := string(data)
 				row.Review = &text
 			}
 		}
 		out.Failed = append(out.Failed, row)
 	}
-	if content {
+	if opened {
 		out.Unreadable = &unreadable
 	}
 	return a.writeReviews(out)

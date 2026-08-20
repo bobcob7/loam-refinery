@@ -126,6 +126,20 @@ func TestExitToolIsTheReservedToolErrorBand(t *testing.T) {
 	assert.NotEqual(t, ExitUsage, ExitTool, "a caller-typed mistake must not share a code with a machine failure")
 }
 
+// TestUsageBannerNamesEveryExitCode reproduces refinery-a96.27: the banner an
+// unknown command and a no-argument invocation both print used to enumerate
+// only three exit codes, so a reader who takes it as the list would map 101
+// onto nothing, or worse onto 2 — the exact mistake docs/cli.md §4 warns
+// against.
+func TestUsageBannerNamesEveryExitCode(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	h.app.Run(t.Context(), nil)
+	for _, code := range []string{"0", "1", "2", "101"} {
+		assert.Contains(t, h.stderr.String(), code, "the usage banner must name exit %s", code)
+	}
+}
+
 func TestDescribeResolvesLenses(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
