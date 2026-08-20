@@ -23,7 +23,9 @@ In scope:
 - Structural validation: schema conformance and referential integrity
 - Verification: anchors checked against a caller-supplied source of truth
 - Advisory validation: consistency, substance, and calibration signals
-- A `prime` command that teaches the workflow in one small call
+- A `prime` command that teaches the workflow in one small call, optionally
+  carrying an operator-authored reviewer profile
+  ([§2.1.1](#211-reviewer-profiles))
 - A `describe` command that discloses the contract progressively, on demand
 - Diagnostics addressed by comment ID, so feedback is directly actionable
 - Keeping a local copy of reviews that passed, and getting them back out
@@ -70,12 +72,15 @@ Explicitly out of scope:
 7. **Cheap to call.** Fast startup, no config file required, terse default
    output. A config file exists ([config.md §3](config.md#3-the-config-file))
    but is never necessary, and by construction cannot change whether a document
-   is valid — only whether a copy of the answer is kept.
+   is valid — only whether a copy of the answer is kept. The config
+   *directory* holds one other thing a person may write — reviewer profiles
+   ([§2.1.1](#211-reviewer-profiles)) — and the same rule binds them: they
+   change what `prime` prints, never what `validate` decides.
 
 ## 2. Commands
 
 ```
-loam-refinery prime
+loam-refinery prime    [--profile=NAME] [--list]
 loam-refinery describe [--lens=NAME[,NAME...]] [--format json]
 loam-refinery validate [path] [--strict] [--require-verification]
                        [--warn-only=…] [--disable=…]
@@ -102,6 +107,10 @@ only as far as its current problem requires:
 was concluded about this commit already* — and a caller that never stores
 anything never needs it.
 
+Neither is `prime --profile`. The ladder is climbed by a reviewer that has run
+into something it does not know; a profile is handed to a reviewer before it
+knows anything, by whoever launched it ([§2.1.1](#211-reviewer-profiles)).
+
 ### 2.1 `prime`
 
 Teaches the **workflow**, not the contract. Prints: what the tool is for, the
@@ -126,6 +135,169 @@ The workflow it teaches:
    guess at an enum or a scale.
 
 Budget: ~250 tokens. See [§6](#6-token-economy).
+
+#### 2.1.1 Reviewer profiles
+
+`--profile=NAME` appends an operator-authored profile to the end of `prime`'s
+output. The tool's own text is unchanged, byte for byte, whether a profile is
+named or not.
+
+A profile answers a question the contract cannot: *who is reviewing, and what
+should they be looking hardest at.* A Go service and a Terraform module want the
+same document shape and very different attention, and that difference belongs to
+whoever runs the reviewers — not to a binary everyone installs.
+
+It rides on `prime` rather than on `describe --lens` because the two commands
+push in opposite directions. `describe` is **pull-based**: a reviewer fetches a
+lens at the moment it becomes uncertain. A profile has to be in context *before*
+the reviewer forms an opinion, and no orchestrator can rely on an agent choosing
+to fetch one. `prime` is already the call that gets pinned into a session
+prompt, so it is the call a profile can ride on. The orchestrator names the
+profile; the reviewer runs one command and never has to know profiles exist.
+
+Profiles live beside the config file, in
+`$XDG_CONFIG_HOME/loam-refinery/profiles/`
+([config.md §2](config.md#2-locations)). This repository ships eight of them
+under `profiles/` as material to copy and edit, not as defaults: nothing is
+compiled into the binary and nothing installs itself, because what a security
+review is for one team is not what it is for the next, and a tool that ships
+that opinion has made it hard to disagree with. The directory is read, never created:
+on a machine with no profiles, `prime` behaves exactly as it does today. It is
+also resolved from the environment alone — a `config.json` that cannot be parsed
+does not stop a profile from loading, because nothing in the config file names
+or configures profiles.
+
+#### 2.1.2 The profile file
+
+One Markdown file per profile, named `<name>.md`, opening with frontmatter:
+
+```markdown
+---
+description: Go services; concurrency, error wrapping, context handling
+---
+
+Anchor concurrency findings at the goroutine that leaks, not at the symptom.
+...
+```
+
+`description` is one line, at most 120 characters, and the only key the
+frontmatter may carry — an unknown key is an error, the same way an unknown
+config key is ([config.md §3](config.md#3-the-config-file)). It exists for
+`--list` and is never part of what `prime` prints. Everything after the closing
+fence is.
+
+It is required. A listing whose rows are half blank is worse than an error that
+names the fix, and this repository's posture on files a person writes is already
+to fail loudly rather than degrade quietly.
+
+`NAME` is a name, not a path: lowercase letters, digits, and hyphens, resolving
+only as `<name>.md` inside the profile directory. The argument arrives from an
+orchestrator, and nothing that arrives that way gets to name a file elsewhere on
+the machine.
+
+A `*.md` file whose stem is not a valid name is ignored rather than rejected, so
+a `README.md` can sit in the directory beside the profiles it documents.
+
+#### 2.1.3 What gets appended
+
+The body is appended verbatim, under a two-line frame, separated from `prime`'s
+own text by one blank line:
+
+```
+
+--- reviewer profile: backend ---
+Operator-supplied. It directs attention; it does not change the contract above.
+
+<the file's body, verbatim>
+```
+
+The blank line matters: every paragraph break in `prime`'s own text is a blank
+line, and the frame marks where the tool's text ends and operator-supplied text
+begins — the most important seam in the output. Setting that seam tighter than
+every unimportant one is exactly where a reader skimming for where the
+specification ends is most likely to skim past it.
+
+The frame costs about 25 tokens and is not optional. Unframed, a profile reading
+"priority calibration matters less here" is indistinguishable from the tool
+saying so, and a reviewer loses the ability to tell the specification it must
+satisfy from the preferences it has been asked to hold. The frame is also why
+the body is never parsed, rewritten, or reflowed: it is quoted material, and
+quoting it faithfully is the whole job.
+
+#### 2.1.4 An unknown profile is an error
+
+`--profile=backedn` exits 2 and prints nothing on stdout. It does not fall back
+to bare `prime`.
+
+This is the failure the design is against. A silent fallback turns an
+orchestrator's typo into a reviewer that starts cleanly, reads correctly, and
+reviews to no profile at all — and nothing downstream can tell that run from a
+profiled one. Exit 2 says *fix the command*, which is exactly right: the
+reviewer cannot fix it, and should stop and report rather than shop for a
+profile that does load. The error names the profile that was asked for and
+points at `--list`; it does not enumerate the directory, because choosing a
+profile is not the reviewer's job ([§2.1.5](#215---list)).
+
+A profile that exists but cannot be read or parsed is a different failure — the
+tool's own state, not the command — and exits 101 ([§4](#4-exit-codes)).
+
+#### 2.1.5 `--list`
+
+`prime --list` prints the profile index as JSON: names and descriptions, no
+bodies. Like every other JSON output ([§5.1](#51-one-format)), it is rendered
+indented, not compact:
+
+```json
+{
+  "profiles": [
+    {
+      "name": "backend",
+      "description": "Go services; concurrency, error wrapping, context handling"
+    }
+  ]
+}
+```
+
+It is an operator affordance, not a rung on the disclosure ladder. Nothing in
+`prime`'s prose mentions it, and nothing spends tokens telling a reviewer that
+profiles exist. The orchestrator knows which profile it wants before it launches
+anything, and a reviewer browsing profiles is a reviewer choosing what standard
+to hold itself to.
+
+No profile directory is an empty list and exit 0, not an error — the same answer
+`reviews` gives for a store that does not exist yet
+([config.md §6.2](config.md#62-empty-answers)). `--list` combined with
+`--profile` is a usage error.
+
+**A file that fails to parse is left out of the index, not treated as a reason
+to fail the whole call.** `--list` answers one question — *what profiles can I
+use* — and a file that does not parse is not a usable profile, so omitting it
+from the index is the correct answer rather than a concession. It is named on
+stderr instead (`skipping unparseable profile <file>`), and the call still
+exits 0 with the profiles it did find. The failure does not disappear:
+`prime --profile=NAME` for that same file still exits 101 with the specific
+parse error ([§2.1.4](#214-an-unknown-profile-is-an-error)), which is where an
+operator can actually act on it. Only the directory itself failing to resolve
+or read — as opposed to one file inside it failing to parse — is a tool error
+for `--list` too, and still exits 101 with nothing on stdout
+([§4](#4-exit-codes)).
+
+#### 2.1.6 What a profile may not do
+
+A profile shapes attention. It does not touch the contract.
+
+Nothing in a profile is read by `validate`, and no part of one feeds `--strict`,
+`--disable`, `--warn-only`, or `--require-verification`. This is
+[config.md §3.1](config.md#31-what-configuration-may-not-do) applied to a second
+file in the same directory, for the same reason: the moment a file on one
+machine can decide what counts as a valid review, `prime --profile=backend` here
+and `prime --profile=backend` there produce reviewers held to different
+standards, and `validate` agrees with both. A profile that wants a check
+enforced is asking for a flag on the `validate` invocation, and that flag is the
+orchestrator's to pass.
+
+The line, concretely: a profile may say *look hard at context cancellation*. It
+may not say *skip the priority advisory*.
 
 ### 2.2 `describe`
 
@@ -415,6 +587,8 @@ run; the config file that exists ([config.md](config.md)) is optional and may
 only set the store flags.
 
 ```
+--profile=NAME            append one reviewer profile                prime
+--list                    print the profile index, no bodies         prime
 --strict                  treat advisories as errors (exit 1)        validate
 --warn-only=NAME[,NAME…]  demote the named verification checks       validate
 --require-verification    fail if the anchors were not checked       validate
@@ -442,6 +616,11 @@ no-op, so typos surface immediately.
 `--strict` is how a caller opts into advisories gating a pipeline. It is not the
 default posture: review quality is a judgment the caller owns.
 
+`--profile` is the only flag whose value names a file on the machine rather than
+something compiled in. It is constrained to a name in one directory
+([§2.1.2](#212-the-profile-file)), and like an unknown check name, an unknown
+profile is a usage error rather than a silent no-op.
+
 The store flags are the only ones with a config-file counterpart, and the flag
 always wins ([config.md §2.1](config.md#21-precedence)). No flag that affects
 whether a document is valid may be set from configuration, which is why
@@ -454,8 +633,8 @@ whether a document is valid may be set from configuration, which is why
 | --- | --- | --- |
 | 0 | Structurally valid, and anchors verified where a repository was available. Advisories may be present. | Nobody's |
 | 1 | Structurally invalid, unparseable, a verification failure, unverified anchors under `--require-verification`, or advisories present under `--strict`. | The review |
-| 2 | Usage error: unknown flag or command, unknown check name, an unreadable input path, a malformed `--repo` or `--ref`, `--list` combined with another `reviews` flag. | The invocation |
-| 101 | Tool error: the tool's own state could not be read or written — an unparseable config file, a store that could not be created, a store directory that could not be read. | The machine |
+| 2 | Usage error: unknown flag or command, unknown check name, an unknown or malformed profile name, an unreadable input path, a malformed `--repo` or `--ref`, `--list` combined with another `reviews` flag or with `--profile`. | The invocation |
+| 101 | Tool error: the tool's own state could not be read or written — an unparseable config file, a store that could not be created, a store directory that could not be read, a profile that exists but could not be read or parsed. | The machine |
 
 Three questions, three answers, and an agent must be able to tell them apart
 without parsing prose. Exit 1 means *revise the review*. Exit 2 means *fix the
@@ -612,6 +791,8 @@ nothing measures is a limit that erodes.
 | Call | Budget | Frequency |
 | --- | --- | --- |
 | `prime` | 250 | Once per session, often pinned into a system prompt |
+| `prime --profile=NAME` | 250 + 25 + the profile | Once per session, when an orchestrator names one |
+| `prime --list` | 10 + 40 per profile | Rare; operator discovery, never a reviewer's call |
 | `describe` | 850 | Once per session that writes a review |
 | `describe --lens=NAME` | 350 each | Only on uncertainty or a failed check |
 | `describe --list` | 380 | Rare; discovery and the unknown-lens error |
@@ -650,6 +831,31 @@ no-repository row above, and it is measured, not guessed, at 115 —
 trimming what `SkipAll` reports would shrink the number,
 but a run that verified nothing would then look like a run that verified
 everything, which [§2.3.1](#231-verifying-anchors) rules out on purpose.
+
+A profile's body is unbudgeted, like `reviews --content` and for the same
+reason: it is content the caller wrote, and a ceiling on it would be this tool
+rationing an operator's own words back to them. The seed profiles in
+`profiles/` measure 210–290 tokens each, which is the norm rather than the
+rule: a primed reviewer costs about 525 tokens instead of 250, paid once, in
+exchange for prompt text the orchestrator would otherwise have written by hand.
+A profile costing more than `prime` itself is worth re-reading before it is
+worth installing. What is budgeted is everything
+around it — `prime` holds at 250 whether a profile is named or not, the frame is
+fixed at about 25, and `description` is capped at 120 characters so `--list`
+cannot quietly become a second copy of every profile
+([§2.1.2](#212-the-profile-file)). `prime`'s own byte-identity regardless of
+whether a profile source holds anything, works, or is never called at all is
+pinned in `internal/cli/prime_test.go` against a `profileSource` that panics
+if touched — a stronger guarantee than a golden file over one fixed directory
+state would give, since it fails at the call site rather than only on a
+byte that happened to differ. The golden-file test pins `prime`'s own text
+against the embedded `prime.txt`.
+
+`prime --list`'s row is indented JSON ([§5.1](#51-one-format)), not compact:
+measured against the real renderer with the eight profiles shipped in
+`profiles/`, the envelope is about 5 tokens and each row averages about 35,
+for roughly 285 total. The ceiling rounds both up with headroom, to 10 and
+40 per profile.
 
 The two that matter most are `prime` and clean `validate`, because they are paid
 on every single loop.
@@ -756,6 +962,7 @@ internal/entry/checks.go          check:* provider, reads the check registries
 internal/entry/topics/            topic:* entries, //go:embed of hand-written md
 internal/render/                  the json renderer
 internal/config/                  locations, the config file, precedence
+internal/profile/                 the profile directory, frontmatter, bodies
 internal/store/                   stored files, the run database, queries
 internal/store/sql/schema.sql     //go:embed of the SQLite schema and migrations
 internal/store/sql/query.sql      the queries, compiled by sqlc
@@ -858,6 +1065,30 @@ Deliberately deferred, recorded so the design leaves room for them.
   than compiled into the binary — is the obvious follow-on and would be another
   provider. It is deliberately not specified here, because it breaks the
   stateless-and-offline principle in a way that deserves its own design.
+
+  Reviewer profiles ([§2.1.1](#211-reviewer-profiles)) are the other half of
+  this and are specified, so the split is worth stating before `kb:*` exists.
+  A profile is *who is reviewing*: operator-authored, machine-local, pushed
+  into context at session start, unbudgeted. `kb:*` is *what good looks like*:
+  compiled into the binary, identical on every machine, pulled on demand,
+  budgeted at 350. They never merge. A profile that starts explaining what a
+  `security` finding is has drifted into `kb:*`'s job and should be a lens
+  everyone gets; a `kb:*` entry that starts naming one team's conventions has
+  drifted into a profile's and should not ship in the binary.
+
+- **Composing profiles.** `--profile` takes exactly one name. Comma-separated
+  composition — a `go` profile plus a `security` profile — is deferred, not
+  refused: the mechanism is nearly free, since `splitNames` already exists, but
+  the semantics are not. Two profiles that disagree need a rule for who wins,
+  and two profiles that agree need one for not saying it twice, and neither
+  question has an answer worth guessing at before anybody has written two
+  profiles that want composing.
+
+- **Project-supplied profiles.** A profile read from the repository under review
+  rather than from the operator's home directory. Deferred for the same reason
+  as a project-supplied knowledge base, and one more: a profile in a repository
+  is a profile the code under review can edit, and a reviewer whose instructions
+  arrive in the diff it is reviewing is not a reviewer.
 - **MCP adapter.** A `loam-refinery mcp` subcommand serving the same command layer over
   stdio, for hosts without a shell. The internal packages are structured to make
   this an adapter rather than a rewrite; it is not built now because MCP tool
