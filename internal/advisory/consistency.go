@@ -36,29 +36,6 @@ between different kinds of finding — give those different slugs.
 			},
 			Run: idGrouping,
 		},
-		{
-			Meta: review.Check{
-				Name:    "ref-missing",
-				Tier:    review.TierAdvisory,
-				Summary: "an anchor carries a line but the document has no ref",
-				Title:   "Line number with no ref",
-				Body: `Fires when an anchor carries a line number and the document supplies no ref. A
-line number without a commit is a claim about a moment nobody recorded: the line
-it meant is somewhere else the instant anything moves, and no reader — a person,
-a later agent, a CI job — can ever check it.
-
-The fix is one field at the document root, inherited by every anchor:
-
-  "ref": "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d"
-
-git rev-parse HEAD produces it, and you are holding a checkout already. It is an
-advisory rather than an error because not every review is of a git repository;
-if yours is not, drop the line numbers and anchor at file level instead of
-recording numbers nobody can resolve.`,
-				Related: []string{"ref", "line", "ref-format"},
-			},
-			Run: refMissing,
-		},
 	}
 }
 
@@ -126,28 +103,4 @@ func join(values []int) string {
 		parts = append(parts, strconv.Itoa(value))
 	}
 	return strings.Join(parts, ", ")
-}
-
-func refMissing(doc *review.Document) ([]review.Diagnostic, []review.Skipped) {
-	if doc.Ref.Present {
-		return nil, nil
-	}
-	anchored := 0
-	for _, comment := range doc.Comments {
-		for _, anchor := range comment.Anchors {
-			if anchor.Line.OK {
-				anchored++
-			}
-		}
-	}
-	if anchored == 0 {
-		return nil, nil
-	}
-	carry, them := "carries", "it"
-	if anchored > 1 {
-		carry, them = "carry", "them"
-	}
-	return []review.Diagnostic{documentDiagnostic("ref-missing", "/ref",
-		fmt.Sprintf("%s %s a line number and the document has no ref; nobody can verify %s",
-			plural(anchored, "anchor"), carry, them))}, nil
 }

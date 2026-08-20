@@ -73,13 +73,14 @@ func TestValidateStaysWithinBudget(t *testing.T) {
 		cleanBudget         = 80
 		perDiagnosticBudget = 60
 	)
-	clean := `{"version":"1","verdict":"approve","summary":"The retry loop is sound and the deadline propagates to every call it makes.","comments":[]}`
-	out, code := runValidate(t, clean)
+	dir, ref := resolvableRefDir(t)
+	clean := `{"version":"1","verdict":"approve","summary":"The retry loop is sound and the deadline propagates to every call it makes.","ref":"` + ref + `","comments":[]}`
+	out, code := runValidate(t, dir, clean)
 	require.Equal(t, ExitValid, code, out)
 	assert.LessOrEqual(t, approxTokens(out), cleanBudget,
 		"a clean validate costs about %d tokens; its ceiling is %d", approxTokens(out), cleanBudget)
 	base := approxTokens(out)
-	flawed, code := runValidate(t, `{"version":"1","verdict":"comment","summary":"too short","comments":[]}`)
+	flawed, code := runValidate(t, dir, `{"version":"1","verdict":"comment","summary":"too short","ref":"`+ref+`","comments":[]}`)
 	require.Equal(t, ExitInvalid, code, flawed)
 	var payload struct {
 		Diagnostics []struct{} `json:"diagnostics"`
@@ -145,9 +146,10 @@ func TestSchemaOutputIsValidJSON(t *testing.T) {
 
 // runReal drives the App wired exactly as main wires it, so the golden files
 // and the budgets measure what a caller actually gets.
-// runValidate runs a real validate over source on stdin and returns stdout with
-// its exit code, since validate is the one command whose cost depends on input.
-func runValidate(t *testing.T, source string) (string, int) {
+// runValidate runs a real validate, rooted at dir, over source on stdin and
+// returns stdout with its exit code, since validate is the one command whose
+// cost depends on input.
+func runValidate(t *testing.T, dir, source string) (string, int) {
 	t.Helper()
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 	app := New(
@@ -158,7 +160,7 @@ func runValidate(t *testing.T, source string) (string, int) {
 		CheckNames{},
 		Build{Version: "test", Commit: "test", Schema: schema.Version()},
 		func(bool) ([]byte, error) { return nil, nil },
-		gitDir(t),
+		dir,
 		strings.NewReader(source),
 		stdout,
 		stderr,
@@ -168,16 +170,27 @@ func runValidate(t *testing.T, source string) (string, int) {
 	return stdout.String(), code
 }
 
-// gitDir is a real repository, because the budget in docs/cli.md 6.1 is for the
-// loop an agent actually runs: inside the checkout it is reviewing. Outside one
-// the same document costs more, since every anchor check is reported skipped.
-func gitDir(t *testing.T) string {
+// resolvableRefDir makes a throwaway repository with one commit and returns
+// its directory and that commit's SHA, so a document's ref can genuinely
+// resolve without depending on this repository's own history. A ref that
+// does not resolve is reported as an error even on a document with no
+// anchors, so the budget's clean case needs a ref that is real somewhere;
+// tying it to refinery's own commits would pass only on this checkout, so
+// the test grows its own repository instead.
+func resolvableRefDir(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
-	cmd := exec.Command("git", "init", "--quiet")
-	cmd.Dir = dir
-	require.NoError(t, cmd.Run())
-	return dir
+	run := func(args ...string) []byte {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+		return out
+	}
+	run("init", "--quiet")
+	run("-c", "user.email=test@example.com", "-c", "user.name=test",
+		"commit", "--quiet", "--allow-empty", "-m", "seed")
+	return dir, strings.TrimSpace(string(run("rev-parse", "HEAD")))
 }
 
 func quietLog() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }

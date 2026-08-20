@@ -125,7 +125,7 @@ holding a checkout already.
 
   before: "main", "4f2c1a9"
   after:  "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d"`,
-			Related: []string{"ref", "ref-unknown", "ref-missing"},
+			Related: []string{"ref", "ref-unknown"},
 		},
 	}
 }

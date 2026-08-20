@@ -40,7 +40,6 @@
         "anchor-file-missing",
         "anchor-line-out-of-range",
         "id-grouping",
-        "ref-missing",
         "body-thin",
         "vacuous-body",
         "suggestion-absent",

@@ -5,7 +5,7 @@
   "description": "One agent's complete review of one change.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "verdict", "summary", "comments"],
+  "required": ["version", "verdict", "summary", "ref", "comments"],
   "properties": {
     "version": {
       "title": "Format version",
@@ -34,7 +34,7 @@
     },
     "ref": {
       "title": "Reviewed commit",
-      "description": "The commit the review was performed against: a full 40-character lowercase SHA, and nothing else. Not a branch, not a tag, not an abbreviation — a branch names a moving target, so an anchor recorded against main means whatever main points at when someone looks, which reads as precision while being unverifiable. git rev-parse HEAD produces the correct value. Set it once at the root: it is the commit every anchor in the document is read at. There is deliberately no per-anchor ref — a review is of one change at one revision, and a comment that needs to talk about a second revision says so in its body. Optional, because not every review is of a git repository — but an anchor carrying a line number in a document with no ref raises ref-missing, since that line number can never be checked by anyone.",
+      "description": "The commit the review was performed against: a full 40-character lowercase SHA, and nothing else. Not a branch, not a tag, not an abbreviation — a branch names a moving target, so an anchor recorded against main means whatever main points at when someone looks, which reads as precision while being unverifiable. git rev-parse HEAD produces the correct value. Set it once at the root: it is the commit every anchor in the document is read at. There is deliberately no per-anchor ref — a review is of one change at one revision, and a comment that needs to talk about a second revision says so in its body. Required — a review is of one change at one revision, and a document that does not say which revision has not finished describing itself; git rev-parse HEAD costs a reviewing agent nothing, since it is already holding the checkout.",
       "$comment": "related: anchors, line, ref-format",
       "type": "string",
       "pattern": "^[0-9a-f]{40}$",
@@ -139,7 +139,7 @@
         },
         "line": {
           "title": "Line number",
-          "description": "1-indexed line the comment applies to. Omit for a file-level comment — an anchor with only a file is valid and is the right shape for \"this file needs a test\". The number is verified against the file at the document ref, so it must be a line that exists there; a plausible-looking line number is exactly the error this format exists to catch. A line in a document with no ref raises ref-missing, because nobody can ever check it.",
+          "description": "1-indexed line the comment applies to. Omit for a file-level comment — an anchor with only a file is valid and is the right shape for \"this file needs a test\". The number is verified against the file at the document ref, so it must be a line that exists there; a plausible-looking line number is exactly the error this format exists to catch.",
           "$comment": "related: end_line, file, ref",
           "type": "integer",
           "minimum": 1,
