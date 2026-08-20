@@ -502,8 +502,10 @@ nobody sets correctly and a fifth key in a four-key file.
 ### 4.5 The database
 
 One SQLite file at `<store>/store.db`, holding a row per **run** — not per
-stored review. A run that stored a review has a row pointing at the file; a run
-that failed validation has a row and no file.
+stored review. An exit-0 run has a row pointing at a file under `reviews/`; an
+exit-1 run has a row pointing at a file under `rejected/`, truncated or not
+([§4.4.1](#441-rejected-inputs)); only a run that wrote nothing at all — exit
+101 — has a row with no file.
 
 That difference is the second reason the database exists. A store of passing
 reviews answers "what was concluded about this commit". A log of runs also

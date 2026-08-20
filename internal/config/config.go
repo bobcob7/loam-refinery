@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -42,6 +43,15 @@ type Config struct {
 // machines can disagree about (docs/config.md §3.1), so these are rejected
 // with a message naming the flag rather than "unknown key".
 var flagOnlyKeys = []string{"strict", "disable", "warn_only", "require_verification"}
+
+// topLevelKeys and storeKeys are the closed sets docs/config.md §3
+// documents: the root object's keys, and store's keys. parse rejects
+// anything outside them, and config_docs_test.go reads these same slices
+// rather than a separate hand-written list, so the pin holds even when
+// nothing in the doc's example text changes.
+var topLevelKeys = []string{"version", "store"}
+
+var storeKeys = []string{"enabled", "path", "repos"}
 
 // Load resolves the config file location from the environment, reads it if
 // present, and returns the fully resolved Config. See the package doc for
@@ -205,7 +215,7 @@ func parse(raw []byte, path string) (*Config, error) {
 		}
 	}
 	for key := range root {
-		if key != "version" && key != "store" {
+		if !slices.Contains(topLevelKeys, key) {
 			return nil, fmt.Errorf("%s: unknown key %q", path, key)
 		}
 	}
@@ -237,7 +247,7 @@ func parseStore(raw json.RawMessage, path string, store *Store) error {
 		return fmt.Errorf("%s: %q must be an object", path, "store")
 	}
 	for key := range fields {
-		if key != "enabled" && key != "path" && key != "repos" {
+		if !slices.Contains(storeKeys, key) {
 			return fmt.Errorf("%s: unknown key %q", path, "store."+key)
 		}
 	}

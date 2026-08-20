@@ -91,13 +91,20 @@ func sortedKeys(m map[string]json.RawMessage) []string {
 // outright (TestLoadFile_UnknownKeyNamesTheKey and
 // TestLoadFile_TopLevelUnknownKey already cover that a typo is caught),
 // but neither of those notices a wholly new key someone starts accepting
-// on purpose. parse has no reflectable list of accepted keys to walk the
-// way PRAGMA table_info(runs) or a flag.FlagSet can be walked — it is a
-// sequence of "key != ..." comparisons — so this pins the boundary the
-// only way available: the full documented object parses as-is, and it
-// still parses with one representative extra key added at each level.
+// on purpose. Unlike PRAGMA table_info(runs) or a flag.FlagSet, parse has
+// no built-in reflectable list to walk, so config.go exposes its own —
+// topLevelKeys and storeKeys — and parse rejects against those same
+// slices rather than a separate literal. Reading topLevelKeys and
+// storeKeys directly here, instead of retyping the key names, is what
+// makes this a real pin: a key added to either slice in config.go without
+// a matching doc update fails the equality checks below, and a key
+// documented but never added to the slices fails to parse.
 func TestParseAcceptsExactlyTheDocumentedConfigKeys(t *testing.T) {
 	t.Parallel()
+	assert.Equal(t, []string{"version", "store"}, topLevelKeys,
+		"docs/config.md §3's top-level keys must match the set parse actually accepts")
+	assert.Equal(t, []string{"enabled", "path", "repos"}, storeKeys,
+		"docs/config.md §3's store keys must match the set parse actually accepts")
 	base := map[string]any{
 		"version": "1",
 		"store": map[string]any{
@@ -110,23 +117,24 @@ func TestParseAcceptsExactlyTheDocumentedConfigKeys(t *testing.T) {
 	require.NoError(t, err)
 	_, err = parse(raw, "config.json")
 	require.NoError(t, err, "the four documented keys together must parse")
-	for _, extra := range []string{"token", "timeout", "log_level", "cache", "webhook"} {
-		t.Run("top-level "+extra, func(t *testing.T) {
-			t.Parallel()
-			mutated := map[string]any{"version": "1", "store": base["store"], extra: "x"}
-			raw, err := json.Marshal(mutated)
-			require.NoError(t, err)
-			_, err = parse(raw, "config.json")
-			assert.Error(t, err, "an undocumented top-level key %q must be rejected", extra)
-		})
-		t.Run("store "+extra, func(t *testing.T) {
-			t.Parallel()
-			store := map[string]any{"enabled": true, "path": "/tmp/store", "repos": map[string]string{}, extra: "x"}
-			mutated := map[string]any{"version": "1", "store": store}
-			raw, err := json.Marshal(mutated)
-			require.NoError(t, err)
-			_, err = parse(raw, "config.json")
-			assert.Error(t, err, "an undocumented store key %q must be rejected", extra)
-		})
-	}
+	const extra = "undocumented-key"
+	require.NotContains(t, topLevelKeys, extra)
+	require.NotContains(t, storeKeys, extra)
+	t.Run("top-level "+extra, func(t *testing.T) {
+		t.Parallel()
+		mutated := map[string]any{"version": "1", "store": base["store"], extra: "x"}
+		raw, err := json.Marshal(mutated)
+		require.NoError(t, err)
+		_, err = parse(raw, "config.json")
+		assert.Error(t, err, "a key %q outside topLevelKeys must be rejected", extra)
+	})
+	t.Run("store "+extra, func(t *testing.T) {
+		t.Parallel()
+		store := map[string]any{"enabled": true, "path": "/tmp/store", "repos": map[string]string{}, extra: "x"}
+		mutated := map[string]any{"version": "1", "store": store}
+		raw, err := json.Marshal(mutated)
+		require.NoError(t, err)
+		_, err = parse(raw, "config.json")
+		assert.Error(t, err, "a key %q outside storeKeys must be rejected", extra)
+	})
 }
