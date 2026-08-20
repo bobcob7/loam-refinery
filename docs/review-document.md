@@ -64,7 +64,7 @@ non-fatal. See [§11.3](#113-advisory-checks--soft).
 | `version` | string | yes | Format version. Always `"1"`. Rejected if anything else. |
 | `verdict` | enum | yes | `approve`, `request_changes`, `comment` |
 | `summary` | string | yes | 1–3 sentence overall assessment. 30–1500 chars. |
-| `ref` | string | no | Commit SHA the whole review was performed against, 40 lowercase hex. See [§5.1](#51-refs). |
+| `ref` | string | yes | Commit SHA the whole review was performed against, 40 lowercase hex. See [§5.1](#51-refs). |
 | `comments` | array | yes | Comment objects. May be empty only when `verdict` is `approve`; otherwise at least one. Enforced by the schema — see below. |
 
 **`comments` may be empty only for `approve`.** The schema expresses this
@@ -106,6 +106,13 @@ The review stays exactly what `loam-refinery` validates, and the wrapper stays e
 what the pipeline owns. No extension namespace is reserved, because a reserved
 namespace is a slower way of arriving at the same wrapper with more ambiguity on
 the way.
+
+`loam-refinery`'s own review store takes the third option and keeps its metadata
+out of the document entirely, in a database beside the files
+([config.md §4](config.md#4-the-store)). A stored review is therefore still a
+review document, byte for byte, and still validates. Where a consumer controls
+its own storage that is the better answer than either; the wrapper above is for
+when one object has to carry everything.
 
 ## 4. Comment object
 
@@ -196,10 +203,42 @@ indefinitely.
 Neither restriction costs a reviewer anything. `git rev-parse HEAD` produces the
 correct value, and a reviewing agent is holding a checkout already.
 
-`ref` is optional because not every review is of a git repository. It is
-optional, not absent — a review that carries line numbers with no ref anywhere
-raises `ref-missing` ([§11.3](#113-advisory-checks--soft)), because those line
-numbers cannot be verified by anyone, ever.
+**`ref` is required.** A review is of one change at one revision; that is what
+makes it a review rather than a collection of remarks, and a document that does
+not say which revision has not finished describing itself.
+
+It was optional in earlier drafts, on the reasoning that not every review is of
+a git repository. That bought very little and cost the center of the design.
+Every other field here already assumes a repository — repository-relative POSIX
+paths, 1-indexed lines read at a commit, an anchor defined as a claim about a
+moment in a history. A document without a ref carries all of that machinery and
+then withholds the one value that makes any of it checkable, which is the exact
+shape of the failure this format exists to catch: well-formed, plausible, and
+unverifiable by anyone, ever.
+
+It is also what made the tool's central check optional. Verification is the only
+tier that catches a hallucinated line number
+([cli.md §2.3.1](cli.md#231-verifying-anchors)), it cannot run without a ref,
+and a format that lets a document opt out of being checkable has made its most
+important guarantee a matter of the author's choice.
+
+The requirement is **unconditional** — not "required when an anchor carries a
+line". A conditional rule would create a class of valid documents that cannot be
+verified and cannot be stored, and the consumer of every such document has to
+carry a branch for it. A review with no anchors at all is still a review *of*
+something, and `git rev-parse HEAD` costs a reviewing agent nothing: it is
+already holding the checkout.
+
+Requiring it retires the `ref-missing` advisory, which existed only to warn
+about the document class this now rejects outright. Per
+[§11.5](#115-name-stability) it is removed rather than repurposed, and
+`--disable=ref-missing` becomes an unknown-check usage error.
+
+This tightens format version `"1"` rather than introducing a `"2"`. The format
+is a draft with no released consumers, and forking a version to carry a rule
+that no document in the world was written against would spend the one
+compatibility signal there is on nothing. A document that was valid before and
+is not now is a document nobody has.
 
 `loam-refinery` requires the `ref` to resolve before verifying anything. When it does
 not, that is one `ref-unknown` error for the document, not one per anchor —
@@ -547,7 +586,6 @@ actually asked to make.
 | Advisory | Signal |
 | --- | --- |
 | `id-grouping` | Suffixes within a slug do not run contiguously from 1 (`foo-1`, `foo-3`), or a slug is used once with a suffix other than 1. |
-| `ref-missing` | An anchor carries `line` but the document has no `ref`. Those line numbers are unverifiable by anyone, now or later. |
 
 **Substance**
 

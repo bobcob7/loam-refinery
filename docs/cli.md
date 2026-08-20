@@ -3,6 +3,7 @@
 Tool specification. Version 0.1 (draft).
 
 For the format this tool reads, see [review-document.md](review-document.md).
+For where settings and stored reviews live, see [config.md](config.md).
 
 ## 1. Overview
 
@@ -25,6 +26,8 @@ In scope:
 - A `prime` command that teaches the workflow in one small call
 - A `describe` command that discloses the contract progressively, on demand
 - Diagnostics addressed by comment ID, so feedback is directly actionable
+- Keeping a local copy of reviews that passed, and getting them back out
+  ([config.md](config.md))
 
 Explicitly out of scope:
 
@@ -36,7 +39,9 @@ Explicitly out of scope:
 - Assessing the *truth* of a review's claims. `loam-refinery` cannot know whether
   "this nil check is missing" is correct; it only knows the comment is anchored,
   prioritized, substantive, and honest about what its suggestions cost.
-- Storing or aggregating reviews across runs
+- Aggregating reviews. Passing reviews can be kept
+  ([config.md](config.md)), but they are kept side by side — never merged,
+  ranked, reconciled, or summarized across runs.
 
 ### Design principles
 
@@ -45,7 +50,9 @@ Explicitly out of scope:
    ([§2.3.1](#231-verifying-anchors)), and reads only what it takes to answer
    "does this path exist at this ref, and does it have this many lines?" It never
    reads a diff, never forms an opinion about code, and never carries repository
-   content into or out of a review.
+   content into or out of a review. It never writes inside the repository
+   either: the store is a directory under the user's home
+   ([config.md §2](config.md#2-locations)).
 2. **The schema is the documentation.** Field descriptions and examples live in
    the annotated schema, and `describe` renders from it, so explanation cannot
    drift from enforcement.
@@ -61,7 +68,9 @@ Explicitly out of scope:
 6. **Advise, don't police.** Default exit status reflects whether the document is
    *usable*, not whether it is *good*.
 7. **Cheap to call.** Fast startup, no config file required, terse default
-   output.
+   output. A config file exists ([config.md §3](config.md#3-the-config-file))
+   but is never necessary, and by construction cannot change whether a document
+   is valid — only whether a copy of the answer is kept.
 
 ## 2. Commands
 
@@ -69,16 +78,18 @@ Explicitly out of scope:
 loam-refinery prime
 loam-refinery describe [--lens=NAME[,NAME...]] [--format json]
 loam-refinery validate [path] [--strict] [--require-verification]
-                  [--warn-only=…] [--disable=…]
-                         [--format json]
+                       [--warn-only=…] [--disable=…]
+                       [--format json]
+loam-refinery reviews  [--repo=NAME] [--ref=SHA] [--limit=N] [--content]
+                       [--failed] [--list] [--format json]
 loam-refinery schema   [--annotated]
 loam-refinery version
 ```
 
 Global: `--help` on any subcommand.
 
-The four content commands form a ladder, cheapest first. A caller climbs only as
-far as its current problem requires:
+Four of them form a ladder over the contract, cheapest first. A caller climbs
+only as far as its current problem requires:
 
 | Call | Answers |
 | --- | --- |
@@ -86,6 +97,10 @@ far as its current problem requires:
 | `describe` | What does a review have to contain? |
 | `describe --lens=NAME` | What exactly does *this* field or *this* failed check want? |
 | `schema` | Give me the machine-readable grammar. |
+
+`reviews` is not a rung on that ladder. It answers a different question — *what
+was concluded about this commit already* — and a caller that never stores
+anything never needs it.
 
 ### 2.1 `prime`
 
@@ -102,7 +117,8 @@ The workflow it teaches:
 
 1. Write a review document.
 2. Run `loam-refinery validate`.
-3. Exit 0 — done. Exit 2 — the invocation is wrong, not the review.
+3. Exit 0 — done. Exit 2 — the invocation is wrong, not the review. Exit 101 —
+   the tool failed; nothing about the review or the command will fix it.
 4. Exit 1 — each diagnostic names a check. Run
    `loam-refinery describe --lens=<check-name>` for the ones you do not understand,
    fix, and validate again.
@@ -261,6 +277,13 @@ Input must be a single JSON object. Multiple documents, JSON Lines, and arrays
 fail `document-unparseable` and exit 1: the input is a document to repair, not
 an invocation to fix.
 
+A run also keeps a copy of what it read — the document under `reviews/` when it
+exits 0, the submitted input under `rejected/` when it exits 1. There is no flag
+for it and no mention of it in the output: storing is what `validate` does,
+turned off only for a whole machine in the config file. It never changes the
+*verdict*, but a store that cannot be written fails the command with exit 101 —
+see [config.md §5](config.md#5-storing-a-review).
+
 #### 2.3.1 Verifying anchors
 
 An anchor is a factual claim: *this path, at this ref, has this line*. Nothing in
@@ -364,10 +387,32 @@ Both forms come from one embedded file, so there is no second copy to drift.
 
 Version, commit, and schema version, one per line.
 
+### 2.6 `reviews`
+
+Queries the store an earlier `validate` wrote: which reviews passed for a
+repository and commit, and — with `--failed` — which runs produced none. It
+resolves nothing, fetches nothing, and writes nothing at all.
+
+It is deliberately minimal: enough to confirm end to end that storing works and
+to look at what was stored, and not a query API. Several obvious conveniences
+are recorded as deferred rather than built.
+
+By default it returns an **index** — when each review was stored, its ref, its
+verdict, and its counts — not the documents themselves. That is the same
+progressive-disclosure argument as `describe`: the cheap answer carries enough
+to choose, and `--content` is the expensive one a caller asks for once it has.
+
+The repository is inferred from the working directory the way verification finds
+one, so `loam-refinery reviews` inside a checkout asks about that checkout.
+
+Fully specified in [config.md §6](config.md#6-reading-the-store).
+
 ## 3. Flags
 
-Behavior is adjusted by flag, not config file. The tool must stay usable with no
-setup.
+Behavior is adjusted by flag. The tool must stay usable with no setup, so every
+flag has a default that works and nothing has to be configured before a first
+run; the config file that exists ([config.md](config.md)) is optional and may
+only set the store flags.
 
 ```
 --strict                  treat advisories as errors (exit 1)        validate
@@ -376,8 +421,14 @@ setup.
 --disable=NAME[,NAME...]  skip the named advisories                  validate
 --lens=NAME[,NAME...]     open one entry in full                     describe
 --list                    print the lens index, no bodies            describe
+--repo=NAME               which repository's reviews                 reviews
+--ref=SHA                 which commit; the full 40-char SHA         reviews
+--limit=N                 most recent N; 0 for all                   reviews
+--content                 include each stored file, not just rows    reviews
+--failed                  list runs that stored no review            reviews
+--list                    print the repositories in the store        reviews
 --annotated               emit the schema with descriptions intact   schema
---format json             output format; json is the only one           describe validate
+--format json             output format; json is the only one        describe validate reviews
 ```
 
 Structural checks cannot be disabled or demoted. Verification checks can be
@@ -391,20 +442,47 @@ no-op, so typos surface immediately.
 `--strict` is how a caller opts into advisories gating a pipeline. It is not the
 default posture: review quality is a judgment the caller owns.
 
+The store flags are the only ones with a config-file counterpart, and the flag
+always wins ([config.md §2.1](config.md#21-precedence)). No flag that affects
+whether a document is valid may be set from configuration, which is why
+`--strict`, `--disable`, `--warn-only`, and `--require-verification` have none
+([config.md §3.1](config.md#31-what-configuration-may-not-do)).
+
 ## 4. Exit codes
 
-| Code | Meaning |
-| --- | --- |
-| 0 | Structurally valid, and anchors verified where a repository was available. Advisories may be present. |
-| 1 | Structurally invalid, unparseable, a verification failure, unverified anchors under `--require-verification`, or advisories present under `--strict`. |
-| 2 | Usage or I/O error: unreadable path, unknown advisory name, bad flag. |
+| Code | Meaning | Whose problem |
+| --- | --- | --- |
+| 0 | Structurally valid, and anchors verified where a repository was available. Advisories may be present. | Nobody's |
+| 1 | Structurally invalid, unparseable, a verification failure, unverified anchors under `--require-verification`, or advisories present under `--strict`. | The review |
+| 2 | Usage error: unknown flag or command, unknown check name, an unreadable input path, a malformed `--repo` or `--ref`, `--list` combined with another `reviews` flag. | The invocation |
+| 101 | Tool error: the tool's own state could not be read or written — an unparseable config file, a store that could not be created, a store directory that could not be read. | The machine |
 
-Distinguishing 1 from 2 matters: exit 1 means *revise the review*, exit 2 means
-*fix the invocation*. An agent must be able to tell those apart without parsing
-prose.
+Three questions, three answers, and an agent must be able to tell them apart
+without parsing prose. Exit 1 means *revise the review*. Exit 2 means *fix the
+command*. Exit 101 means *neither of those will help* — the review was fine, the
+command was fine, and the tool could not do its job.
+
+That third answer is the one worth having a code for. An agent that reads "2"
+and re-examines its command line will loop forever against a read-only home
+directory; the fix is not in anything it controls, and the only useful response
+is to stop and report. Folding machine failure into the usage code is the same
+mistake as folding it into the document code, one step further out.
+
+**Codes 101–125 are the tool-error band**, and only 101 is assigned. The range
+starts above 100 because the low codes are the crowded ones: a shell reports 2
+for builtin misuse, 126 for a command that cannot execute, 127 for one that does
+not exist, and 128+N for a signal. A code an orchestrator has to distinguish
+from "the review needs work" should not share a number with everything else that
+can go wrong between the process and the shell. 101–125 is the free window below
+the reserved 126.
 
 Advisories alone never produce exit 1. Verification failures do, unless demoted
 with `--warn-only`.
+
+A failed store produces exit 101 — never 1, and no longer 2. A full disk is not
+a defect in the review and not a mistake in the command line. Stdout carries
+nothing in that case, as on any failing exit; the code is the signal and stderr
+is the reason. See [config.md §5.1](config.md#51-when-storing-fails).
 
 ## 5. Output
 
@@ -468,8 +546,15 @@ unverified anchors were not checked rather than found sound. A caller that treat
 `verification` block as "verified" is reading an older version, which is why the
 field is required rather than omitted when empty.
 
-The whole object goes to stdout in this mode; nothing is written to stderr except
-on exit code 2.
+The whole object goes to stdout; nothing is written to stderr except on a
+failing exit, where stdout carries nothing.
+
+**Nothing here describes the store.** A run keeps a copy of a passing review
+([config.md §5](config.md#5-storing-a-review)) and says nothing about it: where
+a copy landed is not a fact about the review, and `loam-refinery reviews` is the
+command for questions about the store. The exit code is how a caller learns that
+storing failed, because that is a failure of the run rather than a property of
+the document.
 
 ## 6. Token economy
 
@@ -493,6 +578,10 @@ nothing measures is a limit that erodes.
 | `schema --annotated` | 5,000 | Rare; codegen only |
 | `validate`, clean | 80 | Every attempt |
 | `validate`, per diagnostic | 60 | Every failed attempt |
+| `reviews` | 60 + 45 per row | Rare; only where a store is used |
+| `reviews --failed` | 60 + 55 per row | Rare; diagnosing a reviewing agent |
+| `reviews --list` | 60 + 25 per repository | Rare; discovery |
+| `reviews --content` | none | Returns caller-authored documents |
 
 These are higher than the text format they replaced. Measured over a
 realistic write-validate-fix cycle it is about **2.1x**; a clean `validate`
@@ -513,7 +602,22 @@ lookups against a local database, one per distinct file, since the whole documen
 shares one `ref`.
 
 The two that matter most are `prime` and clean `validate`, because they are paid
-on every single loop. Everything else is conditional.
+on every single loop.
+
+Clean `validate` holds at 80 even though every clean run now writes to a store,
+because the result object says nothing about the store. A draft that reported
+where each review landed measured about 140: an absolute path is a store root, a
+repository name, a 40-character SHA, and a filename, and it arrived on the one
+path every loop pays. Moving that question to `loam-refinery reviews`, where it
+is asked deliberately and rarely, gave the 60 tokens back.
+
+That is the shape of this whole table. A cost belongs on the call that wants it,
+not on the call that happens to be running.
+
+`reviews --content` is the one call with **no ceiling**, and that is stated
+rather than invented: it returns review documents the caller wrote, at whatever
+size the caller wrote them. `--limit` is the control that exists instead, and
+the default index form is what keeps the common query cheap.
 
 The largest saving is not in any row of that table — it is in **not repeating
 it**. A validator that reports one problem at a time turns a document with four
@@ -589,6 +693,12 @@ internal/entry/schema.go          field:* provider, reads the annotated schema
 internal/entry/checks.go          check:* provider, reads the check registries
 internal/entry/topics/            topic:* entries, //go:embed of hand-written md
 internal/render/                  the json renderer
+internal/config/                  locations, the config file, precedence
+internal/store/                   stored files, the run database, queries
+internal/store/sql/schema.sql     //go:embed of the SQLite schema and migrations
+internal/store/sql/query.sql      the queries, compiled by sqlc
+internal/store/sqlc/              generated by sqlc; committed, never edited
+internal/store/interfaces.go      clock, repository namer
 ```
 
 Interfaces live in each package's `interfaces.go`, defined at the consumer.
@@ -611,10 +721,22 @@ advisory becomes explainable via `describe --lens` and configurable via
 Keep the tree shallow — this binary is invoked in tight loops.
 
 - `github.com/santhosh-tekuri/jsonschema/v6` for draft 2020-12 validation
+- `modernc.org/sqlite` for the run database — pure Go, no cgo, so cross
+  compilation and `go install` keep working. It is by a wide margin the heaviest
+  thing here, and the reasoning for accepting it is in
+  [config.md §4.5.3](config.md#453-why-sqlite): it buys queries that stay fast
+  as a store grows, and it costs binary size rather than startup, which is the
+  budget that matters for a binary invoked in loops.
 - Standard library `flag` with `flag.NewFlagSet` per subcommand. A CLI framework
   is not warranted for four subcommands, and `prime` already serves the
   agent-facing help role that a framework's generated help would cover.
 - testify for tests
+
+Build-time tools are not dependencies of the binary and live in
+`internal/tools/tools.go` behind the `tools` build tag, installed by
+`make tools` and run by `make generate`: `moq`, `gofumpt`, and now `sqlc`, which
+compiles `internal/store/sql/*.sql` into typed Go. Its output is committed, so a
+build never needs it ([config.md §4.5.4](config.md#454-sqlc)).
 
 ### 7.4 Testing
 
