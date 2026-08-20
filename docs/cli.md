@@ -534,10 +534,51 @@ the diagnostics, so a caller can fetch explanations without guessing at
 names. Omitted when
 there are no diagnostics.
 
-`skipped` lists the checks that could not run, each with `name` and `reason`. It
-is always present, empty when everything ran. As with `verification`, absence
-must never be read as success: a consumer that ignores this field will treat a
-check that never executed as a check that found nothing.
+`skipped` groups the checks that could not run **by reason**, not one entry
+per check: `{ "reason": "...", "checks": [...] }`. One cause commonly stops
+several checks at once — no repository stops every verification check at
+once — and a grouped entry says the reason once instead of repeating the same
+sentence under every name it applies to. It is always present, `[]` when
+everything ran. As with `verification`, absence must never be read as
+success: a consumer that ignores this field will treat a check that never
+executed as a check that found nothing.
+
+**`counts.skipped` counts checks; `skipped` counts reasons, and the two
+numbers routinely disagree.** `counts.skipped` is how many checks did not
+run. `skipped` is an array of reasons, each carrying every check it stopped,
+so several checks stopped by one cause collapse into a single element. A
+document validated outside a repository shows the gap plainly:
+
+```json
+{
+  "valid": true,
+  "strict": false,
+  "verification": {
+    "source": "none",
+    "reason": "not a git repository",
+    "anchors": 1,
+    "verified": 0
+  },
+  "counts": { "comments": 1, "errors": 0, "advisories": 0, "skipped": 3 },
+  "skipped": [
+    {
+      "reason": "not a git repository",
+      "checks": [
+        "ref-unknown",
+        "anchor-file-missing",
+        "anchor-line-out-of-range"
+      ]
+    }
+  ],
+  "diagnostics": []
+}
+```
+
+`counts.skipped` is `3` — three checks stopped, named in the group above —
+and `skipped` has a single element, because all three stopped for the same
+reason. Read `counts.skipped` for how many checks did not run and `skipped`
+for why; `len(skipped)` is neither, and a consumer that treats it as a check
+count will read this ordinary case as a mismatch.
 
 `verification` is always present. `source` is `"repo"`, `"none"` when the run
 was not inside a repository, or `"unavailable"` when one could not be asked;
@@ -602,10 +643,11 @@ Verification adds wall-clock, not tokens, when a repository can answer: the
 or several. Because it runs by default, that cost is paid on every loop —
 object lookups against a local database, one per distinct file, since the
 whole document shares one `ref`. Outside a repository the shape changes and
-the cost stops being free: `SkipAll` reports three skipped checks, each with
-its own reason, which is real content the in-repository case never has to
-print. That is the no-repository row above, and it is measured, not
-guessed, at 115 — trimming what `SkipAll` reports would shrink the number,
+the cost stops being free: `SkipAll` stops three checks for one reason, and
+`skipped` prints that reason once with all three check names beside it —
+real content the in-repository case never has to print. That is the
+no-repository row above, and it is measured, not guessed, at 115 —
+trimming what `SkipAll` reports would shrink the number,
 but a run that verified nothing would then look like a run that verified
 everything, which [§2.3.1](#231-verifying-anchors) rules out on purpose.
 

@@ -74,7 +74,12 @@ With neither XDG variable set, those resolve to
 
 **The store is a directory, not a file.** `<store>` throughout this document
 means that directory, and it holds `store.db`, `reviews/`, and `rejected/`
-([§4.1](#41-layout)) — never anything else.
+([§4.1](#41-layout)) — plus, transiently, `store.db-wal` and `store.db-shm`.
+WAL mode ([§4.6](#46-concurrency-and-locking)) keeps those two beside the
+database for as long as any connection is open, and removes them on the last
+clean close. A store inspected between runs holds only the first three; a
+store caught mid-run, or one a crash or a `kill -9` left without a clean
+close, holds all five. Nothing else belongs there.
 
 **Config and data are split** because one is a file a person writes and wants
 backed up, and the other is bulk output a machine produces and can regenerate
@@ -92,9 +97,9 @@ thing to want and should not require two environment variables to express.
 
 In that mode `config.json` sits inside the store directory. Nothing this tool
 does deletes a store wholesale, and if that ever changes it removes `store.db`,
-`reviews/`, and `rejected/` by name rather than the directory containing them
-([§7](#7-growth-and-retention)) — so the collapse can never cost somebody their
-settings.
+`store.db-wal`, `store.db-shm`, `reviews/`, and `rejected/` by name rather than
+the directory containing them ([§7](#7-growth-and-retention)) — so the
+collapse can never cost somebody their settings.
 
 **macOS uses the same paths as Linux.** Apple's convention is
 `~/Library/Application Support`, and it is rejected here: this is a terminal
@@ -989,7 +994,7 @@ with the same row shape:
   "at": "2026-08-19T14:22:41Z",
   "ref": "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f",
   "exit_code": 1,
-  "counts": { "errors": 3, "advisories": 1, "skipped": 0 },
+  "counts": { "comments": 3, "errors": 2, "advisories": 1, "skipped": 0 },
   "path": "/Users/me/.local/share/loam-refinery/rejected/github.com/bobcob7/loam-refinery/44136fa355b3678a….json"
 }
 ```
@@ -1158,10 +1163,16 @@ survivable rather than tidy — which is the honest trade for having no
 `--prune` yet.
 
 **Nothing this tool does deletes a store wholesale.** If that ever changes, it
-removes `store.db`, `reviews/`, and `rejected/` by name rather than the
-directory containing them — because under `$LOAM_REFINERY_HOME`
-([§2](#2-locations)) that directory also holds `config.json`, and a clear-my-
-store command must never be able to take a person's settings with it.
+removes `store.db`, `store.db-wal`, `store.db-shm`, `reviews/`, and `rejected/`
+by name rather than the directory containing them — because under
+`$LOAM_REFINERY_HOME` ([§2](#2-locations)) that directory also holds
+`config.json`, and a clear-my-store command must never be able to take a
+person's settings with it. The two sidecar files are usually already gone by
+the time such a command runs — WAL mode removes them on a clean close
+([§4.6](#46-concurrency-and-locking)) — but naming five files instead of
+three is what stops a delete that follows a crash or a kill from leaving
+`store.db-wal` behind, orphaned from the database it belonged to, which is
+the one piece of SQLite litter capable of confusing a later open.
 
 Query cost does not grow with either number in the way a directory walk would:
 the indexes in [§4.5.1](#451-what-it-holds) cover the listings `reviews` makes,
