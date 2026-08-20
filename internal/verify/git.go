@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -218,4 +219,40 @@ func (r *Repository) run(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, failure
 	}
 	return stdout.Bytes(), nil
+}
+
+// worktreeDiverged reports whether path's working-tree copy exists and
+// differs from the blob ref names, using git's own comparison — git
+// hash-object on the worktree file against git rev-parse on the blob at
+// ref — so .gitattributes, core.autocrlf, and any clean/smudge filter are
+// honored exactly as they are everywhere else in the user's tooling. A raw
+// byte comparison would invent a second definition of "changed" that
+// disagrees with git's own: under core.autocrlf=true it would see line-ending
+// normalization as a difference and call every tracked file diverged.
+//
+// A path with no working-tree copy is reported not diverged, never as an
+// error: a deleted file says nothing about what a reviewer read, so ref
+// stays authoritative for it. This also keeps the answer disjoint from
+// "changed" — git itself reports a deletion as a difference, and this
+// function deliberately does not.
+//
+// It does not check that ref is HEAD; that restriction belongs to whoever
+// decides when the comparison is meaningful, not to the comparison itself.
+func (r *Repository) worktreeDiverged(ctx context.Context, ref, path string) (bool, error) {
+	_, err := os.Lstat(filepath.Join(r.root, filepath.FromSlash(path)))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("statting working-tree copy of %s: %w", path, err)
+	}
+	blob, err := r.run(ctx, "rev-parse", "--verify", ref+":"+path)
+	if err != nil {
+		return false, fmt.Errorf("resolving %s at %s: %w", path, short(ref), err)
+	}
+	worktree, err := r.run(ctx, "hash-object", "--", path)
+	if err != nil {
+		return false, fmt.Errorf("hashing working-tree copy of %s: %w", path, err)
+	}
+	return strings.TrimSpace(string(blob)) != strings.TrimSpace(string(worktree)), nil
 }
