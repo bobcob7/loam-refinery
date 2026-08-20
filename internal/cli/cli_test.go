@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/bobcob7/loam-refinery/internal/entry"
+	"github.com/bobcob7/loam-refinery/internal/profile"
 	"github.com/bobcob7/loam-refinery/internal/render"
 	"github.com/bobcob7/loam-refinery/internal/review"
 	"github.com/bobcob7/loam-refinery/internal/store"
@@ -28,6 +29,7 @@ type harness struct {
 	validator *documentValidatorMock
 	store     *documentStoreMock
 	reviews   *reviewStoreMock
+	profiles  *profileSourceMock
 	stdout    *bytes.Buffer
 	stderr    *bytes.Buffer
 }
@@ -44,10 +46,12 @@ func newHarness(t *testing.T, stdin string) *harness {
 		SaveFunc: func(context.Context, StoreInput) error { return nil },
 	}
 	reviewsMock := noopReviewStore()
+	profilesMock := panickyProfileSource()
 	app := New(
 		validator,
 		storeMock,
 		reviewsMock,
+		profilesMock,
 		testRegistry(t),
 		render.NewJSON(),
 		CheckNames{
@@ -68,7 +72,23 @@ func newHarness(t *testing.T, stdin string) *harness {
 		stderr,
 		slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	)
-	return &harness{app: app, validator: validator, store: storeMock, reviews: reviewsMock, stdout: stdout, stderr: stderr}
+	return &harness{app: app, validator: validator, store: storeMock, reviews: reviewsMock, profiles: profilesMock, stdout: stdout, stderr: stderr}
+}
+
+// panickyProfileSource stands in for profileSource wherever a test drives a
+// command that must never construct or call one at all: bare prime, and
+// every command other than prime (docs/cli.md §2.1.1). Panicking rather
+// than returning a zero value turns an accidental call into a test failure
+// pointing at the call site, instead of a silently wrong result.
+func panickyProfileSource() *profileSourceMock {
+	return &profileSourceMock{
+		LoadFunc: func(string) (profile.Profile, bool, error) {
+			panic("profileSource.Load called unexpectedly")
+		},
+		ListFunc: func() ([]profile.Profile, []string, error) {
+			panic("profileSource.List called unexpectedly")
+		},
+	}
 }
 
 // noopReviewStore stands in for reviewStore wherever a test drives a command
@@ -455,8 +475,9 @@ func TestFlagsMayFollowThePath(t *testing.T) {
 func TestSubcommandsRejectStrayArguments(t *testing.T) {
 	t.Parallel()
 	tests := map[string][]string{
-		"version":          {"version", "foo"},
-		"list with a lens": {"describe", "--list", "--lens=verdict"},
+		"version":                          {"version", "foo"},
+		"list with a lens":                 {"describe", "--list", "--lens=verdict"},
+		"prime with a positional argument": {"prime", "somefile.md"},
 	}
 	for name, args := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -39,6 +39,11 @@ const (
 	verified outcome = iota
 	refuted
 	unchecked
+	// diverged means anchor-worktree-diverged fired: the anchored file exists
+	// at ref, but the working-tree copy differs from it and ref is HEAD, so
+	// the anchor is reported unverified rather than checked against either
+	// copy.
+	diverged
 )
 
 // New returns a Verifier reading the supplied repository.
@@ -79,6 +84,10 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 		}
 		return []review.Diagnostic{diagnostic}, excusableSkips("the document ref does not resolve", "ref-unknown"), verification
 	}
+	// HEAD is resolved once per run, the same way ref existence is: the
+	// working tree only ever matters when ref is the checked-out commit, and
+	// that is one fact about this run, not one fact per anchor.
+	isHEAD := v.refIsHEAD(ctx, ref)
 	diagnostics := []review.Diagnostic{}
 	unusable, unreadable := 0, 0
 	for _, comment := range doc.Comments {
@@ -90,12 +99,19 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 				unusable++
 				continue
 			}
-			diagnostic, result := v.checkAnchor(ctx, comment, anchor, ref)
+			diagnostic, result := v.checkAnchor(ctx, comment, anchor, ref, isHEAD)
 			switch result {
 			case verified:
 				verification.Verified++
 			case unchecked:
 				unreadable++
+			case diverged:
+				verification.Unverified = append(verification.Unverified, review.Unverified{
+					Name:    diagnostic.Name,
+					Comment: diagnostic.Comment,
+					Path:    diagnostic.Path,
+					Message: diagnostic.Message,
+				})
 			default:
 				diagnostics = append(diagnostics, diagnostic)
 			}
@@ -143,7 +159,7 @@ func (v *Verifier) refUsable(doc *review.Document) (string, bool) {
 	return "", true
 }
 
-func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anchor review.Anchor, ref string) (review.Diagnostic, outcome) {
+func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anchor review.Anchor, ref string, isHEAD bool) (review.Diagnostic, outcome) {
 	file := anchor.File.Value
 	state := v.fileAt(ctx, ref, file)
 	if state.err != nil {
@@ -168,6 +184,28 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 			Message:  fmt.Sprintf("%s is a directory at %s, not a file", file, short(ref)),
 		}, refuted
 	}
+	// The working tree is consulted only now that the path is confirmed
+	// present at ref as a file: a path absent at ref stays anchor-file-missing
+	// above, and the working tree never softens that. Case 2's remaining two
+	// conditions — a working-tree copy exists, and it differs — are exactly
+	// what worktreeDiverged answers; a copy that does not exist reports
+	// "not diverged" on its own, which is what keeps a deleted working-tree
+	// file falling through to the line checks below rather than landing here.
+	if isHEAD {
+		differs, err := v.git.worktreeDiverged(ctx, ref, file)
+		if err != nil {
+			v.log.Debug("working-tree comparison failed", "file", file, "ref", short(ref), "error", err)
+			return review.Diagnostic{}, unchecked
+		}
+		if differs {
+			return review.Diagnostic{
+				Name:    "anchor-worktree-diverged",
+				Comment: commentID(comment),
+				Path:    anchor.Path,
+				Message: fmt.Sprintf("%s differs from %s in the working tree", file, short(ref)),
+			}, diverged
+		}
+	}
 	for _, candidate := range []struct {
 		name  string
 		field review.Field[int]
@@ -185,6 +223,21 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 		}, refuted
 	}
 	return review.Diagnostic{}, verified
+}
+
+// refIsHEAD reports whether ref names the checked-out commit, resolved once
+// per run rather than once per anchor. A HEAD that cannot be resolved is not
+// a reason to fail verification — it only means the working tree has nothing
+// to say about ref, which is the same conclusion "ref is not HEAD" reaches,
+// so anchors fall through to being checked normally rather than being
+// silently skipped over a machine problem the caller never asked about.
+func (v *Verifier) refIsHEAD(ctx context.Context, ref string) bool {
+	out, err := v.git.run(ctx, "rev-parse", "HEAD")
+	if err != nil {
+		v.log.Debug("HEAD lookup failed", "error", err)
+		return false
+	}
+	return strings.TrimSpace(string(out)) == ref
 }
 
 // refExists asks whether the commit is present without asking git to read it.

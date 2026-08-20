@@ -25,6 +25,7 @@ func TestJSONResult(t *testing.T) {
 	}{
 		{name: "clean", result: clean(), golden: "json-clean"},
 		{name: "unverified", result: unverified(), golden: "json-unverified"},
+		{name: "diverged", result: diverged(), golden: "json-diverged"},
 		{name: "diagnostics", result: messy(), golden: "json-diagnostics"},
 	}
 	for _, test := range tests {
@@ -118,6 +119,60 @@ func unverified() *review.Result {
 			{Name: "anchor-line-out-of-range", Reason: "not a git repository"},
 		},
 	}
+}
+
+func diverged() *review.Result {
+	return &review.Result{
+		Valid:    true,
+		Comments: 1,
+		Verification: review.Verification{
+			Source: "repo", Anchors: 4, Verified: 3,
+			Unverified: []review.Unverified{{
+				Name:    "anchor-worktree-diverged",
+				Comment: "dropped-context-1",
+				Path:    "/comments/0/anchors/0",
+				Message: "internal/fetch/client.go differs from 4f2c1a9 in the working tree",
+			}},
+		},
+	}
+}
+
+// Mutation guard: verification.unverified must be genuinely absent from the
+// wire when nothing diverged, not merely equal to an empty array — a caller
+// checking "was this key sent" must see the same thing a nil slice and an
+// explicitly-empty one would otherwise blur together.
+func TestUnverifiedIsOmittedWhenNothingDiverged(t *testing.T) {
+	t.Parallel()
+	stdout := &bytes.Buffer{}
+	require.NoError(t, NewJSON().Result(stdout, clean()))
+	assert.NotContains(t, stdout.String(), "unverified", "omitted, the convention diagnostics and lenses already use")
+}
+
+func TestUnverifiedCarriesTheAnchorAndWhy(t *testing.T) {
+	t.Parallel()
+	stdout := &bytes.Buffer{}
+	require.NoError(t, NewJSON().Result(stdout, diverged()))
+	var payload struct {
+		Verification struct {
+			Anchors    int `json:"anchors"`
+			Verified   int `json:"verified"`
+			Unverified []struct {
+				Name    string `json:"name"`
+				Comment string `json:"comment"`
+				Path    string `json:"path"`
+				Message string `json:"message"`
+			} `json:"unverified"`
+		} `json:"verification"`
+		Lenses []string `json:"lenses"`
+	}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &payload))
+	assert.Equal(t, 4, payload.Verification.Anchors)
+	assert.Equal(t, 3, payload.Verification.Verified, "verified stays less than anchors for a diverged one")
+	require.Len(t, payload.Verification.Unverified, 1)
+	assert.Equal(t, "anchor-worktree-diverged", payload.Verification.Unverified[0].Name)
+	assert.Equal(t, "dropped-context-1", payload.Verification.Unverified[0].Comment)
+	assert.Equal(t, "/comments/0/anchors/0", payload.Verification.Unverified[0].Path)
+	assert.Contains(t, payload.Lenses, "anchor-worktree-diverged", "a caller can fetch the explanation without guessing the name")
 }
 
 func messy() *review.Result {

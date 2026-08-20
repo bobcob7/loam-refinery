@@ -83,6 +83,22 @@ func TestLensesDeduplicatesInDiagnosticOrder(t *testing.T) {
 	assert.Equal(t, []string{"priority", "id-unique"}, result.Lenses())
 }
 
+// An unverified anchor is not a diagnostic, but a caller still needs to open
+// its check name the same way — docs/cli.md §5.2 says lenses covers "the
+// diagnostics and any unverified anchors".
+func TestLensesIncludesUnverifiedAnchors(t *testing.T) {
+	t.Parallel()
+	result := &Result{
+		Diagnostics: []Diagnostic{{Name: "schema", Lens: "priority"}},
+		Verification: Verification{Unverified: []Unverified{
+			{Name: "anchor-worktree-diverged"},
+			{Name: "anchor-worktree-diverged"},
+		}},
+	}
+	assert.Equal(t, []string{"priority", "anchor-worktree-diverged"}, result.Lenses(),
+		"the check name is deduplicated the same way a diagnostic's is")
+}
+
 func TestParseAcceptsEveryIntegralSpellingOfANumber(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct {

@@ -335,6 +335,73 @@ func TestAnExcusedConditionNeverCoversABrokenMachine(t *testing.T) {
 	assert.Equal(t, "verification-required", result.Diagnostics[0].Name)
 }
 
+// anchor-worktree-diverged is the one verification check that is not an
+// error by default: monotonicity means it can only remove an anchor from
+// verified, never turn a passing document into a failing one.
+func TestADivergedAnchorDoesNotFailByDefault(t *testing.T) {
+	t.Parallel()
+	diverged := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return nil, nil, review.Verification{Source: "repo", Anchors: 1, Verified: 0, Unverified: []review.Unverified{
+			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from ref in the working tree"},
+		}}
+	}}
+	result, err := validator(passing(), quiet(), finder(diverged)).Validate(t.Context(), []byte(anchored), Options{})
+	require.NoError(t, err)
+	assert.Zero(t, result.Errors())
+	assert.True(t, result.Valid, "a diverged anchor withholds a verification, it does not fail the document")
+	require.Len(t, result.Verification.Unverified, 1, "the diverged anchor is carried through to the result")
+	assert.Equal(t, "anchor-worktree-diverged", result.Verification.Unverified[0].Name)
+}
+
+// --require-verification fires on a diverged anchor too: it is a member of
+// "the anchor claims went unchecked" the same way an unreadable file is.
+func TestRequireVerificationFiresOnADivergedAnchor(t *testing.T) {
+	t.Parallel()
+	diverged := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return nil, nil, review.Verification{Source: "repo", Anchors: 1, Verified: 0, Unverified: []review.Unverified{
+			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from ref in the working tree"},
+		}}
+	}}
+	options := Options{RequireVerification: true}
+	result, err := validator(passing(), quiet(), finder(diverged)).Validate(t.Context(), []byte(anchored), options)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Errors())
+	assert.Equal(t, "verification-required", result.Diagnostics[0].Name)
+	assert.Contains(t, result.Diagnostics[0].Message, "diverged")
+	assert.False(t, result.Valid)
+}
+
+// --warn-only=anchor-worktree-diverged excuses only this gap: a caller under
+// --require-verification can accept a dirty checkout without also waving
+// through an unrelated reason nothing was checked.
+func TestWarnOnlyExcusesOnlyTheDivergedGap(t *testing.T) {
+	t.Parallel()
+	diverged := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return nil, nil, review.Verification{Source: "repo", Anchors: 1, Verified: 0, Unverified: []review.Unverified{
+			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from ref in the working tree"},
+		}}
+	}}
+	options := Options{RequireVerification: true, WarnOnly: map[string]bool{"anchor-worktree-diverged": true}}
+	result, err := validator(passing(), quiet(), finder(diverged)).Validate(t.Context(), []byte(anchored), options)
+	require.NoError(t, err)
+	assert.Zero(t, result.Errors())
+	assert.True(t, result.Valid)
+	t.Run("but does not excuse an unrelated gap", func(t *testing.T) {
+		t.Parallel()
+		mixed := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+			return nil, []review.Skipped{{Name: "anchor-file-missing", Reason: "git could not read the file for 1 anchor"}},
+				review.Verification{Source: "repo", Anchors: 2, Verified: 0, Unverified: []review.Unverified{
+					{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from ref in the working tree"},
+				}}
+		}}
+		options := Options{RequireVerification: true, WarnOnly: map[string]bool{"anchor-worktree-diverged": true}}
+		result, err := validator(passing(), quiet(), finder(mixed)).Validate(t.Context(), []byte(anchored), options)
+		require.NoError(t, err)
+		require.Equal(t, 1, result.Errors(), "demoting the diverged gap does not excuse an unreadable object store")
+		assert.Contains(t, result.Diagnostics[0].Message, "git could not read the file for 1 anchor")
+	})
+}
+
 // Demoting one check excuses the gap that check explains, and no other. The
 // earlier rule asked only whether every diagnostic was demoted, so an unrelated
 // demotion waved through anchors nothing had looked at.

@@ -68,6 +68,24 @@ type Verification struct {
 	Reason   string
 	Anchors  int
 	Verified int
+	// Unverified is one entry per anchor a dirty working tree kept from being
+	// checked: anchor-worktree-diverged, and nothing else, can populate this.
+	// It is not a skipped check — the check ran, and reported this one anchor
+	// rather than confirming it — so it belongs here rather than in Skipped,
+	// which groups by reason for the whole run rather than per anchor.
+	Unverified []Unverified
+}
+
+// Unverified is one anchor a diverged working tree kept from being checked.
+// It carries the same three things a Diagnostic does — a check name, the
+// comment it belongs to, and a JSON Pointer into the document — but lives in
+// Verification rather than Diagnostics, because the outcome is a fact about
+// verification's coverage, not a finding about the review.
+type Unverified struct {
+	Name    string
+	Comment string
+	Path    string
+	Message string
 }
 
 // Result is everything one validate run determined.
@@ -96,8 +114,8 @@ func (r *Result) Advisories() int {
 	return len(r.Diagnostics) - r.Errors()
 }
 
-// Lenses is the deduplicated set of lens names covering the diagnostics, in the
-// order the diagnostics appear.
+// Lenses is the deduplicated set of lens names covering the diagnostics and
+// any unverified anchors, in the order they appear.
 func (r *Result) Lenses() []string {
 	seen := map[string]bool{}
 	names := []string{}
@@ -108,6 +126,13 @@ func (r *Result) Lenses() []string {
 		}
 		seen[name] = true
 		names = append(names, name)
+	}
+	for _, u := range r.Verification.Unverified {
+		if u.Name == "" || seen[u.Name] {
+			continue
+		}
+		seen[u.Name] = true
+		names = append(names, u.Name)
 	}
 	return names
 }

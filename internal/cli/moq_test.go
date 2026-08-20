@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"github.com/bobcob7/loam-refinery/internal/entry"
+	"github.com/bobcob7/loam-refinery/internal/profile"
 	"github.com/bobcob7/loam-refinery/internal/review"
 	"github.com/bobcob7/loam-refinery/internal/store"
 	"github.com/bobcob7/loam-refinery/internal/validate"
@@ -107,6 +108,9 @@ var _ renderer = &rendererMock{}
 //			IndexFunc: func(w io.Writer, groups []entry.Group) error {
 //				panic("mock out the Index method")
 //			},
+//			ProfilesFunc: func(w io.Writer, profiles []profile.Profile) error {
+//				panic("mock out the Profiles method")
+//			},
 //			ResultFunc: func(w io.Writer, result *review.Result) error {
 //				panic("mock out the Result method")
 //			},
@@ -125,6 +129,9 @@ type rendererMock struct {
 
 	// IndexFunc mocks the Index method.
 	IndexFunc func(w io.Writer, groups []entry.Group) error
+
+	// ProfilesFunc mocks the Profiles method.
+	ProfilesFunc func(w io.Writer, profiles []profile.Profile) error
 
 	// ResultFunc mocks the Result method.
 	ResultFunc func(w io.Writer, result *review.Result) error
@@ -148,6 +155,13 @@ type rendererMock struct {
 			// Groups is the groups argument value.
 			Groups []entry.Group
 		}
+		// Profiles holds details about calls to the Profiles method.
+		Profiles []struct {
+			// W is the w argument value.
+			W io.Writer
+			// Profiles is the profiles argument value.
+			Profiles []profile.Profile
+		}
 		// Result holds details about calls to the Result method.
 		Result []struct {
 			// W is the w argument value.
@@ -165,10 +179,11 @@ type rendererMock struct {
 			Groups []entry.Group
 		}
 	}
-	lockEntries sync.RWMutex
-	lockIndex   sync.RWMutex
-	lockResult  sync.RWMutex
-	lockSummary sync.RWMutex
+	lockEntries  sync.RWMutex
+	lockIndex    sync.RWMutex
+	lockProfiles sync.RWMutex
+	lockResult   sync.RWMutex
+	lockSummary  sync.RWMutex
 }
 
 // Entries calls EntriesFunc.
@@ -240,6 +255,42 @@ func (mock *rendererMock) IndexCalls() []struct {
 	mock.lockIndex.RLock()
 	calls = mock.calls.Index
 	mock.lockIndex.RUnlock()
+	return calls
+}
+
+// Profiles calls ProfilesFunc.
+func (mock *rendererMock) Profiles(w io.Writer, profiles []profile.Profile) error {
+	if mock.ProfilesFunc == nil {
+		panic("rendererMock.ProfilesFunc: method is nil but renderer.Profiles was just called")
+	}
+	callInfo := struct {
+		W        io.Writer
+		Profiles []profile.Profile
+	}{
+		W:        w,
+		Profiles: profiles,
+	}
+	mock.lockProfiles.Lock()
+	mock.calls.Profiles = append(mock.calls.Profiles, callInfo)
+	mock.lockProfiles.Unlock()
+	return mock.ProfilesFunc(w, profiles)
+}
+
+// ProfilesCalls gets all the calls that were made to Profiles.
+// Check the length with:
+//
+//	len(mockedrenderer.ProfilesCalls())
+func (mock *rendererMock) ProfilesCalls() []struct {
+	W        io.Writer
+	Profiles []profile.Profile
+} {
+	var calls []struct {
+		W        io.Writer
+		Profiles []profile.Profile
+	}
+	mock.lockProfiles.RLock()
+	calls = mock.calls.Profiles
+	mock.lockProfiles.RUnlock()
 	return calls
 }
 
@@ -825,5 +876,108 @@ func (mock *reviewStoreMock) RepoNameCalls() []struct {
 	mock.lockRepoName.RLock()
 	calls = mock.calls.RepoName
 	mock.lockRepoName.RUnlock()
+	return calls
+}
+
+// Ensure, that profileSourceMock does implement profileSource.
+// If this is not the case, regenerate this file with moq.
+var _ profileSource = &profileSourceMock{}
+
+// profileSourceMock is a mock implementation of profileSource.
+//
+//	func TestSomethingThatUsesprofileSource(t *testing.T) {
+//
+//		// make and configure a mocked profileSource
+//		mockedprofileSource := &profileSourceMock{
+//			ListFunc: func() ([]profile.Profile, []string, error) {
+//				panic("mock out the List method")
+//			},
+//			LoadFunc: func(name string) (profile.Profile, bool, error) {
+//				panic("mock out the Load method")
+//			},
+//		}
+//
+//		// use mockedprofileSource in code that requires profileSource
+//		// and then make assertions.
+//
+//	}
+type profileSourceMock struct {
+	// ListFunc mocks the List method.
+	ListFunc func() ([]profile.Profile, []string, error)
+
+	// LoadFunc mocks the Load method.
+	LoadFunc func(name string) (profile.Profile, bool, error)
+
+	// calls tracks calls to the methods.
+	calls struct {
+		// List holds details about calls to the List method.
+		List []struct {
+		}
+		// Load holds details about calls to the Load method.
+		Load []struct {
+			// Name is the name argument value.
+			Name string
+		}
+	}
+	lockList sync.RWMutex
+	lockLoad sync.RWMutex
+}
+
+// List calls ListFunc.
+func (mock *profileSourceMock) List() ([]profile.Profile, []string, error) {
+	if mock.ListFunc == nil {
+		panic("profileSourceMock.ListFunc: method is nil but profileSource.List was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockList.Lock()
+	mock.calls.List = append(mock.calls.List, callInfo)
+	mock.lockList.Unlock()
+	return mock.ListFunc()
+}
+
+// ListCalls gets all the calls that were made to List.
+// Check the length with:
+//
+//	len(mockedprofileSource.ListCalls())
+func (mock *profileSourceMock) ListCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockList.RLock()
+	calls = mock.calls.List
+	mock.lockList.RUnlock()
+	return calls
+}
+
+// Load calls LoadFunc.
+func (mock *profileSourceMock) Load(name string) (profile.Profile, bool, error) {
+	if mock.LoadFunc == nil {
+		panic("profileSourceMock.LoadFunc: method is nil but profileSource.Load was just called")
+	}
+	callInfo := struct {
+		Name string
+	}{
+		Name: name,
+	}
+	mock.lockLoad.Lock()
+	mock.calls.Load = append(mock.calls.Load, callInfo)
+	mock.lockLoad.Unlock()
+	return mock.LoadFunc(name)
+}
+
+// LoadCalls gets all the calls that were made to Load.
+// Check the length with:
+//
+//	len(mockedprofileSource.LoadCalls())
+func (mock *profileSourceMock) LoadCalls() []struct {
+	Name string
+} {
+	var calls []struct {
+		Name string
+	}
+	mock.lockLoad.RLock()
+	calls = mock.calls.Load
+	mock.lockLoad.RUnlock()
 	return calls
 }

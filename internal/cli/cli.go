@@ -50,6 +50,7 @@ type App struct {
 	validator   documentValidator
 	store       documentStore
 	reviewStore reviewStore
+	profiles    profileSource
 	registry    entryRegistry
 	renderer    renderer
 	names       CheckNames
@@ -67,6 +68,7 @@ func New(
 	validator documentValidator,
 	store documentStore,
 	reviewStore reviewStore,
+	profiles profileSource,
 	registry entryRegistry,
 	structured renderer,
 	names CheckNames,
@@ -81,6 +83,7 @@ func New(
 		validator:   validator,
 		store:       store,
 		reviewStore: reviewStore,
+		profiles:    profiles,
 		registry:    registry,
 		renderer:    structured,
 		names:       names,
@@ -96,11 +99,11 @@ func New(
 
 const usage = `loam-refinery — check a review document
 
-  loam-refinery prime                       the workflow, in one small call
-  loam-refinery describe [--lens=NAME,...]  the contract, disclosed on demand
-  loam-refinery validate [path]             check a review (- or omitted: stdin)
-  loam-refinery reviews [--repo=NAME]       what an earlier validate stored
-  loam-refinery schema [--annotated]        JSON Schema, for machines
+  loam-refinery prime [--profile=NAME] [--list]  the workflow, in one small call
+  loam-refinery describe [--lens=NAME,...]       the contract, disclosed on demand
+  loam-refinery validate [path]                  check a review (- or omitted: stdin)
+  loam-refinery reviews [--repo=NAME]            what an earlier validate stored
+  loam-refinery schema [--annotated]             JSON Schema, for machines
   loam-refinery version
 
 exit 0 valid, 1 revise the review, 2 fix the invocation, 101 the tool failed

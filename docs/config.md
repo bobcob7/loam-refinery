@@ -67,10 +67,22 @@ Two directories, because they hold two different kinds of thing.
 | Holds | Path | Override |
 | --- | --- | --- |
 | Settings | `$XDG_CONFIG_HOME/loam-refinery/config.json` | `$XDG_CONFIG_HOME`, or `$LOAM_REFINERY_HOME` |
+| Reviewer profiles | `$XDG_CONFIG_HOME/loam-refinery/profiles/*.md` | `$XDG_CONFIG_HOME`, or `$LOAM_REFINERY_HOME` |
 | The store | `$XDG_DATA_HOME/loam-refinery/` | `$XDG_DATA_HOME`, `$LOAM_REFINERY_HOME`, or `store.path` |
 
 With neither XDG variable set, those resolve to
-`~/.config/loam-refinery/config.json` and `~/.local/share/loam-refinery/`.
+`~/.config/loam-refinery/config.json`,
+`~/.config/loam-refinery/profiles/`, and `~/.local/share/loam-refinery/`.
+
+**Profiles are config, not data**, which is why they sit in the first directory
+rather than the second. They are files a person writes by hand and wants in a
+dotfile repository, and nothing regenerates them by re-validating anything.
+`config.json` and `profiles/` travel together for exactly the reason the split
+above exists. They have no config-file counterpart: no key names the profile
+directory, no key enables or disables it, and their location therefore resolves
+from the environment alone — a `config.json` that cannot be parsed does not stop
+`prime --profile` from working. What they hold, and what they are forbidden from
+holding, is [cli.md §2.1.1](cli.md#211-reviewer-profiles).
 
 **The store is a directory, not a file.** `<store>` throughout this document
 means that directory, and it holds `store.db`, `reviews/`, and `rejected/`
@@ -157,7 +169,11 @@ Three things bound it:
 - **It is `validate` only.** Reading never creates anything.
   `loam-refinery reviews` on a machine with no store reports an empty one and
   exits 0 without leaving a `~/.local/share/loam-refinery/` behind to mark the
-  visit, and `prime`, `describe`, and `schema` never consult either path at all.
+  visit, and `describe` and `schema` never consult either path at all. Bare
+  `prime` does not either. `prime --profile` and `prime --list` read the config
+  directory and create nothing: a missing `profiles/` is an unknown profile
+  (exit 2) or an empty list, never a directory brought into being by asking
+  about it.
 - **It never overwrites.** An existing `config.json` is read, never rewritten,
   never merged with new defaults, and never reformatted. The file belongs to
   whoever edited it.
@@ -250,6 +266,13 @@ longer agree about what the tool said.
 Storing is safe to configure precisely because it changes nothing about the
 answer — only whether a copy of it is kept. That is the test any future key has
 to pass.
+
+**Reviewer profiles sit in the same directory and inherit the same rule.** A
+profile is prose appended to `prime` ([cli.md §2.1.1](cli.md#211-reviewer-profiles));
+nothing in one is read by `validate`, and no part of one may ever reach
+`--strict`, `--disable`, `--warn-only`, or `--require-verification`. A profile
+changes what a reviewer is told to look for, which is the operator's business.
+It may not change what the tool accepts, which is everyone's.
 
 ## 4. The store
 
@@ -581,14 +604,20 @@ a name referred to; neither is worth carrying for the life of a store, and
 [§4.2](#42-repository-identity) says plainly what identity the name does and
 does not establish.
 
-**Nothing records whether the anchors were verified.** The result object says
+**Nothing records how many anchors were verified.** The result object says
 ([cli.md §5.2](cli.md#52-the-result-object)) and the row does not, so a store
-cannot currently distinguish a review whose claims were checked against a
-repository from one validated outside any repository at all. That is a real gap
-and a deliberate one: it is held back until there is a question being asked of
-it, on the same reasoning as the check table. It returns as a nullable column
-whenever that changes, and rows written before then read as NULL — unknown,
-which is exactly what they are.
+cannot currently tell a review whose anchors were all checked against a
+repository from one validated outside any repository at all — or, now, from
+one checked from inside the right repository with some anchors deliberately
+left unverified because their files had diverged in the working tree
+([cli.md §2.3.1](cli.md#231-verifying-anchors)). That is at least three states,
+not two, which is why the column this returns as is a **count**, not a flag —
+`num_verified` beside the existing `num_comments`, not a boolean that a third
+state would already overflow. This is a real gap and a deliberate one: it is
+held back until there is a question being asked of it, on the same reasoning
+as the check table. It returns as that nullable count whenever that changes,
+and rows written before then read as NULL — unknown, which is exactly what
+they are.
 
 #### 4.5.2 Constrained values
 

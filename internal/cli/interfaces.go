@@ -5,12 +5,13 @@ import (
 	"io"
 
 	"github.com/bobcob7/loam-refinery/internal/entry"
+	"github.com/bobcob7/loam-refinery/internal/profile"
 	"github.com/bobcob7/loam-refinery/internal/review"
 	"github.com/bobcob7/loam-refinery/internal/store"
 	"github.com/bobcob7/loam-refinery/internal/validate"
 )
 
-//go:generate moq -out moq_test.go . documentValidator renderer entryRegistry documentStore reviewStore
+//go:generate moq -out moq_test.go . documentValidator renderer entryRegistry documentStore reviewStore profileSource
 
 // documentValidator runs every check tier over one document.
 type documentValidator interface {
@@ -65,6 +66,11 @@ type renderer interface {
 	Entries(w io.Writer, entries []entry.Entry) error
 	Index(w io.Writer, groups []entry.Group) error
 	Summary(w io.Writer, text string, groups []entry.Group) error
+	// Profiles writes prime --list's profile index (docs/cli.md §2.1.5):
+	// names and descriptions, no bodies. profiles is rendered as given, so
+	// a non-nil empty slice renders "profiles":[] rather than null - the
+	// same empty-directory guarantee internal/profile.Reader.List makes.
+	Profiles(w io.Writer, profiles []profile.Profile) error
 }
 
 // entryRegistry resolves lens names to entries.
@@ -101,4 +107,26 @@ type reviewStore interface {
 	// ReadContent reads the file at path, as named by a Review's or
 	// FailedRun's Path (docs/config.md §6.1, --content).
 	ReadContent(path string) ([]byte, error)
+}
+
+// profileSource reads reviewer profiles for prime --profile and prime
+// --list (docs/cli.md §2.1.1-§2.1.5). Load's ok separates "no such
+// profile" - an unknown or malformed name, routed to ExitUsage without
+// enumerating the directory (docs/cli.md §2.1.4) - from a non-nil error,
+// which is the tool's own state (an unreadable or malformed profile file,
+// or a directory that could not be resolved or read) and routed to
+// ExitTool. Neither method is ever called by bare prime: the filesystem
+// access either method makes happens only on --profile or --list.
+type profileSource interface {
+	// Load reads one profile by name.
+	Load(name string) (profile.Profile, bool, error)
+	// List returns every valid profile in the directory, sorted by name,
+	// plus the name of every file that failed to parse (docs/cli.md
+	// §2.1.5): --list degrades a broken file rather than failing the whole
+	// call, naming it on stderr instead of in the index. A missing
+	// directory is a non-nil empty profiles slice, a nil broken slice, and
+	// a nil error. A non-nil error means the directory itself could not be
+	// resolved or read - the tool's own state, routed to ExitTool - and
+	// broken is not populated alongside one.
+	List() (profiles []profile.Profile, broken []string, err error)
 }

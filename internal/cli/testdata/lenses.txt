@@ -534,6 +534,23 @@
 {
   "entries": [
     {
+      "name": "anchor-worktree-diverged",
+      "namespace": "check",
+      "title": "Anchored file diverged from ref",
+      "body": "Fires when ref is the checked-out commit, the anchored file exists there, a\nworking-tree copy exists too, and git says the two differ. The file the\nreviewer may have read is not the file at ref, so the anchor is reported\nunverified rather than checked against either copy.\n\nIt is the one verification check that is not an error by default:\nmonotonicity licenses consulting the working tree at all, and monotonicity\nmeans it can only withhold a verification, never grant one — firing this\ncheck removes an anchor from verified, never turns a passing document into a\nfailing one. An anchor it reports is never line-checked, so a file that has\nonly grown since ref does not also fail anchor-line-out-of-range.\n\nClear it by committing what was reviewed, so ref and the working tree agree\nagain, or by naming a ref that already contains it — git stash create makes a\nreal commit object without touching HEAD or the index. Under\n--require-verification this is a cause it fires on;\n--warn-only=anchor-worktree-diverged demotes only this gap.",
+      "related": [
+        "anchor-file-missing",
+        "anchor-line-out-of-range",
+        "verification-required"
+      ],
+      "provider": "checks"
+    }
+  ]
+}
+
+{
+  "entries": [
+    {
       "name": "id-grouping",
       "namespace": "check",
       "title": "Non-contiguous id suffixes",

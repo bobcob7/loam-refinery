@@ -90,9 +90,10 @@ func (v *Validator) verify(ctx context.Context, doc *review.Document, options Op
 }
 
 // unverified reports the one thing --require-verification asks about: whether
-// the anchor claims were actually checked. A repository that did not answer and
-// an anchor whose file could not be read are the same answer to that question —
-// no one confirmed this — however different their causes.
+// the anchor claims were actually checked. A repository that did not answer,
+// an anchor whose file could not be read, and an anchor whose working-tree
+// copy diverged from ref are the same answer to that question — no one
+// confirmed this — however different their causes.
 //
 // It is produced before demote, so --warn-only=verification-required demotes it
 // like any other verification check. Asking for both is contradictory, but it is
@@ -102,15 +103,25 @@ func unverified(verification review.Verification, skipped []review.Skipped, warn
 	if verification.Anchors == 0 {
 		return nil
 	}
-	if verification.Source == "repo" && len(skipped) == 0 {
+	skipGap := verification.Source != "repo" || len(skipped) > 0
+	divergedGap := len(verification.Unverified) > 0
+	if !skipGap && !divergedGap {
 		return nil
 	}
-	if excused(skipped, warnOnly) {
+	// Each gap is excused on its own terms: --warn-only=anchor-worktree-diverged
+	// excuses only a diverged working tree, the same way --warn-only=ref-unknown
+	// excuses only a repository lacking the reviewed commit, and demoting one
+	// never waves through the other.
+	if (!skipGap || excused(skipped, warnOnly)) && (!divergedGap || warnOnly["anchor-worktree-diverged"]) {
 		return nil
 	}
 	reason := verification.Reason
 	if reason == "" {
-		reason = strings.Join(reasons(skipped), "; ")
+		parts := reasons(skipped)
+		if divergedGap {
+			parts = append(parts, fmt.Sprintf("%s diverged from ref in the working tree", plural(len(verification.Unverified), "anchor")))
+		}
+		reason = strings.Join(parts, "; ")
 	}
 	if reason == "" {
 		reason = "no repository answered"
@@ -120,6 +131,14 @@ func unverified(verification review.Verification, skipped []review.Skipped, warn
 		Name:     "verification-required",
 		Message:  fmt.Sprintf("the anchors were not verified: %s", reason),
 	}}
+}
+
+// plural matches the wording verify already uses for the same counts.
+func plural(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("1 %s", noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // excused reports whether the caller already accepted the condition that
