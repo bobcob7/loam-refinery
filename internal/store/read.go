@@ -112,6 +112,25 @@ func (s *Store) ListFailedRuns(ctx context.Context, repo, ref string, limit int)
 		if err != nil {
 			return nil, 0, fmt.Errorf("parsing run %d's timestamp: %w", row.ID, err)
 		}
+		// KNOWN ISSUE (refinery-a96.18, blocked, not fixed here): config.md
+		// §6 says every form answers from store.db and the trees are opened
+		// only for --content — this os.Stat runs on every row of every
+		// plain --failed listing, which is exactly the walk that rule
+		// forbids. It cannot be removed without also losing the signal
+		// right below it: §4.5.1 has no `stored` or `path` column, so
+		// nothing in a row distinguishes a rejected input that was never
+		// written because it was over the 1 MiB cap (§4.4.1) from one that
+		// was written and later deleted — the stat is the only way this
+		// function currently tells them apart to decide whether Path
+		// should be omitted. Removing it means either every exit_code=1 row
+		// gets a Path regardless of whether anything was ever written
+		// there (silently breaking §6.1's "path is omitted when the input
+		// was not kept"), or no exit_code=1 row ever gets a Path (breaking
+		// it for every kept file instead). Satisfying both "no stat on a
+		// plain listing" and "omit path when not kept" needs either a
+		// schema column recording whether the input was kept, or a
+		// documented change to what the omitted-path signal means — either
+		// is a decision for the row's owner, not this change.
 		path := ""
 		if row.ExitCode == 1 {
 			path = s.RejectedPath(repo, row.Digest)

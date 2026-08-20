@@ -35,17 +35,25 @@ var scpLike = regexp.MustCompile(`^(?:[^@/]+@)?([^:/]+):(.+)$`)
 
 // ValidateName reports whether name is a valid repository name per
 // config.md section 4.8: 1 to 3 segments joined by "/", each matching
-// ^[a-z0-9][a-z0-9._-]*$, at most 64 characters, never "." or "..", and the
-// whole name at most 200 characters total. It performs no normalization —
-// a name that comes from a person is checked as written, not corrected,
-// which is what lets a traversal attempt be rejected on its shape rather
-// than discovered by its effect.
+// ^[a-z0-9][a-z0-9._-]*$, at most 64 characters, and never "." or "..". It
+// performs no normalization — a name that comes from a person is checked
+// as written, not corrected, which is what lets a traversal attempt be
+// rejected on its shape rather than discovered by its effect.
+//
+// config.md section 4.8 also states a name is at most 200 characters
+// total, and that bound holds here without a check of its own: at most 3
+// segments of at most 64 characters, plus 2 separators, is 194 — always
+// under 200 given the segment-count and segment-length limits above — so
+// no string this function accepts can ever be longer, and no string it
+// rejects for length needs a second rule to reject it for. An earlier
+// version carried an explicit len(name) > 200 check; refinery-a96.35 found
+// it unreachable — deleting it never changed which strings ValidateName
+// accepted or rejected, only which of two error messages an already-too-
+// long string got — and it was removed rather than kept for a case that
+// cannot exist under the current segment-count and segment-length limits.
 func ValidateName(name string) error {
 	if len(name) == 0 {
 		return errors.New("repository name must not be empty")
-	}
-	if len(name) > 200 {
-		return fmt.Errorf("repository name %q is %d characters, more than the 200 allowed", name, len(name))
 	}
 	segments := strings.Split(name, "/")
 	if len(segments) > 3 {

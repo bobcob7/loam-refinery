@@ -39,7 +39,6 @@ func TestValidateName_Invalid(t *testing.T) {
 		"leading dash":         "-github.com",
 		"leading dot":          ".github",
 		"disallowed character": "github.com/x y",
-		"over 200 chars total": "a/" + repeat("b", 199),
 		"segment over 64":      repeat("a", 65),
 	}
 	for name, value := range cases {
@@ -48,6 +47,22 @@ func TestValidateName_Invalid(t *testing.T) {
 			assert.Error(t, ValidateName(value))
 		})
 	}
+}
+
+// TestValidateName_200CharacterCapIsUnreachable documents refinery-a96.35's
+// finding rather than pinning behavior a case could exercise: config.md
+// section 4.8 states a name is at most 200 characters total, but with at
+// most 3 segments of at most 64 characters each, the longest a name
+// ValidateName could otherwise accept is 3*64+2 = 194 — always under 200.
+// No string can violate only the 200-character rule; every one that is too
+// long already has a segment over 64 characters, which is what
+// "segment over 64" above exercises. See ValidateName's doc comment for
+// why the explicit length check this test would have pinned was removed
+// instead.
+func TestValidateName_200CharacterCapIsUnreachable(t *testing.T) {
+	t.Parallel()
+	const maxPossibleLength = 3*64 + 2
+	assert.Less(t, maxPossibleLength, 200)
 }
 
 func repeat(s string, n int) string {

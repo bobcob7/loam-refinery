@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bobcob7/loam-refinery/internal/cli"
@@ -127,6 +128,37 @@ func TestStoreAdapter_DisabledTouchesNeitherPath(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(home, "store.db"))
 }
 
+// TestStoreAdapter_PathWithQuestionMarkStaysInsideStore proves
+// refinery-a96.20 end to end through storeAdapter.Save: a store rooted at a
+// directory holding '?' — legal on every filesystem this tool runs on —
+// still gets store.db, reviews/, and rejected/ inside that exact
+// directory, rather than store.db landing beside it under a name SQLite
+// derived by parsing everything after the '?' as a DSN query string.
+func TestStoreAdapter_PathWithQuestionMarkStaysInsideStore(t *testing.T) {
+	base := t.TempDir()
+	home := filepath.Join(base, "we?ird")
+	require.NoError(t, os.MkdirAll(home, 0o700))
+	t.Setenv("LOAM_REFINERY_HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
+	adapter := newStoreAdapter(quietLog())
+	ref := "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"
+	source := []byte(`{"version":"1","verdict":"approve","ref":"` + ref + `","comments":[]}`)
+	err := adapter.Save(t.Context(), cli.StoreInput{
+		Dir: t.TempDir(), Source: source, Valid: true, Ref: ref, Verdict: "approve",
+		ToolVersion: "test", SchemaVersion: "1",
+	})
+	require.NoError(t, err)
+	assert.FileExists(t, filepath.Join(home, "store.db"))
+	files := listFiles(t, filepath.Join(home, "reviews"))
+	require.Len(t, files, 1)
+	assert.True(t, strings.HasPrefix(files[0], home+string(filepath.Separator)), "the review file must be under the configured store directory")
+	entries, err := os.ReadDir(base)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "nothing must be created beside the configured store directory")
+	assert.Equal(t, "we?ird", entries[0].Name())
+}
+
 // A store.repos value that does not fit is a config error, exit 101, and it
 // is caught before any store filesystem lookup — including before store.db
 // is created, so a typo in a config a person never even runs validate
@@ -180,6 +212,48 @@ func TestStoreAdapter_ReadOnlyStoreExitsWithErrorOnPassAndFail(t *testing.T) {
 			ToolVersion: "test", SchemaVersion: "1",
 		})
 		assert.Error(t, err)
+	}
+}
+
+// TestStoreAdapter_WriteFailureIsNotSwallowed proves refinery-a96.33: a
+// failure writing the review or rejected file — after store.db itself was
+// opened successfully — still fails Save and still records no row. This is
+// deliberately a different failure than
+// TestStoreAdapter_ReadOnlyStoreExitsWithErrorOnPassAndFail's: that test's
+// assert.Error comes from store.New failing to open store.db at all, so it
+// passes even if storeAdapter.write's errors were discarded and Save
+// returned nil — st.Record would never run either, because Save returns
+// before reaching it. Here store.db opens fine and only the write into
+// reviews/ or rejected/ fails, by pre-creating that directory's name as a
+// plain file so os.MkdirAll cannot descend into it; the only thing that can
+// make this fail is write()'s own error return.
+func TestStoreAdapter_WriteFailureIsNotSwallowed(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		valid bool
+		tree  string
+	}{
+		{name: "passing review, reviews/ blocked", valid: true, tree: "reviews"},
+		{name: "rejected input, rejected/ blocked", valid: false, tree: "rejected"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			home := homeFor(t)
+			require.NoError(t, os.WriteFile(filepath.Join(home, tt.tree), []byte("not a directory"), 0o600))
+			adapter := newStoreAdapter(quietLog())
+			ref := "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"
+			source := []byte(`{"version":"1","verdict":"approve","ref":"` + ref + `","comments":[]}`)
+			if !tt.valid {
+				source = []byte(`{}`)
+			}
+			err := adapter.Save(t.Context(), cli.StoreInput{
+				Dir: t.TempDir(), Source: source, Valid: tt.valid, Ref: ref, Verdict: "approve",
+				ToolVersion: "test", SchemaVersion: "1",
+			})
+			require.Error(t, err, "a write failure must fail Save, not be swallowed")
+			assert.FileExists(t, filepath.Join(home, "store.db"), "store.db must have opened fine; only the file write failed")
+			rows := runsOf(t, filepath.Join(home, "store.db"))
+			assert.Empty(t, rows, "no row may exist for a file that was never written")
+		})
 	}
 }
 

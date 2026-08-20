@@ -76,6 +76,15 @@ const defaultsFile = `{"version":"1","store":{"enabled":true}}`
 // does not already exist, writes the defaults-only file (mode 0600). It
 // never overwrites an existing file.
 //
+// The write goes through a temporary file in dir, renamed into place, the
+// same way internal/store writes a review: an O_EXCL create followed by a
+// separate write leaves a window where a second process's O_EXCL sees
+// EEXIST and treats a not-yet-written file as already there, or a crash in
+// that window leaves the file permanently truncated — observed live as
+// "parsing .../config.json: unexpected end of JSON input" on 4 of 48
+// concurrent runs. os.Rename onto an existing name is atomic, so a reader
+// of configPath never observes anything but a complete file or no file.
+//
 // Call this explicitly where docs/config.md §2.2 calls for it — the first
 // validate run with something to keep. It must not run from an init
 // function or from package-level state; this package has none.
@@ -84,16 +93,26 @@ func Materialize(configPath string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating %s: %w", dir, err)
 	}
-	f, err := os.OpenFile(configPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil
-		}
-		return fmt.Errorf("creating %s: %w", configPath, err)
+	if _, err := os.Stat(configPath); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("checking %s: %w", configPath, err)
 	}
-	defer f.Close()
-	if _, err := f.WriteString(defaultsFile); err != nil {
-		return fmt.Errorf("writing %s: %w", configPath, err)
+	tmp, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return fmt.Errorf("creating temporary file in %s: %w", dir, err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if _, err := tmp.WriteString(defaultsFile); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing %s: %w", tmpPath, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing %s: %w", tmpPath, err)
+	}
+	if err := os.Rename(tmpPath, configPath); err != nil {
+		return fmt.Errorf("renaming %s to %s: %w", tmpPath, configPath, err)
 	}
 	return nil
 }

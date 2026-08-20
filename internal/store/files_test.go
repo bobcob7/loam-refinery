@@ -3,7 +3,6 @@ package store
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -78,28 +77,30 @@ func TestWriteRejected_OverCapWritesNoFile(t *testing.T) {
 }
 
 // TestWriteRejected_ExactlyAtCapIsKept proves the 1 MiB cap is exclusive:
-// "over 1 MiB is not kept" means exactly 1 MiB is.
+// "over 1 MiB is not kept" means exactly 1 MiB is. The payload size is the
+// literal 1 << 20 rather than maxRejectedSize itself (refinery-a96.35): a
+// payload derived from the constant shrinks along with it, so a cap
+// quietly changed from 1 MiB to 1 KiB would still pass this test at
+// whatever the new cap is — a literal is what makes a shrunk cap reject a
+// payload this test still expects to be kept.
 func TestWriteRejected_ExactlyAtCapIsKept(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
-	data := make([]byte, maxRejectedSize)
+	data := make([]byte, 1<<20)
 	_, path, err := s.WriteRejected("github.com/example/example", data)
 	require.NoError(t, err)
 	assert.NotEmpty(t, path)
 }
 
-// TestWriteReview_DuplicateIsEEXISTAndIdempotent proves config.md section
-// 4.4: storing a review that is already stored is an O_EXCL create that
-// fails EEXIST, and that failure is treated as success rather than
-// propagated — both calls succeed and the file holds exactly one copy.
-func TestWriteReview_DuplicateIsEEXISTAndIdempotent(t *testing.T) {
+// TestWriteReview_DuplicateIsIdempotent proves config.md section 4.4:
+// storing a review that is already stored succeeds without error, and the
+// file holds exactly one copy afterward.
+func TestWriteReview_DuplicateIsIdempotent(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	data := []byte(`{"ref":"4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"}`)
 	digest1, path1, err := s.WriteReview("github.com/example/example", "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", data)
 	require.NoError(t, err)
-	_, err = os.OpenFile(path1, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	require.True(t, errors.Is(err, os.ErrExist), "the file created by the first write must already exist, proven by O_EXCL now failing EEXIST")
 	digest2, path2, err := s.WriteReview("github.com/example/example", "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", data)
 	require.NoError(t, err, "storing the same bytes twice must not fail the caller")
 	assert.Equal(t, digest1, digest2)
@@ -107,6 +108,36 @@ func TestWriteReview_DuplicateIsEEXISTAndIdempotent(t *testing.T) {
 	on, err := os.ReadFile(path1)
 	require.NoError(t, err)
 	assert.Equal(t, data, on)
+}
+
+// TestWriteReview_DuplicateLeavesExistingFileUntouched proves the stronger
+// claim createAtomic's doc comment makes and TestWriteReview_
+// DuplicateIsIdempotent cannot: a second store of the same bytes leaves the
+// file already at that path alone rather than rewriting it. Content
+// addressing means the two are indistinguishable in ordinary operation —
+// the bytes a rewrite would produce are identical to the bytes already
+// there — so this plants a sentinel that is NOT what WriteReview would
+// produce at that exact path, to make a rewrite (correct bytes) and a skip
+// (sentinel survives) tell different stories. A createAtomic that dropped
+// its "already there" check — the equivalent of O_EXCL silently becoming
+// O_TRUNC — would overwrite the sentinel with data and fail this test; it
+// passes TestWriteReview_DuplicateIsIdempotent either way, because that
+// test can only see the bytes it wrote itself.
+func TestWriteReview_DuplicateLeavesExistingFileUntouched(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	data := []byte(`{"ref":"4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"}`)
+	digest, path, err := s.WriteReview("github.com/example/example", "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", data)
+	require.NoError(t, err)
+	sentinel := []byte("not what WriteReview would write here")
+	require.NoError(t, os.WriteFile(path, sentinel, 0o600))
+	digest2, path2, err := s.WriteReview("github.com/example/example", "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", data)
+	require.NoError(t, err)
+	assert.Equal(t, digest, digest2)
+	assert.Equal(t, path, path2)
+	on, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, sentinel, on, "a file already at path must be left alone, not rewritten with the same bytes")
 }
 
 func TestReviewPath_LayoutMatchesSpec(t *testing.T) {
@@ -168,12 +199,26 @@ func TestWriteRejected_InvalidRepoNeverTouchesFilesystem(t *testing.T) {
 	}
 }
 
-func TestCreateExclusive_CreatesDirectoriesMode0700(t *testing.T) {
+func TestCreateAtomic_CreatesDirectoriesMode0700(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a", "b", "c.json")
-	require.NoError(t, createExclusive(path, []byte("x")))
+	require.NoError(t, createAtomic(path, []byte("x")))
 	info, err := os.Stat(filepath.Join(dir, "a"))
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+}
+
+// TestCreateAtomic_NoTempFileLeftBehind proves createAtomic's rename leaves
+// nothing but the target: no ".tmp-*" survives a successful write, which
+// would otherwise litter every tree this function writes into.
+func TestCreateAtomic_NoTempFileLeftBehind(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "c.json")
+	require.NoError(t, createAtomic(path, []byte("x")))
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "c.json", entries[0].Name())
 }
