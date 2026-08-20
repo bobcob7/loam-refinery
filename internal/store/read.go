@@ -41,9 +41,12 @@ type Review struct {
 }
 
 // FailedRun is one row from the other half: a run that stored no review.
-// Ref is "" when the run has none to report, and Path is "" when the input
-// was not kept (config.md section 4.4.1) — both signals a caller renders by
-// omitting the field, not by publishing a zero value.
+// Ref is "" when the run has none to report — a caller renders that by
+// omitting the field, not by publishing a zero value. Path is always set
+// for an exit-1 row: every rejected input is kept, truncated to its first
+// 1 MiB when it was larger (config.md section 4.4.1). It is computed from
+// the row rather than stored, and its presence is not a claim that the
+// file is still there or that it holds the whole input.
 type FailedRun struct {
 	At       time.Time
 	Ref      string
@@ -112,31 +115,16 @@ func (s *Store) ListFailedRuns(ctx context.Context, repo, ref string, limit int)
 		if err != nil {
 			return nil, 0, fmt.Errorf("parsing run %d's timestamp: %w", row.ID, err)
 		}
-		// KNOWN ISSUE (refinery-a96.18, blocked, not fixed here): config.md
-		// §6 says every form answers from store.db and the trees are opened
-		// only for --content — this os.Stat runs on every row of every
-		// plain --failed listing, which is exactly the walk that rule
-		// forbids. It cannot be removed without also losing the signal
-		// right below it: §4.5.1 has no `stored` or `path` column, so
-		// nothing in a row distinguishes a rejected input that was never
-		// written because it was over the 1 MiB cap (§4.4.1) from one that
-		// was written and later deleted — the stat is the only way this
-		// function currently tells them apart to decide whether Path
-		// should be omitted. Removing it means either every exit_code=1 row
-		// gets a Path regardless of whether anything was ever written
-		// there (silently breaking §6.1's "path is omitted when the input
-		// was not kept"), or no exit_code=1 row ever gets a Path (breaking
-		// it for every kept file instead). Satisfying both "no stat on a
-		// plain listing" and "omit path when not kept" needs either a
-		// schema column recording whether the input was kept, or a
-		// documented change to what the omitted-path signal means — either
-		// is a decision for the row's owner, not this change.
+		// Every rejected input is now kept, truncated to its first 1 MiB
+		// when it was larger (config.md section 4.4.1), so an exit-1 row
+		// always has a file and Path is always computed for it — no stat
+		// needed to decide whether to omit it. A future exit code that
+		// records a row without ever writing a file (config.md section
+		// 4.5.2) would fall through this guard with an empty Path, same as
+		// today.
 		path := ""
 		if row.ExitCode == 1 {
 			path = s.RejectedPath(repo, row.Digest)
-			if _, statErr := os.Stat(path); statErr != nil {
-				path = ""
-			}
 		}
 		failed = append(failed, FailedRun{At: at, Ref: row.Ref.String, ExitCode: int(row.ExitCode), Counts: countsOf(row), Path: path})
 	}

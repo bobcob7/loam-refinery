@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 )
 
-// maxRejectedSize is the cap on a kept rejected input (config.md section
-// 4.4.1). An input over this is not written; its run is still recorded.
+// maxRejectedSize is the cap on how much of a rejected input is written to
+// disk (config.md section 4.4.1). An input over this is truncated to its
+// first maxRejectedSize bytes rather than dropped; validation itself still
+// reads the whole input, this cap only bounds the stored copy.
 const maxRejectedSize = 1 << 20
 
 // sha256Hex returns the lowercase hex SHA-256 of data — the filename a
@@ -59,22 +61,30 @@ func (s *Store) WriteReview(repo, ref string, data []byte) (digest, path string,
 	return digest, path, nil
 }
 
-// WriteRejected writes data to rejected/<repo>/<digest>.json, unless it is
-// over the 1 MiB cap, in which case nothing is written (config.md section
-// 4.4.1). The digest is always returned — the run's row records it either
-// way — and path is empty exactly when the file was not kept, which is the
-// signal a caller uses to omit it from output. repo is validated before it
-// reaches the filesystem (config.md section 4.8).
+// WriteRejected writes data to rejected/<repo>/<digest>.json, truncating it
+// to its first 1 MiB when it is larger (config.md section 4.4.1) — every
+// exit-1 run keeps a file now, never none. digest is the SHA-256 of the
+// full data, computed before any truncation: the name identifies what was
+// actually submitted, so an agent looping on the same broken output still
+// dedupes to one file regardless of size, and two different oversized
+// inputs that happen to share a first megabyte are never conflated under
+// one name. That split is also the truncation signal — a stored rejected
+// file whose own hash does not match the filename it lives under was
+// truncated on write, not tampered with after it; no column or flag records
+// which happened, because hashing the file already tells the two apart.
+// repo is validated before it reaches the filesystem (config.md section
+// 4.8).
 func (s *Store) WriteRejected(repo string, data []byte) (digest, path string, err error) {
 	if err := ValidateName(repo); err != nil {
 		return "", "", fmt.Errorf("invalid repository name: %w", err)
 	}
 	digest = sha256Hex(data)
-	if len(data) > maxRejectedSize {
-		return digest, "", nil
+	stored := data
+	if len(stored) > maxRejectedSize {
+		stored = stored[:maxRejectedSize]
 	}
 	path = s.RejectedPath(repo, digest)
-	if err := createAtomic(path, data); err != nil {
+	if err := createAtomic(path, stored); err != nil {
 		return digest, "", err
 	}
 	return digest, path, nil

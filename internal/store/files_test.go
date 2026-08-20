@@ -54,10 +54,16 @@ func TestWriteRejected_ByteIdenticalEvenWhenNotJSON(t *testing.T) {
 	assert.Equal(t, digest+".json", filepath.Base(path))
 }
 
-// TestWriteRejected_OverCapWritesNoFile proves config.md section 4.4.1: an
-// input over 1 MiB is not kept, though its digest is still computed so the
-// run can still be recorded against it.
-func TestWriteRejected_OverCapWritesNoFile(t *testing.T) {
+// TestWriteRejected_OverCapTruncatesToOneMiB proves config.md section
+// 4.4.1: an input over 1 MiB is stored truncated to exactly its first 1
+// MiB, not dropped, and the digest returned is the SHA-256 of the FULL
+// input rather than the truncated bytes — the name still identifies what
+// was actually submitted. The payload size is the literal 2*1024*1024
+// rather than a multiple of maxRejectedSize (refinery-a96.35): a payload
+// derived from the constant shrinks along with it, so a cap quietly changed
+// from 1 MiB to 1 KiB would still pass this test at whatever the new cap
+// is.
+func TestWriteRejected_OverCapTruncatesToOneMiB(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	data := make([]byte, 2*1024*1024)
@@ -66,30 +72,62 @@ func TestWriteRejected_OverCapWritesNoFile(t *testing.T) {
 	}
 	digest, path, err := s.WriteRejected("github.com/example/example", data)
 	require.NoError(t, err)
-	assert.Empty(t, path, "an oversized input must not be written")
-	assert.NotEmpty(t, digest, "the digest is still computed for the run row")
-	entries, err := os.ReadDir(filepath.Join(s.Root(), "rejected"))
-	if err == nil {
-		assert.Empty(t, entries, "nothing should have been written under rejected/")
-	} else {
-		assert.True(t, os.IsNotExist(err), "rejected/ should not even have been created")
-	}
+	require.NotEmpty(t, path, "an oversized input is still written, truncated")
+	fullSum := sha256.Sum256(data)
+	assert.Equal(t, hex.EncodeToString(fullSum[:]), digest, "the digest covers the full submitted input, not the truncated bytes")
+	on, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Len(t, on, 1<<20, "the stored file is truncated to exactly 1 MiB")
+	assert.Equal(t, data[:1<<20], on, "the stored bytes are the input's first 1 MiB")
 }
 
-// TestWriteRejected_ExactlyAtCapIsKept proves the 1 MiB cap is exclusive:
-// "over 1 MiB is not kept" means exactly 1 MiB is. The payload size is the
-// literal 1 << 20 rather than maxRejectedSize itself (refinery-a96.35): a
-// payload derived from the constant shrinks along with it, so a cap
-// quietly changed from 1 MiB to 1 KiB would still pass this test at
-// whatever the new cap is — a literal is what makes a shrunk cap reject a
-// payload this test still expects to be kept.
-func TestWriteRejected_ExactlyAtCapIsKept(t *testing.T) {
+// TestWriteRejected_TruncatedFileDoesNotHashToItsOwnName proves the
+// truncation signal config.md section 4.4.1 documents: because the digest
+// names the full input but a truncated file holds only its first 1 MiB,
+// hashing that stored file never reproduces the filename that addresses
+// it. That is deliberate — no `stored` column, no truncated flag — hashing
+// a rejected file and comparing it to its own name is enough to tell a
+// truncated file from a whole one.
+func TestWriteRejected_TruncatedFileDoesNotHashToItsOwnName(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	data := make([]byte, 2*1024*1024)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	_, path, err := s.WriteRejected("github.com/example/example", data)
+	require.NoError(t, err)
+	on, err := os.ReadFile(path)
+	require.NoError(t, err)
+	onSum := sha256.Sum256(on)
+	assert.NotEqual(t, filepath.Base(path), hex.EncodeToString(onSum[:])+".json",
+		"a truncated file's own hash must not match the filename it lives under")
+}
+
+// TestWriteRejected_ExactlyAtCapIsKeptWhole proves the 1 MiB cap is
+// exclusive: "over 1 MiB is truncated" means exactly 1 MiB is kept whole.
+// An at-cap file is also self-verifying — its own hash matches its name —
+// the opposite of TestWriteRejected_TruncatedFileDoesNotHashToItsOwnName.
+// The payload size is the literal 1 << 20 rather than maxRejectedSize
+// itself (refinery-a96.35): a payload derived from the constant shrinks
+// along with it, so a cap quietly changed from 1 MiB to 1 KiB would still
+// pass this test at whatever the new cap is — a literal is what makes a
+// shrunk cap reject a payload this test still expects to be kept whole.
+func TestWriteRejected_ExactlyAtCapIsKeptWhole(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	data := make([]byte, 1<<20)
-	_, path, err := s.WriteRejected("github.com/example/example", data)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	digest, path, err := s.WriteRejected("github.com/example/example", data)
 	require.NoError(t, err)
-	assert.NotEmpty(t, path)
+	require.NotEmpty(t, path)
+	on, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, data, on, "an at-cap input is stored whole, not truncated")
+	onSum := sha256.Sum256(on)
+	assert.Equal(t, digest, hex.EncodeToString(onSum[:]), "an at-cap file's own hash matches its filename")
 }
 
 // TestWriteReview_DuplicateIsIdempotent proves config.md section 4.4:

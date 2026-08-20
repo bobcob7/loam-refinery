@@ -253,10 +253,10 @@ to pass.
 
 ## 4. The store
 
-A store is two things doing different jobs: **files holding what was submitted**,
-byte for byte — the reviews that passed and the inputs that did not — and **one
-database holding what gets queried**: when, which repository, which ref, what
-verdict, and how many comments.
+A store is two things doing different jobs: **files holding what was
+submitted** — a passing review kept whole, a rejected input kept up to its
+first megabyte — and **one database holding what gets queried**: when, which
+repository, which ref, what verdict, and how many comments.
 
 Neither half is an interface. [§4.9](#49-the-store-is-not-a-contract) says so at
 length, and that is what lets this split be revisited later:
@@ -397,6 +397,12 @@ what is on disk; `sha256sum` on it reproduces the digest that names it; and
 `loam-refinery validate` on it passes unchanged, because it is still exactly a
 review document.
 
+That guarantee is scoped to the reviews tree. The rejected tree, described in
+[§4.4.1](#441-rejected-inputs) below, keeps only the first megabyte of an
+input larger than that — so the byte-exact, self-verifying claim above does
+not extend to it, and a caller that needs to know which applies checks which
+tree a `path` names.
+
 That fidelity is the point of keeping files at all. Everything else about a
 review can be recomputed, migrated, or re-derived; the reviewer's bytes cannot
 be, and a migration that has to rewrite them to move them is a migration that
@@ -452,7 +458,7 @@ Exit 1 is the whole of it. An exit 2 run mistyped a flag and usually never read
 a document; an exit 101 run failed at the store itself and has nowhere to put
 one.
 
-**An input over 1 MiB is not kept**, though its run is still recorded. The
+**An input over 1 MiB is truncated to its first 1 MiB, not dropped.** The
 reviews tree is bounded by documents that passed a schema; the rejected tree is
 bounded by nothing at all, and a caller that pipes a log file or a tarball at
 `validate` should not silently fill a home directory with it. A legitimate
@@ -460,10 +466,38 @@ review is far under the cap — the format caps a body at 4,000 characters and a
 summary at 1,500 — so the limit only ever catches something that was never going
 to validate.
 
-The omission is visible rather than silent: the row is there and its `path` is
-absent ([§6.1](#61-output)), which is the same signal as a file that was
-deleted. The cap is fixed rather than configurable, because a knob here would be
-a knob nobody sets correctly and a fifth key in a four-key file.
+That is the split this section leaves the store with, stated plainly: **every
+document that passed a schema is kept whole, in the reviews tree; the first
+megabyte of every input that did not is kept in the rejected tree.** Bounding
+one and not the other is what justifies capping either at all — a legitimate
+review never approaches the cap, and an unbounded rejected tree is the one the
+store cannot afford to keep whole.
+
+The cap bounds only the copy this section writes. `validate` still reads and
+parses the entire submitted input before any of this runs; truncating what
+reaches the parser would change what gets validated, which is a worse defect
+than a large file on disk, not a smaller one.
+
+Truncation is what keeps every exit-1 row showing a `path` now
+([§6.1](#61-output)): there is no longer a case where a run is recorded and its
+file is not, so an oversized input needs no visible omission to signal it.
+
+**The digest still names the full input, not the truncated bytes.** It is
+computed before truncation, so the filename identifies what was actually
+submitted: an agent looping on the same broken output still dedupes to one
+file regardless of size, and two different oversized inputs that happen to
+share a first megabyte are never conflated under one name. The cost is that a
+truncated file's own hash no longer matches the name it is stored under — and
+that is not a defect to route around, it is the signal. A mismatch between a
+file's bytes and its name already means something under content addressing
+([§6.3](#63-missing-and-foreign-files)): ordinarily it means tampering, and
+for a rejected file over the cap it means truncation instead. Nothing else
+records which happened — no `stored` column, no `truncated` flag — because
+hashing the stored file and comparing the result to its own name already
+tells the two apart.
+
+The cap is fixed rather than configurable, because a knob here would be a knob
+nobody sets correctly and a fifth key in a four-key file.
 
 ### 4.5 The database
 
@@ -701,12 +735,15 @@ The database is the source of truth for everything in it. Losing it loses that,
 and **nothing rebuilds it**. That is a real cost of choosing a database over
 metadata-on-disk, and it is stated here rather than discovered.
 
-What survives is everything that was submitted. The trees are untouched, and
-their structure still carries meaning a person can read: `<repo>/<ref>/` says
-which project and which commit, the filename is a checksum of the bytes, and
-`sha256sum` still verifies it. What is gone is what the runs *found* — the
-counts, the exit codes, the timestamps, and every record of a run that produced
-no file.
+What survives is everything submitted to the reviews tree, and the first
+megabyte of everything submitted to the rejected tree
+([§4.4.1](#441-rejected-inputs)). The trees are untouched, and their structure
+still carries meaning a person can read: `<repo>/<ref>/` says which project and
+which commit, and the filename is the checksum of what was submitted —
+`sha256sum` still verifies a review file, but not a rejected file that was
+truncated, since its name commits to bytes beyond what is on disk. What is
+gone is what the runs *found* — the counts, the exit codes, the timestamps,
+and every record of a run that produced no file.
 
 Reconstruction is deliberately deferred rather than half-built
 ([§8](#8-future-considerations)). A rebuild that silently invented a
@@ -802,8 +839,8 @@ trees ([§4.4](#44-the-stored-files)) and are never mixed, because a store whose
 reviews include the failures stops being the answer to "what was concluded about
 this commit". Keeping both is what lets the store answer that question and
 "what did this agent actually emit" without either one contaminating the other.
-The one exception is size: a rejected input over 1 MiB is recorded but not kept
-([§4.4.1](#441-rejected-inputs)).
+The one exception is size: a rejected input over 1 MiB is recorded and kept,
+truncated to its first 1 MiB ([§4.4.1](#441-rejected-inputs)).
 
 **Every run records a row**, including the ones that wrote no file
 ([§4.5](#45-the-database)). That is the second question a store can answer: not
@@ -1001,8 +1038,9 @@ with the same row shape:
 
 `ref` is **omitted** when the run has none — an input that never parsed has no
 commit to name, and a null would invite a consumer to render it. `path` is
-omitted when the input was not kept ([§4.4.1](#441-rejected-inputs)); its
-absence is the only signal that a row has no file, and it is a visible one.
+always present on an exit-1 row: every rejected input is kept, truncated to
+its first 1 MiB when it was larger ([§4.4.1](#441-rejected-inputs)), so there
+is no case left where the row has a run but no file to point at.
 
 The row shown above is not the whole answer — it is wrapped exactly like the
 default index: `repo`, `total`, then the array, named `failed` in place of
@@ -1022,8 +1060,9 @@ default form. It is worth stating outright: nothing about `--failed` changes
 the shape *around* the rows, only what is in them.
 
 It answers when, against which commit, how much — and `path` is the submitted
-input itself ([§4.4.1](#441-rejected-inputs)), which is the answer to the
-question the counts cannot reach. It does not answer *which check* fired,
+input, truncated to its first 1 MiB when it was larger
+([§4.4.1](#441-rejected-inputs)), which is the answer to the question the
+counts cannot reach. It does not answer *which check* fired,
 because the row does not record one ([§4.5.1](#451-what-it-holds)); reading the
 file is what replaces that, and it is a better answer than a list of names for
 anyone asking why an agent keeps failing.
@@ -1129,10 +1168,18 @@ slow down as a store grows, and a caller that needs certainty asks for the
 content.
 
 Verifying each file against the digest that names it was specified in an earlier
-draft and is not here. Content addressing makes tampering *detectable* — a file
-whose bytes no longer hash to its own name has been altered — but re-hashing
-every file a caller reads is machinery this command does not need yet, and
-[§8](#8-future-considerations) is where it waits.
+draft and is not here. Content addressing makes tampering *detectable* — a
+review file whose bytes no longer hash to its own name has been altered — but
+re-hashing every file a caller reads is machinery this command does not need
+yet, and [§8](#8-future-considerations) is where it waits.
+
+A rejected file is a partial exception to what a mismatch means: it is not
+necessarily tampering, because a file over 1 MiB is truncated to its first
+megabyte by design while its name still names the full input
+([§4.4.1](#441-rejected-inputs)). The same hash-against-name check that would
+catch tampering doubles as the only signal that a rejected file was truncated
+rather than kept whole — and this command runs it no more for that than it
+does for the reviews tree above.
 
 Files in a tree that no row accounts for are ignored entirely rather than
 counted: the litter editors and backup tools leave behind, and the file of a run

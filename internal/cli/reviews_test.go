@@ -154,13 +154,13 @@ func TestReviews_DefaultIndexShape(t *testing.T) {
 	assert.Nil(t, row.Review, "no --content, no review field")
 }
 
-func TestReviews_FailedOmitsRefAndPathWhenAbsent(t *testing.T) {
+func TestReviews_FailedOmitsRefWhenAbsentButAlwaysHasAPath(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, "")
 	at := time.Date(2026, 8, 19, 14, 22, 41, 0, time.UTC)
 	h.reviews.KnownFunc = func(context.Context, string) (bool, error) { return true, nil }
 	h.reviews.ListFailedRunsFunc = func(context.Context, string, string, int) ([]store.FailedRun, int, error) {
-		return []store.FailedRun{{At: at, ExitCode: 1, Path: ""}}, 1, nil
+		return []store.FailedRun{{At: at, ExitCode: 1, Path: "/tmp/rejected.json"}}, 1, nil
 	}
 	require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"reviews", "--repo=some/repo", "--failed"}))
 	var raw map[string]any
@@ -169,9 +169,10 @@ func TestReviews_FailedOmitsRefAndPathWhenAbsent(t *testing.T) {
 	require.Len(t, failed, 1)
 	row := failed[0].(map[string]any)
 	_, hasRef := row["ref"]
-	_, hasPath := row["path"]
+	path, hasPath := row["path"]
 	assert.False(t, hasRef, "ref must be absent, not null, when the run has none")
-	assert.False(t, hasPath, "path must be absent, not null, when the input was not kept")
+	assert.True(t, hasPath, "every rejected input is kept now, truncated when it was over 1 MiB, so path is never omitted")
+	assert.Equal(t, "/tmp/rejected.json", path)
 }
 
 func TestReviews_ContentOnFailedReturnsNonJSONBytesUnaltered(t *testing.T) {

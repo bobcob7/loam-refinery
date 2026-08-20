@@ -7,17 +7,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestOversizedRejectedInput_RecordsRunButWritesNoFile is the end-to-end
+// TestOversizedRejectedInput_RecordsRunWithATruncatedFile is the end-to-end
 // version of config.md section 4.4.1's acceptance criterion: a 2 MiB input
-// records a run, and the row it produces is visible with its path absent —
-// the same signal a deleted file would give.
-func TestOversizedRejectedInput_RecordsRunButWritesNoFile(t *testing.T) {
+// records a run, and ListFailedRuns reports a path for it exactly like any
+// other exit_code=1 row — nothing about the listing distinguishes a
+// truncated file from a whole one, because the store no longer decides
+// whether to write a file based on size, only how much of it to keep.
+func TestOversizedRejectedInput_RecordsRunWithATruncatedFile(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	data := make([]byte, 2*1024*1024)
 	digest, path, err := s.WriteRejected("github.com/example/example", data)
 	require.NoError(t, err)
-	assert.Empty(t, path)
+	require.NotEmpty(t, path)
 	require.NoError(t, s.Record(t.Context(), RunInput{
 		Repo: "github.com/example/example", Digest: digest, ExitCode: 1,
 		ToolVersion: "0.1.0", SchemaVersion: "1",
@@ -26,7 +28,7 @@ func TestOversizedRejectedInput_RecordsRunButWritesNoFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
 	require.Len(t, failed, 1)
-	assert.Empty(t, failed[0].Path, "an omitted path is the only signal a caller gets that the input was not kept")
+	assert.Equal(t, path, failed[0].Path, "a truncated input's path is reported like any other kept file")
 	assert.Empty(t, failed[0].Ref, "ref is empty when the run has none to report")
 }
 

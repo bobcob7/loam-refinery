@@ -50,10 +50,12 @@ type reviewRow struct {
 	Review  json.RawMessage `json:"review,omitempty"`
 }
 
-// failedRow is one row of --failed. Ref is omitted when the run has none,
-// and Path is omitted when the input was not kept (docs/config.md §6.1); a
-// null must not appear in either case, so both are plain strings that
-// encoding/json's omitempty already drops on "".
+// failedRow is one row of --failed. Ref is omitted when the run has none;
+// Path is set for every exit-1 row, since every rejected input is now kept,
+// truncated to its first 1 MiB when it was larger (docs/config.md §4.4.1).
+// Both are plain strings so a null never appears in either case, and Path
+// stays omittable only in defense of a future exit code that records a row
+// with no file to point at.
 type failedRow struct {
 	At       string     `json:"at"`
 	Ref      string     `json:"ref,omitempty"`
@@ -233,9 +235,10 @@ func (a *App) reviewsFailed(ctx context.Context, repo, ref string, limit int, kn
 			Counts:   countsJSON(r.Counts),
 			Path:     r.Path,
 		}
-		// Only a kept input has a path to read (docs/config.md §4.4.1); one
-		// that was never written is not unreadable, it simply has nothing to
-		// add.
+		// Every exit-1 row has a path today (docs/config.md §4.4.1); the
+		// guard stays for a future exit code that might record a row with
+		// no file to read — that case is not unreadable, it simply has
+		// nothing to add.
 		if content && r.Path != "" {
 			opened = true
 			data, err := a.reviewStore.ReadContent(r.Path)

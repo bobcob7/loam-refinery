@@ -93,17 +93,25 @@ func TestStoreAdapter_RepeatedFailuresLeaveOneFileManyRows(t *testing.T) {
 	assert.Len(t, rows, 50, "every attempt still records its own row")
 }
 
-// An input over 1 MiB records a row but writes no file (docs/config.md
-// §4.4.1); the omission is visible as a row with nothing under rejected/.
-func TestStoreAdapter_OversizedRejectedInputRecordsRowWithNoFile(t *testing.T) {
+// An input over 1 MiB still records a row and still writes a file
+// (docs/config.md §4.4.1) — truncated to exactly 1 MiB rather than dropped.
+func TestStoreAdapter_OversizedRejectedInputIsTruncatedToOneMiB(t *testing.T) {
 	home := homeFor(t)
 	adapter := newStoreAdapter(quietLog())
 	source := make([]byte, (1<<20)+1)
+	for i := range source {
+		source[i] = byte(i)
+	}
 	err := adapter.Save(t.Context(), cli.StoreInput{
 		Dir: t.TempDir(), Source: source, Valid: false, ToolVersion: "test", SchemaVersion: "1",
 	})
 	require.NoError(t, err)
-	assert.Empty(t, listFiles(t, filepath.Join(home, "rejected")), "an oversized input is never written")
+	files := listFiles(t, filepath.Join(home, "rejected"))
+	require.Len(t, files, 1, "an oversized input is still written, truncated")
+	got, err := os.ReadFile(files[0])
+	require.NoError(t, err)
+	assert.Len(t, got, 1<<20, "the stored file is truncated to exactly 1 MiB")
+	assert.Equal(t, source[:1<<20], got, "the stored bytes are the input's first 1 MiB")
 	rows := runsOf(t, filepath.Join(home, "store.db"))
 	require.Len(t, rows, 1)
 	assert.Equal(t, 1, rows[0].exitCode)
