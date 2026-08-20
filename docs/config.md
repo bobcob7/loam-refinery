@@ -602,11 +602,32 @@ language. Three candidates were weighed:
 
 This is the largest dependency the project takes on, and
 [cli.md §7.3](cli.md#73-dependencies) asks for a shallow tree. The pure-Go
-SQLite driver is a transpiled C library and adds real compile time and binary
-size. It buys the thing the alternative cannot: queries that stay fast as the
-store grows without the tool growing a query planner of its own. Runtime cost is
-what actually matters for a binary invoked in loops, and opening a SQLite file
-is sub-millisecond.
+SQLite driver is a transpiled C library, and it costs what one costs: binary
+size **and** startup time, not the first instead of the second. An earlier
+draft of this section claimed the opposite, measured against a scratch
+`main` with a blank import that never opened a database. Measured instead
+against the real binary — `aedb291`, the last commit before the store was
+wired into `validate`, against this branch's `HEAD` — the binary grew from
+5,754,098 to 12,285,026 bytes, **+6.2 MiB, +114 percent**. A clean
+`validate`'s median startup, 50 runs after a five-run warmup, went from
+22.5ms to 38.2ms — **+15.7ms, +70 percent** — from paging in a binary that
+more than doubled and from opening, migrating, and writing to a real SQLite
+file on every call, not from linking alone.
+
+[cli.md §1](cli.md#design-principles)'s seventh design principle is "cheap
+to call, fast startup," and fifteen milliseconds is a real cost against it,
+not a rounding error. It is also fifteen milliseconds against an agent's
+inference time, which is measured in seconds on every call this tool is
+invoked from — the reason [cli.md §6](cli.md#6-token-economy) budgets in
+tokens rather than milliseconds is that tokens are the cost an agent
+actually pays per call, and a few milliseconds of local disk I/O does not
+compete with it. The alternative was never free: bbolt turns every query in
+[§4.5.1](#451-what-it-holds) into a hand-written scan, and Dolt is a SQL
+engine and storage layer measured in hundreds of megabytes, against the
+same seventh principle, for capability this store does not need. SQLite
+stays chosen. What changes here is the claim made about its price: it costs
+milliseconds, stated plainly, not sub-millisecond, stated before anyone
+measured it against the wired binary.
 
 #### 4.5.4 sqlc
 
@@ -978,6 +999,23 @@ commit to name, and a null would invite a consumer to render it. `path` is
 omitted when the input was not kept ([§4.4.1](#441-rejected-inputs)); its
 absence is the only signal that a row has no file, and it is a visible one.
 
+The row shown above is not the whole answer — it is wrapped exactly like the
+default index: `repo`, `total`, then the array, named `failed` in place of
+`reviews`:
+
+```json
+{
+  "repo": { "name": "github.com/bobcob7/loam-refinery", "known": true },
+  "total": 3,
+  "failed": [ /* … rows like the one above … */ ]
+}
+```
+
+The specification this implements never showed that envelope, only the bare
+row, on the assumption that a reader would carry the wrapper over from the
+default form. It is worth stating outright: nothing about `--failed` changes
+the shape *around* the rows, only what is in them.
+
 It answers when, against which commit, how much — and `path` is the submitted
 input itself ([§4.4.1](#441-rejected-inputs)), which is the answer to the
 question the counts cannot reach. It does not answer *which check* fired,
@@ -987,7 +1025,12 @@ anyone asking why an agent keeps failing.
 
 `--content` works here too, and returns the input verbatim rather than a
 document — including for the inputs that are not JSON at all, which are
-delivered as a JSON string rather than as parsed structure.
+delivered as a JSON string rather than as parsed structure. The field it adds
+is named `review` on this form too — the same key the default index above
+uses for a passing document — which is an odd name for a rejected input that
+was never a review, sometimes not even parseable as one. It is kept anyway so
+a caller reading `--content` output never has to branch on which form it
+asked for to find the content.
 
 **Returning an index rather than documents is the same argument as `describe`.**
 A repository with a hundred stored reviews holds several hundred kilobytes of
@@ -1006,7 +1049,17 @@ What it adds to each row is a `review` field holding the stored document
 verbatim, read from the file the row's `path` names. The row is the database's
 answer and the review is the file's, joined in the output rather than on disk —
 which is the right place for it, because the command's output is a contract and
-the storage behind it is not ([§4.9](#49-the-store-is-not-a-contract)).
+the storage behind it is not ([§4.9](#49-the-store-is-not-a-contract)). On this
+form `review` is the document itself, embedded as JSON, because that is what
+was stored; on `--failed` the same key holds a JSON string instead, because
+what was stored there is not guaranteed to parse as anything.
+
+`unreadable` sits on the envelope, next to `total`, not on any one row — one
+count for the whole answer, not a flag per file
+([§6.3](#63-missing-and-foreign-files)). It appears only when `--content`
+asked a file to be opened; a listing that answered entirely from the
+database never touched a file and has nothing to report, so the key is
+omitted rather than printed as zero.
 
 **`--list` names the repositories the store knows**, with what each holds:
 

@@ -577,9 +577,10 @@ nothing measures is a limit that erodes.
 | `schema` | 1,000 | Rare; machine consumers only |
 | `schema --annotated` | 5,000 | Rare; codegen only |
 | `validate`, clean | 80 | Every attempt |
+| `validate`, clean, no repository | 140 | Common; not a rare edge case |
 | `validate`, per diagnostic | 60 | Every failed attempt |
-| `reviews` | 60 + 45 per row | Rare; only where a store is used |
-| `reviews --failed` | 60 + 55 per row | Rare; diagnosing a reviewing agent |
+| `reviews` | 60 + 150 per row | Rare; only where a store is used |
+| `reviews --failed` | 60 + 120 per row | Rare; diagnosing a reviewing agent |
 | `reviews --list` | 60 + 25 per repository | Rare; discovery |
 | `reviews --content` | none | Returns caller-authored documents |
 
@@ -596,10 +597,17 @@ that, and no second implementation can drift from it. `prime` is unchanged,
 because it was never rendered — it is prose written to be pinned into a prompt,
 and so is the `summary` field of `describe`.
 
-Verification adds wall-clock, not tokens: its output is the same `verification` block
-either way. Because it runs by default, that cost is paid on every loop — object
-lookups against a local database, one per distinct file, since the whole document
-shares one `ref`.
+Verification adds wall-clock, not tokens, when a repository can answer: the
+`verification` block is the same size whether zero anchors needed checking
+or several. Because it runs by default, that cost is paid on every loop —
+object lookups against a local database, one per distinct file, since the
+whole document shares one `ref`. Outside a repository the shape changes and
+the cost stops being free: `SkipAll` reports three skipped checks, each with
+its own reason, which is real content the in-repository case never has to
+print. That is the no-repository row above, and it is measured, not
+guessed, at 115 — trimming what `SkipAll` reports would shrink the number,
+but a run that verified nothing would then look like a run that verified
+everything, which [§2.3.1](#231-verifying-anchors) rules out on purpose.
 
 The two that matter most are `prime` and clean `validate`, because they are paid
 on every single loop.
@@ -613,6 +621,18 @@ is asked deliberately and rarely, gave the 60 tokens back.
 
 That is the shape of this whole table. A cost belongs on the call that wants it,
 not on the call that happens to be running.
+
+Each `reviews` row pays for identity twice. A ref is 40 characters and a
+digest is 64; both are fields on the row, and both appear again inside the
+mandatory absolute `path` it also carries — store root, repository name,
+ref, and filename. Measured against a real store that shape costs about 138
+tokens a row; `--failed` drops the digest, and drops the ref segment of the
+path too when the input had none to resolve, which measures about 105 with
+a ref present and about 85 without one. The ceilings above round those up
+with headroom, to 150 and 120. What keeps a cost this size acceptable is
+that `reviews` is a rare, deliberate call rather than one paid on the
+write-validate-fix loop `validate` sits on; `--limit`, defaulting to 10, is
+the only brake on it.
 
 `reviews --content` is the one call with **no ceiling**, and that is stated
 rather than invented: it returns review documents the caller wrote, at whatever
