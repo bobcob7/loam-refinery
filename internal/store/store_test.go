@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -200,6 +201,82 @@ func TestOpen_PathWithQuestionMarkStaysInsideDirectory(t *testing.T) {
 			assert.Equal(t, name, entries[0].Name())
 		})
 	}
+}
+
+// TestOpen_RunsTableIsExactlyTheThirteenDocumentedColumns pins
+// docs/config.md §4.5.1's schema: PRAGMA table_info(runs) must report
+// exactly these thirteen columns, in this order, and no others. A
+// fourteenth column — the concrete regression refinery-a96.23 names —
+// changes nothing any existing test checks, since every other test here
+// asks about one column or one constraint rather than the whole set.
+func TestOpen_RunsTableIsExactlyTheThirteenDocumentedColumns(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	db, err := Open(t.Context(), filepath.Join(dir, "store.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	rows, err := db.QueryContext(t.Context(), "PRAGMA table_info(runs)")
+	require.NoError(t, err)
+	defer rows.Close()
+	got := []string{}
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, ctype string
+		var dflt any
+		require.NoError(t, rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk))
+		got = append(got, name)
+	}
+	require.NoError(t, rows.Err())
+	want := []string{
+		"id", "at", "repo", "ref", "digest", "exit_code", "verdict",
+		"num_comments", "num_errors", "num_advisories", "num_skipped",
+		"tool_version", "schema_version",
+	}
+	assert.Equal(t, want, got, "docs/config.md §4.5.1: runs has exactly these thirteen columns, in this order")
+}
+
+// TestOpen_RunsTableHasExactlyItsThreeDocumentedIndexes pins the other half
+// of docs/config.md §4.5.1: runs_repo_ref, runs_repo_at, and runs_digest,
+// and no other index — a new query pattern that reaches for a fourth index
+// should be a deliberate addition to the schema, not a side effect nobody
+// notices.
+func TestOpen_RunsTableHasExactlyItsThreeDocumentedIndexes(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	db, err := Open(t.Context(), filepath.Join(dir, "store.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	rows, err := db.QueryContext(t.Context(),
+		"SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'runs' ORDER BY name")
+	require.NoError(t, err)
+	defer rows.Close()
+	got := []string{}
+	for rows.Next() {
+		var name string
+		require.NoError(t, rows.Scan(&name))
+		got = append(got, name)
+	}
+	require.NoError(t, rows.Err())
+	assert.Equal(t, []string{"runs_digest", "runs_repo_at", "runs_repo_ref"}, got,
+		"docs/config.md §4.5.1: runs has exactly these three indexes")
+}
+
+// TestOpen_RunsTableIsStrict pins the third half-sentence of
+// docs/config.md §4.5.1's schema: runs is created STRICT, which is what
+// makes every other schema test here — the rejected type violation, the
+// checked verdict — mean what it says rather than guard a column SQLite's
+// ordinary type affinity had already let the wrong kind of value into.
+func TestOpen_RunsTableIsStrict(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	db, err := Open(t.Context(), filepath.Join(dir, "store.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	var createSQL string
+	require.NoError(t, db.QueryRowContext(t.Context(),
+		"SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'runs'").Scan(&createSQL))
+	assert.True(t, strings.HasSuffix(strings.TrimSpace(createSQL), "STRICT"),
+		"docs/config.md §4.5.1: runs must be STRICT; CREATE TABLE was %q", createSQL)
 }
 
 func TestOpen_ReopeningAnExistingDatabaseSucceeds(t *testing.T) {

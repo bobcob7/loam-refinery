@@ -183,6 +183,11 @@ func TestReviewsStaysWithinBudgetPerRow(t *testing.T) {
 	emptyTokens := approxTokens(runReviews(t, reviewsOf(t, newRealStore(t)), "reviews", "--repo="+repo, "--limit=0"))
 	assert.LessOrEqual(t, emptyTokens, baseBudget,
 		"an empty reviews index costs about %d tokens; the fixed overhead ceiling is %d", emptyTokens, baseBudget)
+	// Pinned exactly, not just bounded: a field added to reviewsEnvelope
+	// grows the empty and non-empty cases by the same amount, which
+	// cancels out of every perRow calculation below and would otherwise
+	// ship unnoticed (refinery-a96.34).
+	assert.Equal(t, 29, emptyTokens, "the empty envelope's fixed overhead must not grow or shrink silently")
 	small := newRealStore(t)
 	seedReviews(t, small, repo, 3)
 	smallTokens := approxTokens(runReviews(t, reviewsOf(t, small), "reviews", "--repo="+repo, "--limit=0"))
@@ -207,6 +212,10 @@ func TestReviewsFailedStaysWithinBudgetPerRow(t *testing.T) {
 	emptyTokens := approxTokens(runReviews(t, reviewsOf(t, newRealStore(t)), "reviews", "--repo="+repo, "--failed", "--limit=0"))
 	assert.LessOrEqual(t, emptyTokens, baseBudget,
 		"an empty --failed index costs about %d tokens; the fixed overhead ceiling is %d", emptyTokens, baseBudget)
+	// See TestReviewsStaysWithinBudgetPerRow: a marginal-cost calculation
+	// cannot see fixed overhead that grows, so it has to be pinned exactly
+	// here too (refinery-a96.34).
+	assert.Equal(t, 30, emptyTokens, "the empty failedEnvelope's fixed overhead must not grow or shrink silently")
 	small := newRealStore(t)
 	seedFailedRuns(t, small, repo, 3)
 	smallTokens := approxTokens(runReviews(t, reviewsOf(t, small), "reviews", "--repo="+repo, "--failed", "--limit=0"))
@@ -230,6 +239,10 @@ func TestReviewsListStaysWithinBudgetPerRepository(t *testing.T) {
 	emptyTokens := approxTokens(runReviews(t, reviewsOf(t, newRealStore(t)), "reviews", "--list"))
 	assert.LessOrEqual(t, emptyTokens, baseBudget,
 		"an empty repository index costs about %d tokens; the fixed overhead ceiling is %d", emptyTokens, baseBudget)
+	// See TestReviewsStaysWithinBudgetPerRow: pinned exactly so growth in
+	// listEnvelope's fixed overhead cannot hide inside the marginal
+	// per-repository calculation below (refinery-a96.34).
+	assert.Equal(t, 4, emptyTokens, "the empty listEnvelope's fixed overhead must not grow or shrink silently")
 	small := newRealStore(t)
 	seedRepos(t, small, 4)
 	smallTokens := approxTokens(runReviews(t, reviewsOf(t, small), "reviews", "--list"))
@@ -451,11 +464,64 @@ func (a *realReviewsAdapter) ReadContent(path string) ([]byte, error) {
 	return a.st.ReadContent(path)
 }
 
-// newRealStore opens a fresh review store rooted at a temp directory, for
-// budget tests that need real store content rather than a mock.
+// fixedStoreRootLen is the length every store root newRealStore creates is
+// padded out to. Every stored review's path field is rooted there
+// (internal/store/files.go's ReviewPath and RejectedPath), so a per-row
+// token budget measured against t.TempDir() directly is really measuring
+// $TMPDIR's length, not the output shape: a 65-character TMPDIR — an
+// ordinary length on a CI runner — pushed both TestReviewsStaysWithinBudgetPerRow
+// and TestReviewsFailedStaysWithinBudgetPerRow over their ceilings on a
+// machine where nothing else changed (refinery-a96.34). Padding every root
+// out to the same fixed length, well past anything t.TempDir() plus a long
+// TMPDIR plus a long test name produces, makes the row cost measured here a
+// property of the output shape again rather than of the machine running the
+// test.
+const fixedStoreRootLen = 80
+
+// fixedLengthStoreRoot creates and returns a store root whose absolute path
+// is always exactly fixedStoreRootLen characters. It is rooted at /tmp
+// directly rather than at t.TempDir(): t.TempDir() resolves through
+// $TMPDIR, and $TMPDIR's length is a property of the machine running the
+// test, not of the reviews output a budget is meant to measure
+// (refinery-a96.34) — a CI runner whose $TMPDIR happens to be longer than
+// this developer's must measure the same row cost this test already
+// passed on that machine. /tmp is used instead of os.TempDir() for the
+// same reason: os.TempDir() also honors $TMPDIR, and bypassing it is the
+// point.
+func fixedLengthStoreRoot(t *testing.T) string {
+	t.Helper()
+	base, err := os.MkdirTemp("/tmp", "loam-refinery-budget-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+	require.Greater(t, fixedStoreRootLen, len(base),
+		"/tmp base %q is already too long for the fixed %d-character budget root", base, fixedStoreRootLen)
+	const segmentLen = 40
+	root := base
+	for fixedStoreRootLen-len(root) > segmentLen {
+		root = filepath.Join(root, strings.Repeat("a", segmentLen))
+	}
+	switch diff := fixedStoreRootLen - len(root); {
+	case diff == 0:
+		// already exactly fixedStoreRootLen; nothing left to add.
+	case diff == 1:
+		// One character short of the target with no room for both a "/"
+		// and a new segment; extend the last component by one instead of
+		// starting another.
+		root += "a"
+	default:
+		root = filepath.Join(root, strings.Repeat("a", diff-1))
+	}
+	require.NoError(t, os.MkdirAll(root, 0o700))
+	require.Len(t, root, fixedStoreRootLen)
+	return root
+}
+
+// newRealStore opens a fresh review store rooted at a fixed-length
+// directory (refinery-a96.34), for budget tests that need real store
+// content rather than a mock.
 func newRealStore(t *testing.T) *store.Store {
 	t.Helper()
-	st, err := store.New(t.Context(), t.TempDir(), store.NewClock())
+	st, err := store.New(t.Context(), fixedLengthStoreRoot(t), store.NewClock())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	return st
