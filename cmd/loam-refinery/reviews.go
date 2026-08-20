@@ -98,7 +98,9 @@ func (a *reviewsAdapter) ReadContent(path string) ([]byte, error) {
 // one call. A store.db that does not exist yet is reported as absent
 // (ok=false, err=nil) rather than created — store.New creates root and
 // store.db when either is missing, which a read must never trigger on a
-// machine that has no store at all (docs/config.md §2.2, §6.2).
+// machine that has no store at all (docs/config.md §2.2, §6.2). It opens
+// through store.NewReadOnly rather than store.New: a read pays for nothing
+// a writer needs — no MkdirAll, no WAL conversion, no migration, no clock.
 func (a *reviewsAdapter) open(ctx context.Context) (*store.Store, bool, error) {
 	cfg, err := loadValidConfig()
 	if err != nil {
@@ -111,7 +113,7 @@ func (a *reviewsAdapter) open(ctx context.Context) (*store.Store, bool, error) {
 	if !exists {
 		return nil, false, nil
 	}
-	st, err := store.New(ctx, cfg.Store.Path, store.NewClock())
+	st, err := store.NewReadOnly(ctx, cfg.Store.Path)
 	if err != nil {
 		return nil, false, err
 	}

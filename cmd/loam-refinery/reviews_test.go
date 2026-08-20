@@ -130,6 +130,41 @@ func TestReviewsAdapter_RepoNameResolvesAnActualRepository(t *testing.T) {
 	assert.Equal(t, "local/"+filepath.Base(resolved), name)
 }
 
+// reviews must answer from a store on a read-only filesystem: refinery-a96.19
+// found it going through store.New, the writer's constructor, which fails
+// outright on a read-only directory. This is the ratchet — without
+// reviewsAdapter.open using store.NewReadOnly, this test fails again.
+func TestReviewsAdapter_ReadsFromAReadOnlyStoreDirectory(t *testing.T) {
+	home := homeFor(t)
+	writer := newStoreAdapter(quietLog())
+	dir := t.TempDir()
+	ref := "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"
+	require.NoError(t, writer.Save(t.Context(), cli.StoreInput{
+		Dir: dir, Source: []byte(`{"version":"1","verdict":"approve","ref":"` + ref + `","comments":[]}`),
+		Valid: true, Ref: ref, Verdict: "approve", ToolVersion: "test", SchemaVersion: "1",
+	}))
+	require.NoError(t, writer.Save(t.Context(), cli.StoreInput{
+		Dir: dir, Source: []byte(`{}`), Valid: false, ToolVersion: "test", SchemaVersion: "1",
+	}))
+	require.NoError(t, os.Chmod(home, 0o500))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(home, 0o700)) })
+	adapter := newReviewsAdapter(quietLog())
+	reviews, total, err := adapter.ListReviews(t.Context(), "no-repo", "", 10)
+	require.NoError(t, err)
+	assert.Len(t, reviews, 1)
+	assert.Equal(t, 1, total)
+	failed, total, err := adapter.ListFailedRuns(t.Context(), "no-repo", "", 10)
+	require.NoError(t, err)
+	assert.Len(t, failed, 1)
+	assert.Equal(t, 1, total)
+	repos, err := adapter.ListRepos(t.Context())
+	require.NoError(t, err)
+	assert.Len(t, repos, 1)
+	content, err := adapter.ReadContent(reviews[0].Path)
+	require.NoError(t, err)
+	assert.NotEmpty(t, content)
+}
+
 // A malformed store.repos override is a config error surfaced on a read
 // exactly as it is on a write, caught before any store filesystem lookup.
 func TestReviewsAdapter_BadRepoOverrideFailsBeforeAnyFilesystemLookup(t *testing.T) {
