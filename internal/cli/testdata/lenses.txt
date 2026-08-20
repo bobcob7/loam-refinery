@@ -806,6 +806,24 @@
 {
   "entries": [
     {
+      "name": "store",
+      "namespace": "topic",
+      "title": "The review store",
+      "body": "Every `validate` that reads a document writes it down. A clean review is\nstored as a review; an input that fails is stored as a rejected input — in\nseparate trees, never mixed, so the store can answer \"what was concluded\nabout this commit\" without a failure ever polluting it.\n\nStoring needs no flag and produces no output: it is simply what `validate`\ndoes, on every run with something to keep. The result object never mentions\nit — asking where a copy landed is `loam-refinery reviews`'s job, not\n`validate`'s.\n\n`store.enabled: false` in the config file is the only way to turn storing\noff. There is no per-run flag.\n\nIf the store cannot be created or written — a read-only home, a full disk, an\nunreachable `store.path` — the command exits 101, not 1 or 2. That code means\nthe machine is at fault, not the review or the invocation: revising the\nreview will not fix it, and neither will re-checking flags. Stop and report\nthe machine.\n\n`loam-refinery reviews` reads the store back: which reviews were stored for a\nrepository and commit, and, with `--failed`, which runs stored none.",
+      "related": [
+        "exit-codes"
+      ],
+      "aliases": [
+        "storing"
+      ],
+      "provider": "topics"
+    }
+  ]
+}
+
+{
+  "entries": [
+    {
       "name": "tiers",
       "namespace": "topic",
       "title": "Check tiers and exit codes",

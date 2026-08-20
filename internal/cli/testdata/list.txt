@@ -60,6 +60,7 @@
       "names": [
         "effort-vs-scope",
         "ids",
+        "store",
         "tiers",
         "verification"
       ]
