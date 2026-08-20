@@ -7,7 +7,10 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	_ "modernc.org/sqlite"
 )
@@ -43,6 +46,22 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("migrating database %s: %w", path, err)
 	}
 	return db, nil
+}
+
+// Exists reports whether a store already has a database at root, without
+// creating anything (docs/config.md §2.2, §6.2). A reader — reviews — checks
+// this before ever calling New, since New creates root and store.db when
+// either is missing, which a read must never do on a machine that has no
+// store yet.
+func Exists(root string) (bool, error) {
+	_, err := os.Stat(filepath.Join(root, "store.db"))
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, fmt.Errorf("checking store %s: %w", root, err)
 }
 
 // migrate applies the embedded schema to a database that does not yet have

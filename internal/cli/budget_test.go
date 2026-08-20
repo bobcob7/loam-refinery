@@ -157,6 +157,7 @@ func runValidate(t *testing.T, dir, source string) (string, int) {
 		validate.New(structural.New(mustValidator(t), quietLog()), advisory.New(quietLog(), advisory.All()),
 			validate.NewGitFinder(quietLog()), quietLog()),
 		noopStore(t),
+		noopReviewStore(),
 		realRegistry(t),
 		render.NewJSON(),
 		CheckNames{},
@@ -218,6 +219,7 @@ func runReal(t *testing.T, args ...string) string {
 	app := New(
 		&documentValidatorMock{},
 		noopStore(t),
+		noopReviewStore(),
 		realRegistry(t),
 		render.NewJSON(),
 		CheckNames{},

@@ -16,6 +16,7 @@ import (
 	"github.com/bobcob7/loam-refinery/internal/entry"
 	"github.com/bobcob7/loam-refinery/internal/render"
 	"github.com/bobcob7/loam-refinery/internal/review"
+	"github.com/bobcob7/loam-refinery/internal/store"
 	"github.com/bobcob7/loam-refinery/internal/structural"
 	"github.com/bobcob7/loam-refinery/internal/validate"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +27,7 @@ type harness struct {
 	app       *App
 	validator *documentValidatorMock
 	store     *documentStoreMock
+	reviews   *reviewStoreMock
 	stdout    *bytes.Buffer
 	stderr    *bytes.Buffer
 }
@@ -41,9 +43,11 @@ func newHarness(t *testing.T, stdin string) *harness {
 	storeMock := &documentStoreMock{
 		SaveFunc: func(context.Context, StoreInput) error { return nil },
 	}
+	reviewsMock := noopReviewStore()
 	app := New(
 		validator,
 		storeMock,
+		reviewsMock,
 		testRegistry(t),
 		render.NewJSON(),
 		CheckNames{
@@ -64,7 +68,26 @@ func newHarness(t *testing.T, stdin string) *harness {
 		stderr,
 		slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	)
-	return &harness{app: app, validator: validator, store: storeMock, stdout: stdout, stderr: stderr}
+	return &harness{app: app, validator: validator, store: storeMock, reviews: reviewsMock, stdout: stdout, stderr: stderr}
+}
+
+// noopReviewStore stands in for reviewStore wherever a test drives a command
+// other than reviews itself: an empty, known-nothing store that never errors.
+func noopReviewStore() *reviewStoreMock {
+	return &reviewStoreMock{
+		RepoNameFunc: func(context.Context, string) (string, bool, error) { return "", false, nil },
+		KnownFunc:    func(context.Context, string) (bool, error) { return false, nil },
+		ListReviewsFunc: func(context.Context, string, string, int) ([]store.Review, int, error) {
+			return nil, 0, nil
+		},
+		ListFailedRunsFunc: func(context.Context, string, string, int) ([]store.FailedRun, int, error) {
+			return nil, 0, nil
+		},
+		ListReposFunc: func(context.Context) ([]store.RepoCount, error) { return nil, nil },
+		ReadContentFunc: func(string) ([]byte, error) {
+			return nil, errors.New("noopReviewStore: no content")
+		},
+	}
 }
 
 func TestRunDispatches(t *testing.T) {

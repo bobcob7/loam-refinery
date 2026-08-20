@@ -47,24 +47,26 @@ type CheckNames struct {
 
 // App holds the wired dependencies for one process.
 type App struct {
-	validator  documentValidator
-	store      documentStore
-	registry   entryRegistry
-	renderer   renderer
-	names      CheckNames
-	build      Build
-	dir        string
-	stdin      io.Reader
-	stdout     io.Writer
-	stderr     io.Writer
-	log        *slog.Logger
-	schemaText func(annotated bool) ([]byte, error)
+	validator   documentValidator
+	store       documentStore
+	reviewStore reviewStore
+	registry    entryRegistry
+	renderer    renderer
+	names       CheckNames
+	build       Build
+	dir         string
+	stdin       io.Reader
+	stdout      io.Writer
+	stderr      io.Writer
+	log         *slog.Logger
+	schemaText  func(annotated bool) ([]byte, error)
 }
 
 // New wires an App. Everything it needs is passed in; nothing is package state.
 func New(
 	validator documentValidator,
 	store documentStore,
+	reviewStore reviewStore,
 	registry entryRegistry,
 	structured renderer,
 	names CheckNames,
@@ -76,18 +78,19 @@ func New(
 	log *slog.Logger,
 ) *App {
 	return &App{
-		validator:  validator,
-		store:      store,
-		registry:   registry,
-		renderer:   structured,
-		names:      names,
-		build:      build,
-		schemaText: schemaText,
-		dir:        dir,
-		stdin:      stdin,
-		stdout:     stdout,
-		stderr:     stderr,
-		log:        log,
+		validator:   validator,
+		store:       store,
+		reviewStore: reviewStore,
+		registry:    registry,
+		renderer:    structured,
+		names:       names,
+		build:       build,
+		schemaText:  schemaText,
+		dir:         dir,
+		stdin:       stdin,
+		stdout:      stdout,
+		stderr:      stderr,
+		log:         log,
 	}
 }
 
@@ -96,6 +99,7 @@ const usage = `loam-refinery — check a review document
   loam-refinery prime                       the workflow, in one small call
   loam-refinery describe [--lens=NAME,...]  the contract, disclosed on demand
   loam-refinery validate [path]             check a review (- or omitted: stdin)
+  loam-refinery reviews [--repo=NAME]       what an earlier validate stored
   loam-refinery schema [--annotated]        JSON Schema, for machines
   loam-refinery version
 
@@ -116,6 +120,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return a.describe(rest)
 	case "validate":
 		return a.validate(ctx, rest)
+	case "reviews":
+		return a.reviews(ctx, rest)
 	case "schema":
 		return a.schema(rest)
 	case "version":

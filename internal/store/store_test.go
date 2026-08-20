@@ -59,6 +59,26 @@ func TestOpen_StampsUserVersion(t *testing.T) {
 	assert.Equal(t, schemaVersion, version)
 }
 
+func TestExists_ReportsFalseWithoutCreatingAnything(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "nested", "store")
+	exists, err := Exists(dir)
+	require.NoError(t, err)
+	assert.False(t, exists)
+	assert.NoDirExists(t, dir)
+}
+
+func TestExists_ReportsTrueOnceTheDatabaseIsThere(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	db, err := Open(t.Context(), filepath.Join(dir, "store.db"))
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	exists, err := Exists(dir)
+	require.NoError(t, err)
+	assert.True(t, exists)
+}
+
 func TestOpen_ReopeningAnExistingDatabaseSucceeds(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
