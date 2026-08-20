@@ -201,7 +201,8 @@ func TestFileLookupsAreCachedPerRefAndPath(t *testing.T) {
 	})
 	_, _, verification := New(git, logger()).Verify(t.Context(), doc)
 	assert.Equal(t, 3, verification.Verified)
-	assert.Len(t, git.runCalls(), 4, "the ref resolves once, then one tree and one blob read per distinct path")
+	assert.Len(t, git.runCalls(), 5,
+		"the ref resolves once, HEAD resolves once, then one tree and one blob read per distinct path")
 }
 
 func TestCountLinesTreatsATrailingFragmentAsALine(t *testing.T) {

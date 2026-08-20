@@ -94,5 +94,29 @@ job — that is why a file-level anchor, with no line at all, is a legitimate
 answer when you are not certain.`,
 			Related: []string{"line", "end_line", "anchors"},
 		},
+		{
+			Name:    "anchor-worktree-diverged",
+			Tier:    review.TierVerification,
+			Summary: "the anchored file's working-tree copy exists and differs from ref",
+			Title:   "Anchored file diverged from ref",
+			Body: `Fires when ref is the checked-out commit, the anchored file exists there, a
+working-tree copy exists too, and git says the two differ. The file the
+reviewer may have read is not the file at ref, so the anchor is reported
+unverified rather than checked against either copy.
+
+It is the one verification check that is not an error by default:
+monotonicity licenses consulting the working tree at all, and monotonicity
+means it can only withhold a verification, never grant one — firing this
+check removes an anchor from verified, never turns a passing document into a
+failing one. An anchor it reports is never line-checked, so a file that has
+only grown since ref does not also fail anchor-line-out-of-range.
+
+Clear it by committing what was reviewed, so ref and the working tree agree
+again, or by naming a ref that already contains it — git stash create makes a
+real commit object without touching HEAD or the index. Under
+--require-verification this is a cause it fires on;
+--warn-only=anchor-worktree-diverged demotes only this gap.`,
+			Related: []string{"anchor-file-missing", "anchor-line-out-of-range", "verification-required"},
+		},
 	}
 }

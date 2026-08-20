@@ -935,7 +935,7 @@ nothing measures is a limit that erodes.
 | `schema --annotated` | 5,000 | Rare; codegen only |
 | `validate`, clean | 80 | Every attempt |
 | `validate`, clean, no repository | 140 | Common; not a rare edge case |
-| `validate`, clean, N anchors unverified (dirty checkout) | 80 + 60 per unverified anchor | Common in a live checkout; not yet measured, but the shape is the same as a diagnostic — a check name, a comment, and a reason — so it reuses that cost |
+| `validate`, clean, N anchors unverified (dirty checkout) | 80 + 60 per unverified anchor | Common in a live checkout; measured, not guessed, at about 50 tokens per anchor — the shape is the same as a diagnostic, a check name, a comment, and a reason, and the ceiling keeps that cost's headroom |
 | `validate`, per diagnostic | 60 | Every failed attempt |
 | `reviews` | 60 + 150 per row | Rare; only where a store is used |
 | `reviews --failed` | 60 + 120 per row | Rare; diagnosing a reviewing agent |
@@ -973,7 +973,9 @@ dirty checkout costs real content too, and for a related reason: an
 unverified anchor is real content the fully-clean in-repository case never
 has to print either, one `verification.unverified` entry per anchor a
 diverged file kept from being checked ([§5.2](#52-the-result-object)). That
-is the dirty-checkout row above.
+is the dirty-checkout row above, measured at about 50 tokens per anchor —
+inside the 60-token ceiling reused from the diagnostic cost, because the
+entry's shape is the same one: a check name, a comment, and a reason.
 
 A profile's body is unbudgeted, like `reviews --content` and for the same
 reason: it is content the caller wrote, and a ceiling on it would be this tool

@@ -21,6 +21,9 @@ var _ gitRunner = &gitRunnerMock{}
 //			runFunc: func(ctx context.Context, args ...string) ([]byte, error) {
 //				panic("mock out the run method")
 //			},
+//			worktreeDivergedFunc: func(ctx context.Context, ref string, path string) (bool, error) {
+//				panic("mock out the worktreeDiverged method")
+//			},
 //		}
 //
 //		// use mockedgitRunner in code that requires gitRunner
@@ -31,6 +34,9 @@ type gitRunnerMock struct {
 	// runFunc mocks the run method.
 	runFunc func(ctx context.Context, args ...string) ([]byte, error)
 
+	// worktreeDivergedFunc mocks the worktreeDiverged method.
+	worktreeDivergedFunc func(ctx context.Context, ref string, path string) (bool, error)
+
 	// calls tracks calls to the methods.
 	calls struct {
 		// run holds details about calls to the run method.
@@ -40,8 +46,18 @@ type gitRunnerMock struct {
 			// Args is the args argument value.
 			Args []string
 		}
+		// worktreeDiverged holds details about calls to the worktreeDiverged method.
+		worktreeDiverged []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Ref is the ref argument value.
+			Ref string
+			// Path is the path argument value.
+			Path string
+		}
 	}
-	lockrun sync.RWMutex
+	lockrun              sync.RWMutex
+	lockworktreeDiverged sync.RWMutex
 }
 
 // run calls runFunc.
@@ -77,5 +93,45 @@ func (mock *gitRunnerMock) runCalls() []struct {
 	mock.lockrun.RLock()
 	calls = mock.calls.run
 	mock.lockrun.RUnlock()
+	return calls
+}
+
+// worktreeDiverged calls worktreeDivergedFunc.
+func (mock *gitRunnerMock) worktreeDiverged(ctx context.Context, ref string, path string) (bool, error) {
+	if mock.worktreeDivergedFunc == nil {
+		panic("gitRunnerMock.worktreeDivergedFunc: method is nil but gitRunner.worktreeDiverged was just called")
+	}
+	callInfo := struct {
+		Ctx  context.Context
+		Ref  string
+		Path string
+	}{
+		Ctx:  ctx,
+		Ref:  ref,
+		Path: path,
+	}
+	mock.lockworktreeDiverged.Lock()
+	mock.calls.worktreeDiverged = append(mock.calls.worktreeDiverged, callInfo)
+	mock.lockworktreeDiverged.Unlock()
+	return mock.worktreeDivergedFunc(ctx, ref, path)
+}
+
+// worktreeDivergedCalls gets all the calls that were made to worktreeDiverged.
+// Check the length with:
+//
+//	len(mockedgitRunner.worktreeDivergedCalls())
+func (mock *gitRunnerMock) worktreeDivergedCalls() []struct {
+	Ctx  context.Context
+	Ref  string
+	Path string
+} {
+	var calls []struct {
+		Ctx  context.Context
+		Ref  string
+		Path string
+	}
+	mock.lockworktreeDiverged.RLock()
+	calls = mock.calls.worktreeDiverged
+	mock.lockworktreeDiverged.RUnlock()
 	return calls
 }

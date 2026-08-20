@@ -30,10 +30,22 @@ type jsonResult struct {
 }
 
 type jsonVerification struct {
-	Source   string `json:"source"`
-	Reason   string `json:"reason,omitempty"`
-	Anchors  int    `json:"anchors"`
-	Verified int    `json:"verified"`
+	Source     string           `json:"source"`
+	Reason     string           `json:"reason,omitempty"`
+	Anchors    int              `json:"anchors"`
+	Verified   int              `json:"verified"`
+	Unverified []jsonUnverified `json:"unverified,omitempty"`
+}
+
+// jsonUnverified is one anchor a diverged working tree kept from being
+// checked. It carries the same shape a diagnostic does, minus severity: the
+// outcome is a fact about verification's coverage, not a finding about the
+// review.
+type jsonUnverified struct {
+	Name    string `json:"name"`
+	Comment string `json:"comment,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Message string `json:"message"`
 }
 
 type jsonCounts struct {
@@ -70,6 +82,21 @@ func groupSkipped(skipped []review.Skipped) []jsonSkipped {
 	return out
 }
 
+// jsonUnverifiedList converts the unverified anchors, or nil when there are
+// none: omitempty on the field above already drops it either way, but a nil
+// slice makes that the one representation rather than two that happen to
+// render alike.
+func jsonUnverifiedList(unverified []review.Unverified) []jsonUnverified {
+	if len(unverified) == 0 {
+		return nil
+	}
+	out := make([]jsonUnverified, 0, len(unverified))
+	for _, u := range unverified {
+		out = append(out, jsonUnverified{Name: u.Name, Comment: u.Comment, Path: u.Path, Message: u.Message})
+	}
+	return out
+}
+
 type jsonDiagnostic struct {
 	Severity string `json:"severity"`
 	Name     string `json:"name"`
@@ -84,10 +111,11 @@ func (j *JSON) Result(w io.Writer, result *review.Result) error {
 		Valid:  result.Valid,
 		Strict: result.Strict,
 		Verification: jsonVerification{
-			Source:   result.Verification.Source,
-			Reason:   result.Verification.Reason,
-			Anchors:  result.Verification.Anchors,
-			Verified: result.Verification.Verified,
+			Source:     result.Verification.Source,
+			Reason:     result.Verification.Reason,
+			Anchors:    result.Verification.Anchors,
+			Verified:   result.Verification.Verified,
+			Unverified: jsonUnverifiedList(result.Verification.Unverified),
 		},
 		Counts: jsonCounts{
 			Comments:   result.Comments,
