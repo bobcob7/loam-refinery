@@ -22,6 +22,7 @@ generate: tools
 tools:
 	GOBIN=$(GOBIN) go install github.com/matryer/moq
 	GOBIN=$(GOBIN) go install mvdan.cc/gofumpt
+	GOBIN=$(GOBIN) go install github.com/sqlc-dev/sqlc/cmd/sqlc
 
 clean:
 	rm -rf $(BIN)

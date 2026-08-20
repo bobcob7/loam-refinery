@@ -6,5 +6,6 @@ package tools
 
 import (
 	_ "github.com/matryer/moq"
+	_ "github.com/sqlc-dev/sqlc/cmd/sqlc"
 	_ "mvdan.cc/gofumpt"
 )
