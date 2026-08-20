@@ -92,6 +92,12 @@ func TestRunDispatches(t *testing.T) {
 	}
 }
 
+func TestExitToolIsTheReservedToolErrorBand(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, 101, ExitTool)
+	assert.NotEqual(t, ExitUsage, ExitTool, "a caller-typed mistake must not share a code with a machine failure")
+}
+
 func TestDescribeResolvesLenses(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

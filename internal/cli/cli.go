@@ -19,6 +19,15 @@ const (
 	ExitValid   = 0
 	ExitInvalid = 1
 	ExitUsage   = 2
+	// ExitTool marks the tool-error band: the tool's own state could not be
+	// read or written, and neither revising the review nor fixing the
+	// command line will help. It covers a config file that could not be
+	// read or parsed, a store that could not be created or written, and a
+	// store directory that could not be read. Everything the caller typed
+	// still exits ExitUsage; ExitTool is for what the caller did not type.
+	// Codes 102-125 are reserved for finer distinctions within the same
+	// band and are unassigned today.
+	ExitTool = 101
 )
 
 // Build is what version reports.
