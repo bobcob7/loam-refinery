@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"io"
@@ -155,6 +156,7 @@ func runValidate(t *testing.T, dir, source string) (string, int) {
 	app := New(
 		validate.New(structural.New(mustValidator(t), quietLog()), advisory.New(quietLog(), advisory.All()),
 			validate.NewGitFinder(quietLog()), quietLog()),
+		noopStore(t),
 		realRegistry(t),
 		render.NewJSON(),
 		CheckNames{},
@@ -195,6 +197,14 @@ func resolvableRefDir(t *testing.T) (string, string) {
 
 func quietLog() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }
 
+// noopStore stands in for documentStore wherever a test drives validate but
+// is not exercising storing itself: no test here should touch a real config
+// file or a real database on disk.
+func noopStore(t *testing.T) *documentStoreMock {
+	t.Helper()
+	return &documentStoreMock{SaveFunc: func(context.Context, StoreInput) error { return nil }}
+}
+
 func mustValidator(t *testing.T) *schema.Validator {
 	t.Helper()
 	v, err := schema.NewValidator()
@@ -207,6 +217,7 @@ func runReal(t *testing.T, args ...string) string {
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 	app := New(
 		&documentValidatorMock{},
+		noopStore(t),
 		realRegistry(t),
 		render.NewJSON(),
 		CheckNames{},

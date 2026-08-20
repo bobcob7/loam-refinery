@@ -420,3 +420,75 @@ func (mock *entryRegistryMock) ResolveCalls() []struct {
 	mock.lockResolve.RUnlock()
 	return calls
 }
+
+// Ensure, that documentStoreMock does implement documentStore.
+// If this is not the case, regenerate this file with moq.
+var _ documentStore = &documentStoreMock{}
+
+// documentStoreMock is a mock implementation of documentStore.
+//
+//	func TestSomethingThatUsesdocumentStore(t *testing.T) {
+//
+//		// make and configure a mocked documentStore
+//		mockeddocumentStore := &documentStoreMock{
+//			SaveFunc: func(ctx context.Context, in StoreInput) error {
+//				panic("mock out the Save method")
+//			},
+//		}
+//
+//		// use mockeddocumentStore in code that requires documentStore
+//		// and then make assertions.
+//
+//	}
+type documentStoreMock struct {
+	// SaveFunc mocks the Save method.
+	SaveFunc func(ctx context.Context, in StoreInput) error
+
+	// calls tracks calls to the methods.
+	calls struct {
+		// Save holds details about calls to the Save method.
+		Save []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// In is the in argument value.
+			In StoreInput
+		}
+	}
+	lockSave sync.RWMutex
+}
+
+// Save calls SaveFunc.
+func (mock *documentStoreMock) Save(ctx context.Context, in StoreInput) error {
+	if mock.SaveFunc == nil {
+		panic("documentStoreMock.SaveFunc: method is nil but documentStore.Save was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+		In  StoreInput
+	}{
+		Ctx: ctx,
+		In:  in,
+	}
+	mock.lockSave.Lock()
+	mock.calls.Save = append(mock.calls.Save, callInfo)
+	mock.lockSave.Unlock()
+	return mock.SaveFunc(ctx, in)
+}
+
+// SaveCalls gets all the calls that were made to Save.
+// Check the length with:
+//
+//	len(mockeddocumentStore.SaveCalls())
+func (mock *documentStoreMock) SaveCalls() []struct {
+	Ctx context.Context
+	In  StoreInput
+} {
+	var calls []struct {
+		Ctx context.Context
+		In  StoreInput
+	}
+	mock.lockSave.RLock()
+	calls = mock.calls.Save
+	mock.lockSave.RUnlock()
+	return calls
+}

@@ -61,6 +61,14 @@ func (a *App) validate(ctx context.Context, args []string) int {
 		}
 		result = a.unparseable(err, *strict)
 	}
+	// Storing happens before rendering, and its failure preempts rendering
+	// entirely: a store that could not be established, written, or recorded
+	// to exits ExitTool with nothing on stdout (docs/config.md §5.1), and an
+	// object printed first would already have said something.
+	if err := a.store.Save(ctx, a.storeInput(source, result)); err != nil {
+		a.fail(err)
+		return ExitTool
+	}
 	if err := a.renderer.Result(a.stdout, result); err != nil {
 		a.fail(err)
 		return ExitUsage
@@ -69,6 +77,36 @@ func (a *App) validate(ctx context.Context, args []string) int {
 		return ExitValid
 	}
 	return ExitInvalid
+}
+
+// storeInput builds what documentStore needs to place and record this run
+// (docs/config.md §5). Ref and Verdict are not on result — re-parsing source
+// is what reads them, which is cheap and safe because Parse is pure: it
+// already succeeded once inside the validator for every result reaching
+// this call, or it fails again the same way and leaves both empty.
+func (a *App) storeInput(source []byte, result *review.Result) StoreInput {
+	in := StoreInput{
+		Dir:           a.dir,
+		Source:        source,
+		Valid:         result.Valid,
+		Comments:      result.Comments,
+		Errors:        result.Errors(),
+		Advisories:    result.Advisories(),
+		Skipped:       len(result.Skipped),
+		ToolVersion:   a.build.Version,
+		SchemaVersion: a.build.Schema,
+	}
+	doc, err := review.Parse(source)
+	if err != nil {
+		return in
+	}
+	if doc.Ref.OK {
+		in.Ref = doc.Ref.Value
+	}
+	if doc.Verdict.OK {
+		in.Verdict = doc.Verdict.Value
+	}
+	return in
 }
 
 // checkDocumentUnparseable is the check this diagnostic reports under. It is

@@ -48,6 +48,7 @@ type CheckNames struct {
 // App holds the wired dependencies for one process.
 type App struct {
 	validator  documentValidator
+	store      documentStore
 	registry   entryRegistry
 	renderer   renderer
 	names      CheckNames
@@ -63,6 +64,7 @@ type App struct {
 // New wires an App. Everything it needs is passed in; nothing is package state.
 func New(
 	validator documentValidator,
+	store documentStore,
 	registry entryRegistry,
 	structured renderer,
 	names CheckNames,
@@ -75,6 +77,7 @@ func New(
 ) *App {
 	return &App{
 		validator:  validator,
+		store:      store,
 		registry:   registry,
 		renderer:   structured,
 		names:      names,
