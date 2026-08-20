@@ -53,6 +53,76 @@ func TestResolveLocations_HomeVarWinsOverXDG(t *testing.T) {
 	assert.Equal(t, root, loc.defaultStorePath)
 }
 
+func TestProfilesDir_Defaults(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("LOAM_REFINERY_HOME", "")
+	dir, err := ProfilesDir()
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(home, ".config", "loam-refinery", "profiles"), dir)
+	_, statErr := os.Stat(dir)
+	assert.True(t, os.IsNotExist(statErr), "ProfilesDir must not create the directory")
+}
+
+func TestProfilesDir_XDGConfigHome(t *testing.T) {
+	home := t.TempDir()
+	configHome := filepath.Join(home, "xdg-config")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("LOAM_REFINERY_HOME", "")
+	dir, err := ProfilesDir()
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(configHome, "loam-refinery", "profiles"), dir)
+}
+
+// TestProfilesDir_HomeVarCollapses sets XDG_CONFIG_HOME to a real,
+// different directory rather than clearing it: with XDG_CONFIG_HOME empty,
+// LOAM_REFINERY_HOME losing precedence would fall through to the same HOME
+// default XDG resolves to anyway, and the test would pass for the wrong
+// reason. A genuinely competing XDG_CONFIG_HOME makes the assertion
+// actually pin precedence (refinery-emv.11).
+func TestProfilesDir_HomeVarCollapses(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "x")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("LOAM_REFINERY_HOME", root)
+	dir, err := ProfilesDir()
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "profiles"), dir)
+}
+
+// TestProfilesDir_ErrorPropagatesFromResolveLocations exercises
+// ProfilesDir's error return (refinery-emv.11): with no LOAM_REFINERY_HOME,
+// no XDG_CONFIG_HOME, and no HOME, resolveLocations cannot find a home
+// directory to fall back to, and that error must reach the caller.
+func TestProfilesDir_ErrorPropagatesFromResolveLocations(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("LOAM_REFINERY_HOME", "")
+	_, err := ProfilesDir()
+	assert.Error(t, err)
+}
+
+func TestProfilesDir_MalformedConfigFileDoesNotFail(t *testing.T) {
+	home := t.TempDir()
+	configDir := filepath.Join(home, "cfg")
+	require.NoError(t, os.MkdirAll(filepath.Join(configDir, "loam-refinery"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "loam-refinery", "config.json"), []byte("not json"), 0o600))
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("LOAM_REFINERY_HOME", "")
+	dir, err := ProfilesDir()
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(configDir, "loam-refinery", "profiles"), dir)
+}
+
 func TestLoad_MissingFileYieldsDefaults(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -75,6 +75,22 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// ProfilesDir returns the reviewer-profile directory (docs/config.md §2):
+// <config dir>/profiles, honoring XDG_CONFIG_HOME and LOAM_REFINERY_HOME the
+// same way the config file's own location does. Profiles have no
+// config-file counterpart - no key names or enables the directory - so this
+// resolves from the environment alone and never touches config.json: a
+// config file that cannot be parsed must not stop prime --profile from
+// working (docs/cli.md §2.1.1). Nothing is created; a missing directory is
+// prime's to report, not this package's to fix.
+func ProfilesDir() (string, error) {
+	loc, err := resolveLocations()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(loc.configPath), "profiles"), nil
+}
+
 // defaultsFile is the exact contents written on first use (docs/config.md
 // §2.2): version and store.enabled, spelled out, and nothing else.
 // store.path and store.repos are omitted deliberately — writing the
