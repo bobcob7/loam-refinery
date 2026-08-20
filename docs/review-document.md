@@ -1,6 +1,6 @@
 # The review document
 
-Format specification. Version 0.1 (draft).
+Format specification. Version 0.2 (draft).
 
 For the tool that reads and checks these documents, see [cli.md](cli.md).
 

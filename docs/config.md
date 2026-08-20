@@ -1,6 +1,6 @@
 # Configuration and the review store
 
-Tool specification. Version 0.1 (draft).
+Tool specification. Version 0.2 (draft).
 
 Companion to [cli.md](cli.md), which specifies the commands, and
 [review-document.md](review-document.md), which specifies the format they read.

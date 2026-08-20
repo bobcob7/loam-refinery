@@ -1,6 +1,6 @@
 # The loam-refinery CLI
 
-Tool specification. Version 0.1 (draft).
+Tool specification. Version 0.2 (draft).
 
 For the format this tool reads, see [review-document.md](review-document.md).
 For where settings and stored reviews live, see [config.md](config.md).
