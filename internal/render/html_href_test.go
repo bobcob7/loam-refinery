@@ -10,13 +10,11 @@ package render
 import (
 	"bytes"
 	"html/template"
-	"strings"
 	"testing"
 
 	"github.com/bobcob7/loam-refinery/internal/collect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/html"
 )
 
 // TestFragmentHrefQualifierForms pins §8.2's two worked examples: a
@@ -81,22 +79,19 @@ func TestFragmentHrefRejectsNonQualifiedID(t *testing.T) {
 	}
 }
 
-// TestFragmentHrefCannotBeReachedFromReviewerProse is the forgery test
-// docs/features/html-report.md §2.2.1 calls for at this bead's altitude:
-// a fixture whose Body, Summary, Pros, Cons, and suggestion text each
-// carry an HTML metacharacter, a quote, a <script> element, and a
-// javascript: URL, rendered through the real HTML renderer end to end.
-// It parses the output with golang.org/x/net/html — never a string
-// match, per §2.2.1 — and asserts by property: the document still
-// parses, carries no <script> element born from that content, and the
-// href on the one qualified, well-formed comment id in the fixture still
-// resolves to the literal fragment §8.2 specifies. This is the model
-// TestAnAuthoredValueCannotForgeOutput (render_test.go) sets for the
-// JSON renderer, applied to the one escaping bypass this format has.
-func TestFragmentHrefCannotBeReachedFromReviewerProse(t *testing.T) {
-	t.Parallel()
-	hostile := `<script>alert(1)</script> "FORGED" javascript:alert(1)`
-	envelope := CollectReviewsEnvelope{
+// hostileFindingEnvelope builds a fixture whose Body, anchor file, and
+// every suggestion field carry an HTML metacharacter, a quote, a
+// <script> element, and a javascript: URL — the fixture
+// TestFragmentHrefCannotBeReachedFromReviewerProse and
+// TestHostileFixtureNeverAltersTheStaticScript share. ID stays a single,
+// well-formed, profile-qualified id: comment ids are validated upstream
+// of this renderer (review-document.md §11.1's id-unique and
+// profile-format checks), the same "safe by construction" category §4
+// and §8.3 give profile and id, so a fixture that put attacker bytes
+// there instead would be testing a precondition this renderer already
+// assumes, not this bead's own escaping discipline.
+func hostileFindingEnvelope(hostile string) CollectReviewsEnvelope {
+	return CollectReviewsEnvelope{
 		Ref: "10974f70",
 		Result: &collect.Result{
 			Comments: []collect.Comment{{
@@ -114,62 +109,63 @@ func TestFragmentHrefCannotBeReachedFromReviewerProse(t *testing.T) {
 			}},
 		},
 	}
-	var buf bytes.Buffer
-	require.NoError(t, NewHTML().CollectReviews(&buf, envelope))
-	output := buf.String()
-	assert.NotContains(t, output, "<script>alert(1)</script>", "the reviewer's own script element must never survive unescaped")
-	doc, err := html.Parse(strings.NewReader(output))
-	require.NoError(t, err, "the page must still parse as HTML even though every free-text field is hostile")
-	assert.Zero(t, countInjectedScripts(doc), "no <script> element originates from reviewer-authored content")
-	assert.Equal(t, `#backend:dropped-context-1`, findHref(doc, "backend:dropped-context-1"), "the one well-formed id in the fixture still resolves to its literal fragment")
 }
 
-// countInjectedScripts walks doc and counts every <script> element whose
-// text content is not empty — the only <script> this renderer ever ships
-// on its own is report.js's static, content-free define (§5.1), so any
-// non-empty one in a hostile fixture's output would be attacker content
-// that escaped its context.
-func countInjectedScripts(n *html.Node) int {
-	count := 0
-	if n.Type == html.ElementNode && n.Data == "script" {
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type == html.TextNode && strings.TrimSpace(c.Data) != "" {
-				count++
-				break
-			}
-		}
-	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		count += countInjectedScripts(c)
-	}
-	return count
+// TestFragmentHrefCannotBeReachedFromReviewerProse is the forgery test
+// docs/features/html-report.md §2.2.1 calls for at this bead's altitude:
+// a fixture whose Body, summary, pros, cons, and anchor file each carry
+// an HTML metacharacter, a quote, a <script> element, and a javascript:
+// URL, rendered through the real HTML renderer end to end. It parses the
+// output with golang.org/x/net/html — never a string match, per §2.2.1
+// — and asserts by property: the document still parses, and the href on
+// the one qualified, well-formed comment id in the fixture still
+// resolves to the literal fragment §8.2 specifies. This is the model
+// TestAnAuthoredValueCannotForgeOutput (render_test.go) sets for the
+// JSON renderer, applied to the one escaping bypass this format has.
+//
+// What this test does not itself assert about the page's <script>
+// element is deliberate: bead .6 landed the inline script §5 requires
+// after this test was first written, so "no <script> element anywhere
+// in the output" stopped being the right property the moment a
+// legitimate, content-free one started shipping with every page.
+// TestHostileFixtureNeverAltersTheStaticScript, below, is this file's
+// half of that updated property — coordinated with, not duplicating,
+// bead .6's own TestScriptBytesAreIdenticalAcrossWildlyDifferentFixtures
+// (html_script_test.go), which already pins that the script's bytes
+// never vary between two very different but non-adversarial fixtures.
+// That test does not exercise a fixture built specifically to inject
+// into the script; this one does.
+func TestFragmentHrefCannotBeReachedFromReviewerProse(t *testing.T) {
+	t.Parallel()
+	hostile := `<script>alert(1)</script> "FORGED" javascript:alert(1)`
+	rendered, doc := renderHTML(t, hostileFindingEnvelope(hostile))
+	assert.NotContains(t, rendered, "<script>alert(1)</script>", "the reviewer's own script element must never survive unescaped")
+	chips := htmlNodesWithClass(doc, "finding-id")
+	require.Len(t, chips, 1)
+	assert.Equal(t, `#backend:dropped-context-1`, findingAttr(chips[0], "href"), "the one well-formed id in the fixture still resolves to its literal fragment")
 }
 
-// findHref returns the href attribute of the first <a> element in doc
-// whose text content equals text, or "" if none matches.
-func findHref(n *html.Node, text string) string {
-	if n.Type == html.ElementNode && n.Data == "a" && anchorText(n) == text {
-		for _, attr := range n.Attr {
-			if attr.Key == "href" {
-				return attr.Val
-			}
-		}
+// TestHostileFixtureNeverAltersTheStaticScript is this file's half of
+// the property TestFragmentHrefCannotBeReachedFromReviewerProse used to
+// pin alone, before bead .6's inline script made "the page ships no
+// script at all" stop being true. The distinction that still matters is
+// between the one known, static script (§5.1) and anything else: a
+// hostile Body, anchor file, or suggestion field must never grow a
+// second <script> element, and must never inject text into the one that
+// already ships. This is deliberately narrower than
+// TestScriptBytesAreIdenticalAcrossWildlyDifferentFixtures
+// (html_script_test.go), which already pins the script's bytes constant
+// across two very different, but non-adversarial, fixtures — that
+// property does not, on its own, rule out a fixture built specifically
+// to try to break into the script rather than merely differ from it.
+func TestHostileFixtureNeverAltersTheStaticScript(t *testing.T) {
+	t.Parallel()
+	hostile := `<script>alert(1)</script> "FORGED" javascript:alert(1)`
+	_, doc := renderHTML(t, hostileFindingEnvelope(hostile))
+	scripts := scriptElements(doc)
+	require.Len(t, scripts, 1, "a hostile fixture must still ship exactly the one static <script> element (§5.1) — never a second one forged from reviewer content")
+	content := findingText(scripts[0])
+	for _, token := range []string{hostile, "alert(1)", "FORGED", "javascript:alert(1)", "<script>"} {
+		assert.NotContains(t, content, token, "the static script's content must never carry reviewer-authored text")
 	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if href := findHref(c, text); href != "" {
-			return href
-		}
-	}
-	return ""
-}
-
-// anchorText returns n's own direct text-node content, concatenated.
-func anchorText(n *html.Node) string {
-	var sb strings.Builder
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.TextNode {
-			sb.WriteString(c.Data)
-		}
-	}
-	return sb.String()
 }
