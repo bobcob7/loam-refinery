@@ -73,21 +73,23 @@ reported as skipped rather than answered.`,
 			Meta: review.Check{
 				Name:    "assessment-priority-mismatch",
 				Tier:    review.TierAdvisory,
-				Summary: "assessment is strong/sound with a priority 7+ comment, or weak with nothing above the optional band",
+				Summary: "assessment is strong/sound with a priority 4+ comment, or weak with nothing above the optional band",
 				Title:   "Assessment out of step with priority",
 				Body: `Fires in either direction when the grade and the priorities describe
-different reviews. strong or sound with a comment at priority 7 or above
-claims nothing serious was found — sound gets the same test as strong,
-since it is the default a miscalibrated reviewer reaches for. weak with
-nothing above priority 3, or no comments at all, claims significant
-concerns while backing it with nothing.
+different reviews. The four levels are ordinal (docs/review-document.md
+section 3): sound's own anchor puts every comment at priority 1-3, so a
+priority 4+ comment already breaks sound's claim. strong inherits that
+floor instead of a separate one — its anchor adds a nameable instance on
+top of sound's, not a relaxation of it. weak with nothing above priority
+3, or no comments at all, claims significant concerns while backing it
+with nothing.
 
-Same defect from opposite ends: assessment and priority describe the same
-findings, and when they disagree one is wrong about the document's own
-contents. An over-harsh weak is not the safer failure — it makes the field
-as useless as an all-strong reviewer does.
+Same defect from opposite ends: assessment and priority describe one
+review, and when they disagree one is wrong about it. An over-harsh weak
+is not the safer failure — it makes the field as useless as an all-strong
+reviewer does.
 
-  strong/sound + priority 9  -> mixed
+  strong/sound + priority 6  -> mixed
   weak + every comment 1-3   -> sound
 
 Never compares assessment to verdict — weak+comment and mixed+approve stay
@@ -206,24 +208,23 @@ func priorityFlat(doc *review.Document) ([]review.Diagnostic, []review.Skipped) 
 		fmt.Sprintf("all %s are priority %d; the scale is not being used", plural(len(doc.Comments), "comment"), first))}, nil
 }
 
-// assessmentSeriousFloor is the priority at which a finding counts as
-// "serious" for assessment-priority-mismatch's strong direction: the
-// ShouldFix and MustFix bands internal/collect's Severity computes (commit
-// cd1f914) — 7-8 should fix before merge, a real defect; 9-10 must fix
-// before merge.
-const assessmentSeriousFloor = 7
-
-// assessmentAboveOptionalFloor is the priority at which a finding counts as
-// more than "low-priority notes" for the weak direction: the WorthFixing
-// band and up, i.e. anything that is not merely Optional (1-3).
-const assessmentAboveOptionalFloor = 4
+// assessmentOptionalBandFloor is the priority at which a finding leaves
+// sound's own anchor (docs/review-document.md section 3: "any comments
+// filed sit in the optional band, priority 1-3") — the WorthFixing band
+// and up, anything that is not merely Optional. The four levels are
+// ordinal: strong's claim is sound's claim plus a nameable instance, so it
+// shares this floor rather than a floor of its own, and weak's claim of
+// "nothing above the optional band" is answered by the same number from
+// the other direction.
+const assessmentOptionalBandFloor = 4
 
 // assessmentPriorityMismatch fires when a document's assessment and its own
 // filed priorities describe different reviews. It never fires when
 // assessment is absent, and it never reasons about verdict. strong and sound
-// share one priority test — both claim nothing serious was found — and weak
-// has the other; mixed carries no priority claim in its anchor and passes
-// through untouched.
+// share one priority floor by the ordinal rule above — sound's own anchor
+// sets it, strong inherits it — and weak is tested against the same floor
+// from the other direction; mixed carries no priority claim in its anchor
+// and passes through untouched.
 func assessmentPriorityMismatch(doc *review.Document) ([]review.Diagnostic, []review.Skipped) {
 	if !doc.Assessment.OK {
 		return nil, nil
@@ -262,13 +263,14 @@ func worstUsableComment(doc *review.Document) (int, review.Comment, bool) {
 	return worst, worstComment, found
 }
 
-// claimsNothingSeriousFound handles strong and sound alike: both anchors
-// (docs/review-document.md section 3) say the same thing about seriousness —
-// strong because it is better than it had to be, sound because nothing was
-// distinctive in either direction — and disagree with a priority 7+ finding
-// the same way.
+// claimsNothingSeriousFound handles strong and sound alike, not because
+// their anchors (docs/review-document.md section 3) make the same claim —
+// strong's names no seriousness bound at all — but because the ordinal
+// rule makes strong's claim sound's claim plus a nameable instance: strong
+// inherits sound's floor rather than needing one of its own, and both
+// disagree with a finding at or above it the same way.
 func claimsNothingSeriousFound(assessment string, worst int, comment review.Comment, found bool) []review.Diagnostic {
-	if !found || worst < assessmentSeriousFloor {
+	if !found || worst < assessmentOptionalBandFloor {
 		return nil
 	}
 	return []review.Diagnostic{diagnostic("assessment-priority-mismatch", comment, comment.Path+"/priority",
@@ -276,7 +278,7 @@ func claimsNothingSeriousFound(assessment string, worst int, comment review.Comm
 }
 
 func weakWithNothingSerious(worst int, found bool) []review.Diagnostic {
-	if found && worst >= assessmentAboveOptionalFloor {
+	if found && worst >= assessmentOptionalBandFloor {
 		return nil
 	}
 	message := "assessment is weak but the review files no comments; weak claims significant concerns"

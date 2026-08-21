@@ -217,10 +217,12 @@ func TestAssessmentPriorityMismatchFixturesFireBothDirections(t *testing.T) {
 }
 
 // TestAssessmentPriorityMismatchSoundFixturesFireBothPolarities proves sound
-// gets exactly strong's test: a priority-9 finding fires the same as strong
-// would, naming "sound" rather than a hardcoded "strong" in the message, and
-// a review whose comments sit entirely in the optional band — sound's own
-// documented anchor (docs/review-document.md section 3) — stays silent.
+// gets exactly strong's floor — strong inherits it from sound by the ordinal
+// rule, not the other way around: a priority-9 finding fires the same as
+// strong would, naming "sound" rather than a hardcoded "strong" in the
+// message, and a review whose comments sit entirely in the optional band —
+// sound's own documented anchor (docs/review-document.md section 3) — stays
+// silent.
 func TestAssessmentPriorityMismatchSoundFixturesFireBothPolarities(t *testing.T) {
 	t.Parallel()
 	diagnostics, skipped := run(t, "assessment-priority-mismatch-sound.json")
@@ -254,9 +256,11 @@ func TestAssessmentPriorityMismatchStaysSilentOnCoherentWeakPlusComment(t *testi
 
 // TestAssessmentPriorityMismatch covers the boundaries and the cases that
 // must stay silent regardless of what the fixtures above show: the check
-// never reasons about verdict, strong and sound share one priority test,
-// mixed carries none at all, and an absent assessment has made no claim to
-// be inconsistent with.
+// never reasons about verdict, strong and sound share one priority floor —
+// sound's own anchor sets it at 4, strong inherits it by the ordinal rule
+// (docs/review-document.md section 3) rather than getting a seriousness
+// claim of its own — mixed carries none at all, and an absent assessment
+// has made no claim to be inconsistent with.
 func TestAssessmentPriorityMismatch(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -268,9 +272,13 @@ func TestAssessmentPriorityMismatch(t *testing.T) {
 	}{
 		{name: "strong with a must-fix finding fires", verdict: "request_changes", assessment: "strong", priorities: []int{9}, fires: true},
 		{name: "strong with a should-fix finding fires", verdict: "comment", assessment: "strong", priorities: []int{2, 7}, fires: true},
-		{name: "strong with only worth-fixing findings stays silent", verdict: "comment", assessment: "strong", priorities: []int{5, 6}, fires: false},
+		{name: "strong with a worth-fixing finding fires — inherits sound's floor by the ordinal rule", verdict: "comment", assessment: "strong", priorities: []int{5, 6}, fires: true},
+		{name: "strong at the floor (priority 4) fires", verdict: "comment", assessment: "strong", priorities: []int{4}, fires: true},
+		{name: "strong with only optional findings stays silent", verdict: "comment", assessment: "strong", priorities: []int{1, 3}, fires: false},
 		{name: "sound with a must-fix finding fires — the default gets strong's test", verdict: "comment", assessment: "sound", priorities: []int{9}, fires: true},
 		{name: "sound with a should-fix finding fires", verdict: "comment", assessment: "sound", priorities: []int{2, 7}, fires: true},
+		{name: "sound with a worth-fixing finding fires — the case its own anchor rules out", verdict: "comment", assessment: "sound", priorities: []int{6}, fires: true},
+		{name: "sound at the floor (priority 4) fires", verdict: "comment", assessment: "sound", priorities: []int{4}, fires: true},
 		{name: "sound with only optional findings stays silent — its own documented anchor", verdict: "approve", assessment: "sound", priorities: []int{1, 3}, fires: false},
 		{name: "sound with no comments stays silent", verdict: "approve", assessment: "sound", priorities: nil, fires: false},
 		{name: "weak with no comments fires", verdict: "comment", assessment: "weak", priorities: nil, fires: true},

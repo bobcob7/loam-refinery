@@ -7,7 +7,7 @@ root
   ref         40-char lowercase commit SHA; required, read by every anchor
   profile     kebab-case name; optional, for collect-reviews attribution
   comments    array; empty only when verdict is approve
-  assessment  strong | sound | mixed | weak; optional, quality grade orthogonal to verdict
+  assessment  strong | sound | mixed | weak; optional, ordinal quality grade orthogonal to verdict
 
 comment
   id           kebab slug + number, e.g. missing-context-2; unique

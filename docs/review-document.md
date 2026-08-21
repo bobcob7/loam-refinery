@@ -109,6 +109,15 @@ without needing to know what any other reviewer said:
 | `mixed` | Works, with reservations worth reading. | At least one reservation that does not survive being compressed into `summary` — something a reader who saw only the verdict would have to open a comment to learn. If the reservation fits in one sentence, it is probably not `mixed`. |
 | `weak` | Significant concerns, blocking or not. | At least one finding serious enough that the reviewer would raise it regardless of this review's own verdict — a concern that is true of the code itself, not contingent on whether this particular review is the one blocking the merge. |
 
+**The levels are ordinal.** Each level's claim implies the bar the level
+below it sets, plus its own addition — `strong` means everything `sound`
+means, plus a nameable thing that exceeds what the change needed. That is
+what grounds the soft check in [§11.3](#113-advisory-checks--soft): `sound`'s
+anchor already puts every comment in the optional band, so the check's
+floor is that anchor's own priority 4, and `strong` is held to the same
+floor by inheritance rather than by a seriousness claim of its own — its
+anchor makes none.
+
 Orthogonal means literally that: neither axis constrains the other, and the
 combinations that look contradictory at a glance are exactly what the field
 exists to make expressible. `weak` paired with `comment` is coherent — serious
@@ -662,8 +671,8 @@ least one of them is wrong about the review's own contents. Saying so is not
 overriding a judgment call — there is no call being second-guessed, only an
 internal inconsistency being pointed out. So a soft advisory compares
 `assessment` against the priorities the reviewer itself filed, in both
-directions: a `strong` review that also files a finding the reviewer rated
-serious, or a `weak` review backed by nothing above the optional band, is a
+directions: a `strong` or `sound` review that also files a finding above
+the optional band, or a `weak` review backed by nothing above it, is a
 document telling two stories about the same change. This relationship stops at
 `priority` — it still says nothing about `verdict`, and never will, which is
 what keeps `weak` paired with `comment` and `mixed` paired with `approve`
@@ -695,7 +704,7 @@ findings — it is just no longer the only voice in the room.
 | --- | --- |
 | `priority-category-convention` | A `testing`, `maintainability`, `documentation`, or `style` comment filed at priority 9–10 — claiming the change must not merge. Conventionally those categories stay below the blocking band ([§8.1](#81-priority-and-category)). |
 | `priority-flat` | Four or more comments all at the same priority. Suggests the scale was not used. |
-| `assessment-priority-mismatch` | `assessment` `strong` or `sound` with a comment at priority ≥ 7, or `assessment` `weak` with nothing above priority 3 (or no comments at all). `sound` gets the same test as `strong` — it is the default a miscalibrated reviewer reaches for. The grade and the reviewer's own priorities describe different reviews. Never compares `assessment` to `verdict`; silent when `assessment` is absent, and `mixed` carries no priority test. |
+| `assessment-priority-mismatch` | `assessment` `strong` or `sound` with a comment at priority ≥ 4, or `assessment` `weak` with nothing above priority 3 (or no comments at all). `sound`'s own anchor sets that floor ([§3](#3-root-object), priority 1–3); `strong` shares it by the ordinal rule rather than a seriousness claim of its own. The grade and the reviewer's own priorities describe different reviews. Never compares `assessment` to `verdict`; silent when `assessment` is absent, and `mixed` carries no priority test. |
 | `duplicate-anchor` | Two comments anchor the identical `file`, `line`, and `end_line`. Often one finding filed twice; if deliberate, consider one comment with two suggestions. |
 | `duplicate-body` | Two comments have identical bodies after normalization. |
 | `comment-flood` | More than 25 comments. Feedback at this volume is not actionable. |

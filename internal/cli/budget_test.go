@@ -43,14 +43,15 @@ func approxTokens(text string) int {
 func TestCommandsStayWithinBudget(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name   string
-		args   []string
-		golden string
-		budget int
+		name       string
+		args       []string
+		golden     string
+		budget     int
+		wantTokens int
 	}{
 		{name: "prime", args: []string{"prime"}, golden: "prime.txt", budget: 250},
-		{name: "describe", args: []string{"describe"}, golden: "describe.txt", budget: 850},
-		{name: "describe --list", args: []string{"describe", "--list"}, golden: "list.txt", budget: 380},
+		{name: "describe", args: []string{"describe"}, golden: "describe.txt", budget: 850, wantTokens: 768},
+		{name: "describe --list", args: []string{"describe", "--list"}, golden: "list.txt", budget: 380, wantTokens: 276},
 		{name: "schema", args: []string{"schema"}, budget: 1100},
 		{name: "schema --annotated", args: []string{"schema", "--annotated"}, budget: 5000},
 	}
@@ -60,6 +61,14 @@ func TestCommandsStayWithinBudget(t *testing.T) {
 			out := runReal(t, test.args...)
 			assert.LessOrEqual(t, approxTokens(out), test.budget,
 				"%s costs about %d tokens; its ceiling is %d", test.name, approxTokens(out), test.budget)
+			if test.wantTokens != 0 {
+				// docs/cli.md §6.1 quotes this command's measured size and its
+				// headroom against the ceiling above. Pinned exactly, not just
+				// bounded, so a field that grows this output fails here instead
+				// of only leaving those quoted numbers silently wrong.
+				assert.Equal(t, test.wantTokens, approxTokens(out),
+					"%s's measured size changed; update docs/cli.md §6.1's figure for it together with this pin", test.name)
+			}
 			if test.golden != "" {
 				goldenFile(t, test.golden, out)
 			}

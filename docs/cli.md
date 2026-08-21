@@ -1260,12 +1260,25 @@ the `"index"` array by hand: each group's `"names"` renders as a single
 inline JSON array instead of one element per line. Nothing else in either
 command's output changed shape — no field, check, or topic lost a lens, and
 `describe --lens=NAME`, `schema`, and every other command still go through
-the shared encoder untouched. Measured after the change: plain `describe`
-is 728 of its 850-token ceiling and `describe --list` is 264 of its 380 —
-122 and 116 tokens of headroom, in place of the four characters and two
-tokens either used to have. [§8](#8-future-considerations)'s `assessment`
-field and `kb:*` namespace both land inside this room now instead of
-forcing an immediate ceiling raise.
+the shared encoder untouched. Measured right after the reformat, before
+`assessment` existed: plain `describe` was 728 of its 850-token ceiling and
+`describe --list` was 264 of its 380 — 122 and 116 tokens of headroom, in
+place of the four characters and two tokens either used to have.
+
+The `assessment` field ([review-document.md §3](review-document.md#3-root-object))
+and `assessment-priority-mismatch`, the check that flags a grade
+disagreeing with the priorities the same review filed, have both landed
+since and both spent some of that room: `describe` now measures 768 of 850
+and `describe --list` measures 276 of 380 — 82 and 104 tokens of headroom.
+Unlike the rest of this table, these two figures are not just bounded below
+their ceiling: `internal/cli/budget_test.go`'s `TestCommandsStayWithinBudget`
+pins them exactly, the same way it already pins clean `submit-review`'s own
+token count, so the next field that grows either command's output fails
+that assertion instead of silently eating into headroom this paragraph
+never gets told to update. `kb:*`'s namespace ([§8](#8-future-considerations))
+still has room to land inside — how much depends on whatever else lands
+first — and whoever adds it re-measures rather than trusting this figure to
+still be current.
 
 **`topic:collect-reviews` measured its own row before it was added, per the
 policy above, and fit — at the time.** `describe --list` stood at 372 of 380
@@ -1508,12 +1521,17 @@ Deliberately deferred, recorded so the design leaves room for them.
   budget tests apply to `kb:*` from its first entry. `describe --list`'s own
   ceiling ([§6.1](#61-budgets)) once had little room to grow into — 372, then
   378, of 380 — but refinery-dbk.4's index reformat there recovered real
-  headroom without raising the ceiling, so `describe --list` now measures 264
-  of 380: 116 tokens, not 2. A `kb:*` rollout registering more than a handful
-  of entries at once should still measure itself against the ceiling at the
-  time rather than assume this headroom is permanent — the field and check
-  namespaces grow too, on their own schedule — but it is no longer the tight
-  fit this paragraph used to describe.
+  headroom without raising the ceiling. `assessment` and
+  `assessment-priority-mismatch` have since spent some of that room back:
+  as of the commit adding the second of them, `describe --list` measures
+  276 of 380, 104 tokens of headroom — see [§6.1](#61-budgets) for the
+  current figure, pinned there by a test rather than repeated here as a
+  number this paragraph would have to remember to keep current. A `kb:*`
+  rollout registering more than a handful of entries at once should still
+  measure itself against the ceiling at the time rather than assume
+  whatever headroom is quoted in §6.1 is permanent — the field and check
+  namespaces grow too, on their own schedule — but it is no longer the
+  tight fit this paragraph used to describe.
 
   A project-supplied knowledge base — conventions read from the repository rather
   than compiled into the binary — is the obvious follow-on and would be another
