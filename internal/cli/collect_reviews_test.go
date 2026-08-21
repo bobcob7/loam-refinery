@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -70,15 +72,26 @@ const repo122 = "github.com/bobcob7/loam-refinery"
 
 // setCollectReviewsStore configures mock in place (rather than replacing
 // h.reviews wholesale) so every test can keep using the harness newHarness
-// already wired into h.app. digests is read in the given order; content
-// supplies each digest's stored bytes, keyed by digest, absent for a digest
-// this test wants to report as unreadable.
+// already wired into h.app. digests is read in the given order and doubles
+// as the label content is keyed by; a label with no entry in content is
+// stored under itself as a digest that ReadContent will refuse, exercising
+// "missing" rather than "present". A label with a content entry is stored
+// under that content's real SHA-256 (store.Digest) rather than the label
+// itself, since collectReader.ReadReview now verifies bytes against the
+// digest they are filed under (refinery-qs2) — a label like "digest-a"
+// would fail that check even for a deliberately well-formed fixture.
 func setCollectReviewsStore(t *testing.T, mock *reviewStoreMock, repo, ref string, known, storeEnabled bool, digests []string, content map[string]string) {
 	t.Helper()
 	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	rows := make([]store.DigestRow, 0, len(digests))
-	for i, d := range digests {
-		rows = append(rows, store.DigestRow{Digest: d, At: at.Add(time.Duration(i) * time.Hour)})
+	byPath := map[string][]byte{}
+	for i, label := range digests {
+		digest := label
+		if body, ok := content[label]; ok {
+			digest = store.Digest([]byte(body))
+			byPath["/store/"+digest+".json"] = []byte(body)
+		}
+		rows = append(rows, store.DigestRow{Digest: digest, At: at.Add(time.Duration(i) * time.Hour)})
 	}
 	mock.RepoNameFunc = func(context.Context, string) (string, bool, error) { return repo, true, nil }
 	mock.KnownFunc = func(_ context.Context, gotRepo string) (bool, error) {
@@ -95,16 +108,11 @@ func setCollectReviewsStore(t *testing.T, mock *reviewStoreMock, repo, ref strin
 		return "/store/" + digest + ".json", nil
 	}
 	mock.ReadContentFunc = func(path string) ([]byte, error) {
-		for _, d := range digests {
-			if path == "/store/"+d+".json" {
-				body, ok := content[d]
-				if !ok {
-					return nil, errors.New("no content for digest " + d)
-				}
-				return []byte(body), nil
-			}
+		body, ok := byPath[path]
+		if !ok {
+			return nil, errors.New("unexpected path " + path)
 		}
-		return nil, errors.New("unexpected path " + path)
+		return body, nil
 	}
 }
 
@@ -320,6 +328,77 @@ func TestCollectReviews_UnreadableFileIsCountedNotDropped(t *testing.T) {
 	submissions, ok := got["submissions"].([]any)
 	require.True(t, ok)
 	require.Len(t, submissions, 1, "the one readable submission still appears")
+}
+
+// TestCollectReviews_DigestMismatchIsCountedUnreadableNotSurfaced pins
+// refinery-qs2's read-time check at the full-command level: a stored file
+// whose bytes do not hash to the digest it is filed under gets the same
+// skip-and-count treatment as a missing file (config.md §6.3) rather than
+// being parsed and projected as though it were trustworthy — the envelope
+// alone cannot (and is not meant to) tell a caller which of the two
+// happened; TestCollectReader_DigestMismatch below pins the log line that
+// lets an operator tell them apart instead. Mutation this kills: removing
+// collectReader.ReadReview's digest comparison entirely would parse
+// tamperedDigest's content and surface it as a normal submission, leaving
+// unreadable: 0 and total/submissions counts one higher than this test
+// asserts.
+func TestCollectReviews_DigestMismatchIsCountedUnreadableNotSurfaced(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	body := submissionA(t)
+	const tamperedDigest = "not-the-real-digest"
+	require.NotEqual(t, store.Digest([]byte(body)), tamperedDigest, "fixture must actually mismatch")
+	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	h.reviews.RepoNameFunc = func(context.Context, string) (string, bool, error) { return "some/repo", true, nil }
+	h.reviews.KnownFunc = func(context.Context, string) (bool, error) { return true, nil }
+	h.reviews.StoreEnabledFunc = func(context.Context) (bool, error) { return true, nil }
+	h.reviews.DistinctDigestsFunc = func(context.Context, string, string) ([]store.DigestRow, error) {
+		return []store.DigestRow{{Digest: tamperedDigest, At: at}}, nil
+	}
+	h.reviews.ReviewPathFunc = func(_ context.Context, _, _, digest string) (string, error) {
+		return "/store/" + digest + ".json", nil
+	}
+	h.reviews.ReadContentFunc = func(string) ([]byte, error) { return []byte(body), nil }
+	setHeadCheckStub(h.headChecker, "none", false, nil)
+	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + testRef, "--repo=some/repo"})
+	require.Equal(t, ExitValid, code, h.stderr.String())
+	got := asObject(t, h.stdout.String())
+	assert.Equal(t, float64(1), got["total"])
+	assert.Equal(t, float64(1), got["unreadable"], "a digest mismatch is skipped and counted, the same as a missing file")
+	assert.Empty(t, got["submissions"], "tampered content must never reach the output as a submission")
+}
+
+// TestCollectReader_DigestMismatch pins collectReader.ReadReview directly
+// (refinery-qs2's acceptance criteria: an operator must be able to tell
+// "file missing" from "file present and not what it claims to be"), below
+// the level TestCollectReviews_DigestMismatchIsCountedUnreadableNotSurfaced
+// exercises the same defect at: the returned error must wrap
+// errDigestMismatch specifically, not any error ReadContent could also
+// produce, and it must be logged — distinctly from a plain read failure —
+// so the two stay tellable apart outside the envelope, which reports both
+// identically. Mutation this kills: collectReader.ReadReview returning
+// ReadContent's result unchecked would make this pass with a nil error
+// instead of one wrapping errDigestMismatch, and would log nothing.
+func TestCollectReader_DigestMismatch(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"ref":"x"}`)
+	const claimedDigest = "not-the-real-digest"
+	require.NotEqual(t, store.Digest(body), claimedDigest, "fixture must actually mismatch")
+	mock := &reviewStoreMock{
+		ReviewPathFunc: func(_ context.Context, _, _, digest string) (string, error) {
+			return "/store/" + digest + ".json", nil
+		},
+		ReadContentFunc: func(string) ([]byte, error) { return body, nil },
+	}
+	var logs bytes.Buffer
+	reader := &collectReader{store: mock, repo: "some/repo", ref: testRef, log: slog.New(slog.NewTextHandler(&logs, nil))}
+	data, err := reader.ReadReview(t.Context(), claimedDigest)
+	assert.Nil(t, data)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errDigestMismatch)
+	logged := logs.String()
+	assert.Contains(t, logged, "does not match its digest")
+	assert.Contains(t, logged, claimedDigest)
 }
 
 // TestCollectReviews_ReviewPathFailureExitsToolNotUnreadable pins the

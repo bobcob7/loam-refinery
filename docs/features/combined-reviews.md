@@ -1316,10 +1316,14 @@ the *repository*, not the ref.
 unlike `reviews`'s default index, which answers entirely from the database
 ([../config.md §6](../config.md#6-reading-the-store)) — so it inherits the
 content-reading contract [../config.md §6.3](../config.md#63-missing-and-foreign-files)
-already specifies for `reviews --content`: a deleted or corrupted file is
-**skipped and counted**, not fatal, in `unreadable` on the envelope — see
+already specifies for `reviews --content`: a deleted, unreadable, or
+digest-mismatched file — bytes read back that no longer hash to the digest
+they are filed under — is **skipped and counted**, not fatal, in
+`unreadable` on the envelope — see
 [../config.md §6.3](../config.md#63-missing-and-foreign-files) for why
-`unreadable` is always present here rather than only under `--content`.
+`unreadable` is always present here rather than only under `--content`, and
+for why the two causes get identical envelope treatment while still being
+told apart in this run's own logs.
 
 **`store.enabled: false` does not gate this command, and reporting it is
 not the same thing as gating on it.** The flag

@@ -1328,18 +1328,42 @@ reads content — it has no index-only rung, unlike `reviews` — so
 missing, rather than appearing only when `--content` was asked for.
 
 Verifying each file against the digest that names it was specified in an earlier
-draft and is not here. Content addressing makes tampering *detectable* — a
-review file whose bytes no longer hash to its own name has been altered — but
-re-hashing every file a caller reads is machinery this command does not need
-yet, and [§8](#8-future-considerations) is where it waits.
+draft and was not here — for `--content`, that is still the case: re-hashing
+every file a human-driven `reviews --content` reads is machinery that query
+does not need, and [§8](#8-future-considerations) is where it still waits.
+
+**`collect-reviews` is a narrower exception.** Content
+addressing makes tampering *detectable* — a review file whose bytes no longer
+hash to its own name has been altered — but detectable is not the same as
+detected, and `collect-reviews`'s own scenario is the one where that gap
+matters: N reviewer agents running as one user against one store means a
+compromised co-resident agent can write to the same 0700 tree every other
+agent's output is read back from. A forged file there would otherwise be
+parsed and projected with none of `submit-review`'s own structural or schema
+checks re-run against it — worse, re-running those checks would not even
+help, since a forged document can be built to pass them; only comparing
+against the digest the file is filed under confirms these are the bytes that
+actually passed them when written. So `collect-reviews` now verifies: the
+digest it already asked `DistinctDigests` for is compared against
+`store.Digest` of the bytes `ReadContent` returns
+([internal/cli/collect_reviews.go](../internal/cli/collect_reviews.go)), and a
+mismatch is skipped and counted into `unreadable`, the identical treatment a
+missing file gets — a corrupt store entry is the tool's own state, not a fact
+about any review, so it earns no louder a response than "could not be read"
+does. It is logged distinctly from a plain read failure, so an operator
+watching this run's logs, unlike a caller reading only the envelope, can still
+tell "file missing" from "file present and not what it claims to be."
+`reviews --content` does not gain this check here — it is a person's own
+query against their own store, not the multi-agent path this check exists
+for — and stays exactly the deferred case above.
 
 A rejected file is a partial exception to what a mismatch means: it is not
 necessarily tampering, because a file over 1 MiB is truncated to its first
 megabyte by design while its name still names the full input
 ([§4.4.1](#441-rejected-inputs)). The same hash-against-name check that would
 catch tampering doubles as the only signal that a rejected file was truncated
-rather than kept whole — and this command runs it no more for that than it
-does for the reviews tree above.
+rather than kept whole — and neither `reviews --content` nor `collect-reviews`
+(which never reads the rejected tree) runs it for that.
 
 Files in a tree that no row accounts for are ignored entirely rather than
 counted: the litter editors and backup tools leave behind, and the file of a run
@@ -1403,9 +1427,10 @@ Deliberately deferred, recorded so the design leaves room for them.
 - **Querying by ref prefix.** `--ref` takes the full SHA
   ([§6](#6-reading-the-store)); resolving a unique prefix is the first
   convenience to add if querying by hand becomes common.
-- **Verifying stored files against their digests.** Content addressing makes
-  tampering detectable; nothing checks for it yet
-  ([§6.3](#63-missing-and-foreign-files)).
+- **Verifying `reviews --content` against its digest.** `collect-reviews`
+  gained this check ([§6.3](#63-missing-and-foreign-files)); a human-driven
+  `reviews --content` still has not, since it is not the multi-agent-one-store
+  path the check exists for.
 - **Run analytics.** `reviews --failed` lists; it does not summarize. The
   questions the run log exists to answer — which checks this agent trips most,
   whether that is improving, how a prompt change moved the numbers — want

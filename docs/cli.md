@@ -1220,6 +1220,40 @@ Only `describe` default and `--list` scale with registry size, which is why the
 default summary is specified as a fixed shape rather than a walk of everything
 registered.
 
+**Some topic entries run close to their 350-token ceiling by now, not by
+accident.** `topic:store`, `topic:tiers`, and `topic:verification` exist to
+carry a small number of load-bearing facts that do not belong on any one
+check's own lens, and each has already been trimmed of boilerplate once to
+fit those facts under the ceiling — one of the three currently measures
+exactly 350. A future edit to any of them that goes red is not, by itself,
+evidence that 350 is wrong: the response is to trim prose elsewhere in the
+same entry first, the same trade the entry has already made once, and treat
+the ceiling as the hard boundary it is stated to be above rather than a
+target with slack behind it. Splitting a topic in two remains available when
+trimming genuinely cannot fit the next fact in, but it is not free — it costs
+a lens name and a row in `describe --list`, whose own headroom is thin (see
+below) — so it is the second thing tried, not the first. Raising the
+per-entry ceiling is likewise available, but only deliberately, with the
+reason stated in the same change that raises it; done reflexively on
+contact with a red test, it is the one response this section exists to rule
+out, since a limit raised the first time it bites is a limit that never bit.
+
+**`describe --list` has little room left, and two things already planned
+spend it.** [§8](#8-future-considerations) anticipates a `kb:*` namespace
+registering entries through the same provider mechanism this registry
+already uses, and `internal/entry/schema.go` generates one `field:*` entry
+per schema property, so any future field the review document gains lands in
+this index too, unasked. The index is already close to its minimal shape —
+one namespace label plus a bare list of names, no descriptions — so there is
+little slack to recover by making it terser without changing what it is.
+The honest default, then, is the same one clean `submit-review` gets when a
+result field is genuinely new: raise the ceiling deliberately, in the same
+change that adds the field or namespace pushing past it, stating how many
+tokens the addition cost and why. Reaching for a terser shape instead is
+worth doing only once raising the ceiling has happened more than once for
+the same reason — a pattern, not a single addition — since restructuring the
+index is a larger change than any one field justifies on its own.
+
 ### 6.2 Why progressive disclosure
 
 The obvious design is one command that prints the whole contract. Priced out

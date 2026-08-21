@@ -4,12 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/bobcob7/loam-refinery/internal/collect"
 	"github.com/bobcob7/loam-refinery/internal/render"
 	"github.com/bobcob7/loam-refinery/internal/review"
 	"github.com/bobcob7/loam-refinery/internal/store"
 )
+
+// errDigestMismatch marks a stored review whose bytes do not hash to the
+// digest they are filed under (refinery-qs2). Content addressing
+// (docs/config.md §4.4) makes this detectable in the first place; checking
+// for it is what makes it detected. It is stronger than re-running
+// submit-review's own structural and schema checks against the bytes read
+// back — a mismatch means these are not the bytes that passed those checks,
+// which no amount of re-validating the bytes actually present can fix, so
+// this package checks identity instead of re-deriving validity.
+var errDigestMismatch = errors.New("stored content does not match its digest")
 
 const collectReviewsUsage = `usage: loam-refinery collect-reviews --ref=SHA [--repo=NAME] [--format=json|markdown]
 `
@@ -84,7 +95,7 @@ func (a *App) collectReviewsRun(ctx context.Context, repo, ref, format string) i
 		a.fail(err)
 		return ExitTool
 	}
-	reader := &collectReader{store: a.reviewStore, repo: repo, ref: ref}
+	reader := &collectReader{store: a.reviewStore, repo: repo, ref: ref, log: a.log}
 	result, err := collect.Assemble(ctx, toCollectDigests(digests), reader)
 	if err != nil {
 		a.fail(err)
@@ -165,14 +176,32 @@ type collectReader struct {
 	// collectReviewsRun checks it once Assemble returns and fails the run
 	// with the real cause instead.
 	pathErr error
+	// log records what Assemble's own error return cannot: a digest
+	// mismatch and a missing file both become the identical
+	// skip-and-count against Result.Unreadable (refinery-qs2's own
+	// instinct — a corrupt store entry is the tool's own state, not
+	// something about the review, so it gets the same treatment a review
+	// that never made it to the store gets), but an operator watching this
+	// run's logs must still be able to tell "file missing" from "file
+	// present and not what it claims to be" — one is routine, the other is
+	// the store having been written to outside submit-review's checks. nil
+	// is valid and simply skips logging, so tests that build a
+	// collectReader directly need not supply one.
+	log *slog.Logger
 }
 
 // ReadReview implements internal/collect's reader. A ReadContent failure —
-// a missing or corrupted stored file — is exactly what Assemble's reader
-// contract expects: reported through the returned error, skipped and
-// counted against Result.Unreadable. A ReviewPath failure is not: it is
-// recorded on pathErr rather than left for Assemble to count, since
-// collectReviewsRun treats it as the tool failure it is.
+// a missing file — is exactly what Assemble's reader contract expects:
+// reported through the returned error, skipped and counted against
+// Result.Unreadable. So is a digest mismatch, checked here against the
+// digest Assemble is asking for by name (config.md §4.4: the filename is
+// the digest, so verifying is comparing content already in hand against a
+// value already in hand, not a second read or a second store call) — but
+// logged first, distinctly from a plain read failure, so the two remain
+// tellable apart outside the envelope itself (refinery-qs2). A ReviewPath
+// failure is not treated as either: it is recorded on pathErr rather than
+// left for Assemble to count, since collectReviewsRun treats it as the tool
+// failure it is.
 func (r *collectReader) ReadReview(ctx context.Context, digest string) ([]byte, error) {
 	path, err := r.store.ReviewPath(ctx, r.repo, r.ref, digest)
 	if err != nil {
@@ -181,7 +210,17 @@ func (r *collectReader) ReadReview(ctx context.Context, digest string) ([]byte, 
 		}
 		return nil, err
 	}
-	return r.store.ReadContent(path)
+	data, err := r.store.ReadContent(path)
+	if err != nil {
+		return nil, err
+	}
+	if actual := store.Digest(data); actual != digest {
+		if r.log != nil {
+			r.log.Warn("stored review does not match its digest", "repo", r.repo, "ref", r.ref, "path", path, "want_digest", digest, "got_digest", actual)
+		}
+		return nil, fmt.Errorf("%s: %w", path, errDigestMismatch)
+	}
+	return data, nil
 }
 
 // collectHeadCheck answers §4.3's head_check question for the whole
