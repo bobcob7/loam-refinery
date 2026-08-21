@@ -5,7 +5,7 @@ import "github.com/bobcob7/loam-refinery/internal/review"
 // Checks returns the verification check registry: anchor claims checked against
 // the repository. They run whenever one is found, are reported as skipped when
 // none is, and cannot be disabled or demoted — every verification failure is
-// unconditional (docs/features/combined-reviews.md §3.3).
+// unconditional (docs/cli.md §3).
 func Checks() []review.Check {
 	return []review.Check{
 		{

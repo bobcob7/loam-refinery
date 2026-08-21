@@ -260,8 +260,7 @@ a flag. It is named explicitly in the rejected-key message rather than being
 reported as unknown, so the caller learns where it went. A key named
 `disable`, `warn_only`, or `require_verification` is simply unknown — those
 are not flags a caller mistook for config keys, they are names this tool used
-to accept and no longer does anywhere
-([docs/features/combined-reviews.md §3.3](features/combined-reviews.md#33-no-disable-no-warn-only)).
+to accept and no longer does anywhere ([cli.md §3](cli.md#3-flags)).
 
 The reason is the one this format is built around. A document's validity is a
 property of the document, and the moment a file in someone's home directory can
@@ -857,11 +856,16 @@ migrate what is on disk, and `PRAGMA user_version`
 ([§4.5.4](#454-sqlc)) is what makes that orderly.
 
 The supported way to read a store is `loam-refinery reviews`
-([§6](#6-reading-the-store)). That command's *output* is the contract; what sits
-behind it is not. Opening `store.db` with `sqlite3` to answer a question nobody
-built a flag for is expected and fine — that is much of why it is SQL — but a
-script that depends on a column name is a script a migration will break, and it
-will not be warned first.
+([§6](#6-reading-the-store)) and, for one ref across submissions,
+`loam-refinery collect-reviews`
+([docs/features/combined-reviews.md](features/combined-reviews.md)). Both
+read through this package's query layer — `DistinctDigests`, `ReviewPath`,
+`ReadContent` — never the layout directly, and it is those commands'
+*output* that is the contract; what sits behind either of them is not.
+Opening `store.db` with `sqlite3` to answer a question nobody built a flag
+for is expected and fine — that is much of why it is SQL — but a script that
+depends on a column name is a script a migration will break, and it will not
+be warned first.
 
 This is deliberately weaker than every other promise in these specifications.
 Check names are API; lens names are API; the result object is API. The store is
@@ -1316,6 +1320,12 @@ its `path` values are computed addresses rather than verified ones and no
 `unreadable` count appears. That asymmetry is the price of listings that do not
 slow down as a store grows, and a caller that needs certainty asks for the
 content.
+
+`loam-refinery collect-reviews`
+([docs/features/combined-reviews.md](features/combined-reviews.md)) always
+reads content — it has no index-only rung, unlike `reviews` — so
+`unreadable` is always present on its envelope, `0` when nothing was
+missing, rather than appearing only when `--content` was asked for.
 
 Verifying each file against the digest that names it was specified in an earlier
 draft and is not here. Content addressing makes tampering *detectable* — a

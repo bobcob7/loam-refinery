@@ -55,8 +55,7 @@ func TestReviewsFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
 // TestSubmitReviewFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's
 // table for submit-review: --strict alone. refinery-uyb.5 dropped
 // --warn-only, --disable, and --require-verification (docs/cli.md §2.3.1,
-// §3; docs/features/combined-reviews.md §3.3, "No disable, no warn-only");
-// refinery-uyb.4 dropped --format, the flag's only remaining companion
+// §3); refinery-uyb.4 dropped --format, the flag's only remaining companion
 // (docs/cli.md §5.1, "--format exists where there is a format to
 // choose").
 func TestSubmitReviewFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {

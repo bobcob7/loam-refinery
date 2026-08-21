@@ -68,6 +68,22 @@ non-fatal. See [§11.3](#113-advisory-checks--soft).
 | `comments` | array | yes | Comment objects. May be empty only when `verdict` is `approve`; otherwise at least one. Enforced by the schema — see below. |
 | `profile` | string | no | The reviewer profile ([cli.md §2.1.1](cli.md#211-reviewer-profiles)) this review was written under, if any — the same `NAME` as `prime --profile=NAME`. Caller-authored and unverifiable, like `id`. Shape constrained by `profile-format` ([§11.1](#111-structural-checks--hard)); honesty is not. Read by `loam-refinery collect-reviews` ([features/combined-reviews.md](features/combined-reviews.md)) for attribution. |
 
+**`profile`'s rollout constraint.** `additionalProperties: false` means an
+old binary's copy of this schema rejects any document naming a property it
+does not know. The schema change that adds `profile` therefore has to reach
+every binary an orchestrator might run a reviewer against *before* any
+`prime.txt`, profile file, or prompt teaches a reviewer to emit `profile` at
+all — a new document field reaching an old binary fails the whole
+submission, and the reviewer's contract-correct response is to delete the
+field it does not recognize and resubmit, silently discarding attribution
+for a review that was otherwise sound. The failed run still gets recorded
+and shows up in `reviews --failed` as a false signal that this reviewer
+produced a bad review, rather than as the rollout-ordering problem it
+actually is. This is not unique to `profile` — every future field this
+format adds carries the identical exposure, since weakening
+`additionalProperties: false` would give up the unknown-field protection
+this section exists for.
+
 **`comments` may be empty only for `approve`.** The schema expresses this
 conditionally rather than leaving it to prose:
 
@@ -525,7 +541,7 @@ exit codes, `--strict`, which source of truth it accepts — is
 | `anchor-range-ordered` | `end_line` requires `line` and must be ≥ it. |
 | `anchor-path-safe` | `file` must be relative POSIX, with no leading `/`, no `..` segment, and no backslashes. |
 | `ref-format` | `ref`, where present, matches `^[0-9a-f]{40}$` — a full lowercase commit SHA. Branches, tags, and abbreviated SHAs are rejected. Checkable without a repository. |
-| `profile-format` | `profile`, where present, matches `^[a-z0-9]+(-[a-z0-9]+)*$` — the same grammar [cli.md §2.1.2](cli.md#212-the-profile-file) already defines for the filename a profile resolves to. Checkable without a repository, exactly like `ref-format`. |
+| `profile-format` | `profile`, where present, matches `^[a-z0-9]+(-[a-z0-9]+)*$` — the same grammar [cli.md §2.1.2](cli.md#212-the-profile-file) already defines for the filename a profile resolves to. Checkable without a repository, exactly like `ref-format`. Exists because `collect-reviews`'s qualified-id round trip ([docs/features/combined-reviews.md §6.1](features/combined-reviews.md#61-the-qualified-id)) depends on `profile` never containing a colon. |
 
 See [§11.4](#114-partial-documents) — a structural failure does not stop the
 other tiers from running. `document-unparseable` is the single exception, and
@@ -557,8 +573,7 @@ reviewed state is a commit at all off this tier's own result, and a
 diverged anchor at `ref == HEAD` fails that precondition outright, at its
 own exit code, discarding whatever else this tier found and running before
 the structural and advisory tiers get a turn
-([docs/features/combined-reviews.md
-§3.4](features/combined-reviews.md#34-verification-is-required-to-submit)).
+([cli.md §2.3.1](cli.md#231-verifying-anchors)).
 A working tree moving on does not change whether an anchor *resolves*: a
 ref is an immutable SHA, so later commits cannot affect that. It changes
 whether the anchor gets *checked* at all — which is exactly the state this
