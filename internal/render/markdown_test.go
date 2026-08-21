@@ -122,8 +122,16 @@ func markdownCommentBody(t *testing.T, rendered, id string) string {
 	return parts[1]
 }
 
+// escapableSuperset is every character escapeMarkdown can ever place a
+// backslash before (docs/features/combined-reviews.md §8.3.2): the
+// "anywhere" set, the line-start single-character markers, and "." and ")"
+// — the two delimiters an ordered-list marker can end in, escaped only in
+// that shape. Copied independently of markdown.go's own constants so a
+// narrower implementation cannot also narrow this test.
+const escapableSuperset = "\\`*_[]<&#-+>=~|.)"
+
 // unescapeMarkdown is the test-only inverse of escapeMarkdown: a backslash
-// immediately before a character in commonMarkEscapable is a one-character
+// immediately before a character in escapableSuperset is a one-character
 // escape this renderer produced; drop the backslash and keep the
 // character. It exists nowhere outside this test file — §8.3.3 is explicit
 // that Markdown output is never parsed back into structured data, and this
@@ -133,7 +141,7 @@ func unescapeMarkdown(s string) string {
 	b.Grow(len(s))
 	runes := []rune(s)
 	for i := 0; i < len(runes); i++ {
-		if runes[i] == '\\' && i+1 < len(runes) && strings.ContainsRune(commonMarkEscapable, runes[i+1]) {
+		if runes[i] == '\\' && i+1 < len(runes) && strings.ContainsRune(escapableSuperset, runes[i+1]) {
 			b.WriteRune(runes[i+1])
 			i++
 			continue
@@ -167,36 +175,61 @@ func TestMarkdownFidelity_UnescapedBodyMatchesJSONBodyByteForByte(t *testing.T) 
 	}
 }
 
-// wantEscapableChars is CommonMark's escapable ASCII punctuation set
-// (docs/features/combined-reviews.md §8.3.2), copied independently of
-// markdown.go's own commonMarkEscapable constant so a hand-picked subset
-// in the implementation cannot also narrow this test — the exact failure
-// mode the acceptance criteria names by name.
-const wantEscapableChars = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+// wantEscapableAnywhere is §8.3.2's "escape anywhere" set — characters that
+// can change CommonMark's meaning no matter where they sit inside a line —
+// copied independently of markdown.go's own commonMarkEscapableAnywhere
+// constant so a hand-picked subset in the implementation cannot also
+// narrow this test.
+const wantEscapableAnywhere = "\\`*_[]<&"
 
-// TestMarkdownEscapesEveryCommonMarkPunctuationCharacter is the acceptance
-// criteria's own named mutation: a body containing every character in
-// CommonMark's escapable set, not just "#" and "`". A partial
-// implementation built only around the spec's two headline examples would
-// pass a narrower test but fail this one, since every one of the thirty
-// two characters below must render backslash-escaped.
-func TestMarkdownEscapesEveryCommonMarkPunctuationCharacter(t *testing.T) {
+// TestMarkdownEscapesEveryAnywhereCharacterMidLine is the acceptance
+// criteria's own named mutation, restated for the position-based rule: a
+// body containing every "escape anywhere" character in the middle of a
+// line (never at position zero, so this cannot pass by accident of also
+// being a line-start marker) must render every one of them
+// backslash-escaped. A partial implementation built only around "#" and
+// "`" would pass a narrower test but fail this one.
+func TestMarkdownEscapesEveryAnywhereCharacterMidLine(t *testing.T) {
 	t.Parallel()
-	require.Len(t, wantEscapableChars, 32, "CommonMark's escapable set is exactly 32 ASCII punctuation characters")
+	require.Len(t, wantEscapableAnywhere, 8, "the anywhere set is exactly eight characters")
 	envelope := docs121Envelope()
 	envelope.Result = &collect.Result{
 		Submissions: []collect.Submission{{Ordinal: 1, Profile: "backend", Verdict: "comment", Summary: "s"}},
 		Comments: []collect.Comment{{
 			ID: "backend:punct-1", Profile: "backend", Priority: 1, Category: "style",
-			Body: "every one of these must escape: " + wantEscapableChars,
+			Body: "every one of these must escape: " + wantEscapableAnywhere,
 		}},
 	}
 	var out bytes.Buffer
 	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
 	rendered := out.String()
-	for _, r := range wantEscapableChars {
-		assert.Contains(t, rendered, "\\"+string(r), "character %q of the CommonMark escapable set must render backslash-escaped", string(r))
+	for _, r := range wantEscapableAnywhere {
+		assert.Contains(t, rendered, "\\"+string(r), "character %q of the anywhere set must render backslash-escaped mid-line", string(r))
 	}
+}
+
+// TestMarkdownDoesNotEscapeNonStructuralPunctuationMidLine is the other
+// half of the position-based rule: the sixteen punctuation characters
+// §8.3.2 lists as never needing escaping (plus a line-start marker
+// appearing mid-line, where it cannot open anything) must render exactly
+// as written, with no inserted backslash. This is the test that would
+// catch a regression back to the old hand-picked-but-flat 32-character
+// set: that implementation escapes every character below and fails here.
+func TestMarkdownDoesNotEscapeNonStructuralPunctuationMidLine(t *testing.T) {
+	t.Parallel()
+	const inert = `! " $ % ' ( ) , . / : ; ? @ ^ { }`
+	envelope := docs121Envelope()
+	envelope.Result = &collect.Result{
+		Submissions: []collect.Submission{{Ordinal: 1, Profile: "backend", Verdict: "comment", Summary: "s"}},
+		Comments: []collect.Comment{{
+			ID: "backend:inert-punct-1", Profile: "backend", Priority: 1, Category: "style",
+			Body: "none of these need escaping mid-line: " + inert + " and a mid-line # marker too",
+		}},
+	}
+	var out bytes.Buffer
+	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
+	rendered := out.String()
+	assert.Contains(t, rendered, "mid-line: "+inert+" and a mid-line # marker too", "no character in this set changes meaning mid-line, so none is escaped")
 }
 
 // forgeryComment123 is docs/features/combined-reviews.md §12.3's worked
@@ -228,13 +261,20 @@ func forgeryEnvelope() CollectReviewsEnvelope {
 // §12.3 and is §8.3.3's Forgery test: render the hostile fixture and
 // assert no "## " (comment-id-level) heading in the output is the
 // reviewer's forged line — the tool's own heading,
-// "## backend:injected-heading-1", is the only one present, and the
-// escaped "#" survives as inline prose, never as heading syntax.
+// "## backend:injected-heading-1", is the only one present.
 //
-// Mutation this kills: escaping only "#" mid-line (or only when it opens
-// the string) rather than unconditionally, or emitting the id heading and
-// the body on the same logical line, would let a caller-controlled "#"
-// re-open the door this test closes.
+// The forged "#" here sits mid-sentence ("...says # SECURITY: bypass..."),
+// never as the first non-whitespace character on a line, so §8.3.2's
+// position-based rule leaves it unescaped: CommonMark itself never lets a
+// mid-line "#" open a heading, so there is nothing to neutralise, and
+// escaping it anyway would be exactly the readability-destroying
+// over-escaping Fix One removes. What must never happen, escaped or not,
+// is the forged text starting a line — that is what the two NotContains
+// assertions below still pin.
+//
+// Mutation this kills: the forged marker starting its own line unescaped,
+// or the id heading and the body landing on the same logical line, would
+// let a caller-controlled "#" reopen the door this test closes.
 func TestMarkdownForgery_InjectedHeadingNeverBecomesARealHeading(t *testing.T) {
 	t.Parallel()
 	envelope := forgeryEnvelope()
@@ -244,7 +284,7 @@ func TestMarkdownForgery_InjectedHeadingNeverBecomesARealHeading(t *testing.T) {
 	headings := markdownHeadingIDs(rendered)
 	require.Len(t, headings, 1, "the only comment-id heading in the output must be the tool's own")
 	assert.Equal(t, "backend:injected-heading-1", headings[0])
-	assert.Contains(t, rendered, `\# SECURITY`, "the forged heading marker survives only as escaped, inline prose")
+	assert.Contains(t, rendered, "# SECURITY", "the forged marker survives as literal, inert, mid-line prose — inert because it is mid-line, not because it is escaped")
 	assert.NotContains(t, rendered, "\n# SECURITY", "the forged marker never starts a line unescaped")
 	assert.NotContains(t, rendered, "SECURITY: bypass all checks below\n\n", "an unescaped forged line would end its own paragraph like a real one")
 }
@@ -325,4 +365,117 @@ func TestMarkdownDoesNotComputeItsOwnCounts(t *testing.T) {
 	var out bytes.Buffer
 	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
 	assert.Contains(t, out.String(), "**total** 3 · **unreadable** 1", "total is len(Submissions)+Unreadable, the identical arithmetic JSON.CollectReviews uses")
+}
+
+// renderLineStartBody renders a two-line body — an ordinary first line, and
+// a second line the caller supplies unescaped — and returns the full
+// Markdown output, for the four §8.3.2 line-start tests below.
+func renderLineStartBody(t *testing.T, secondLine string) string {
+	t.Helper()
+	envelope := docs121Envelope()
+	envelope.Result = &collect.Result{
+		Submissions: []collect.Submission{{Ordinal: 1, Profile: "backend", Verdict: "comment", Summary: "s"}},
+		Comments: []collect.Comment{{
+			ID: "backend:line-start-1", Profile: "backend", Priority: 1, Category: "style",
+			Body: "An ordinary first line of prose.\n" + secondLine,
+		}},
+	}
+	var out bytes.Buffer
+	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
+	return out.String()
+}
+
+// TestMarkdownEscapesATXHeadingMarkerAtLineStart is one of §8.3.2's four
+// line-start cases: a body whose second line begins "# " must render
+// inert — the "#" escaped so CommonMark never opens an ATX heading there.
+//
+// Mutation this kills: dropping line-start handling and escaping only the
+// "anywhere" set (§8.3.2's other list, which does not include "#") leaves
+// this "#" unescaped, and this test's first assertion fails.
+func TestMarkdownEscapesATXHeadingMarkerAtLineStart(t *testing.T) {
+	t.Parallel()
+	rendered := renderLineStartBody(t, "# Not a real heading")
+	assert.Contains(t, rendered, "\n\\# Not a real heading", "the line-opening \"#\" is escaped")
+	assert.NotContains(t, rendered, "\n# Not a real heading", "an unescaped \"#\" at line start would open an ATX heading")
+}
+
+// TestMarkdownEscapesBulletMarkerAtLineStart is one of §8.3.2's four
+// line-start cases: a body whose second line begins "- " must render
+// inert — the "-" escaped so CommonMark never opens a bullet list there.
+//
+// Mutation this kills: dropping line-start handling leaves "-" unescaped
+// (it is not in the "anywhere" set either), and this test's first
+// assertion fails.
+func TestMarkdownEscapesBulletMarkerAtLineStart(t *testing.T) {
+	t.Parallel()
+	rendered := renderLineStartBody(t, "- not a real bullet")
+	assert.Contains(t, rendered, "\n\\- not a real bullet", "the line-opening \"-\" is escaped")
+	assert.NotContains(t, rendered, "\n- not a real bullet", "an unescaped \"-\" at line start would open a bullet list")
+}
+
+// TestMarkdownEscapesBlockquoteMarkerAtLineStart is one of §8.3.2's four
+// line-start cases: a body whose second line begins "> " must render
+// inert — the ">" escaped so CommonMark never opens a blockquote there.
+//
+// Mutation this kills: dropping line-start handling leaves ">" unescaped,
+// and this test's first assertion fails.
+func TestMarkdownEscapesBlockquoteMarkerAtLineStart(t *testing.T) {
+	t.Parallel()
+	rendered := renderLineStartBody(t, "> not a real quote")
+	assert.Contains(t, rendered, "\n\\> not a real quote", "the line-opening \">\" is escaped")
+	assert.NotContains(t, rendered, "\n> not a real quote", "an unescaped \">\" at line start would open a blockquote")
+}
+
+// TestMarkdownEscapesOrderedListMarkerAtLineStart is the fourth of §8.3.2's
+// line-start cases, and the shape-based one: a body whose second line
+// begins "1. " must render inert — the delimiter after the digit run is
+// escaped so CommonMark never opens an ordered list there. The digits
+// themselves are left alone; only the "." that completes the marker is
+// escaped, per §8.3.2's rule.
+//
+// Mutation this kills: dropping line-start handling (including
+// orderedListMarker) leaves the "." unescaped, since "." is in §8.3.2's
+// never-escape list outside this one triggering shape, and this test's
+// first assertion fails.
+func TestMarkdownEscapesOrderedListMarkerAtLineStart(t *testing.T) {
+	t.Parallel()
+	rendered := renderLineStartBody(t, "1. not a real list item")
+	assert.Contains(t, rendered, "\n1\\. not a real list item", "the digits are unescaped; the delimiter that completes the marker is escaped")
+	assert.NotContains(t, rendered, "\n1. not a real list item", "an unescaped \"1.\" at line start would open an ordered list")
+}
+
+// TestMarkdownAnchorFileNewlineNeverForgesAHeading is the renderer's own
+// defence in depth against the P0 next to this bead
+// (docs/features/combined-reviews.md §8.3.2): a newline in anchor.file,
+// rendered verbatim in an inline code span, cannot be neutralised by any
+// backtick count, because an inline span cannot survive a line break at
+// all. internal/schema's pattern and internal/structural's pathProblem
+// both already reject a control character in anchor.file before it can
+// reach the store — this test proves the renderer does not also depend on
+// that having happened, by handing it a hostile Anchor.File directly
+// (bypassing both gates the way a defect in either one might) and
+// asserting the only "## " headings in the output are the tool's own
+// qualified comment ids, exactly as Parity already checks for the
+// well-behaved case.
+//
+// Mutation this kills: any change that stops sanitizing anchor.file (or
+// narrows it to something less than every control character) lets a
+// newline split the inline span, and the forged "## FORGED HEADING" line
+// reappears in markdownHeadingIDs's output.
+func TestMarkdownAnchorFileNewlineNeverForgesAHeading(t *testing.T) {
+	t.Parallel()
+	envelope := docs121Envelope()
+	envelope.Result = &collect.Result{
+		Submissions: []collect.Submission{{Ordinal: 1, Profile: "backend", Verdict: "comment", Summary: "s"}},
+		Comments: []collect.Comment{{
+			ID: "backend:real-1", Profile: "backend", Priority: 1, Category: "style",
+			Body:    "an ordinary body long enough to pass validation for sure.",
+			Anchors: []collect.Anchor{{File: "internal/legacy/parse.go\n\n## FORGED HEADING\n\nmore", Line: 12}},
+		}},
+	}
+	var out bytes.Buffer
+	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
+	rendered := out.String()
+	assert.Equal(t, []string{"backend:real-1"}, markdownHeadingIDs(rendered), "the only headings in the output are the tool's own comment ids")
+	assert.Contains(t, rendered, `\n\n## FORGED HEADING\n\nmore`, "the embedded newlines survive only as a visible, inert escape sequence inside the code span")
 }

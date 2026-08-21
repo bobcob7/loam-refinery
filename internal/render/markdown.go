@@ -5,6 +5,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/bobcob7/loam-refinery/internal/collect"
 )
@@ -30,11 +31,18 @@ func NewMarkdown() *Markdown {
 	return &Markdown{}
 }
 
-// commonMarkEscapable is CommonMark's full ASCII-punctuation escapable set
-// (§8.3.2), copied verbatim rather than hand-picked: escaping only "#" and
-// "`" would leave a narrower forgery still possible through any of the
-// other thirty characters.
-const commonMarkEscapable = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+// commonMarkEscapableAnywhere is the set of characters that can change
+// CommonMark's meaning no matter where they sit inside a line of free text
+// (§8.3.2): inline constructs whose effect does not depend on position.
+const commonMarkEscapableAnywhere = "\\`*_[]<&"
+
+// commonMarkLineStartMarkers is the set of single characters that open a
+// block construct only when they are the first non-whitespace character on
+// a line (§8.3.2): ATX heading, bullet or thematic break, bullet,
+// blockquote, setext underline, fence, table row. A run of digits followed
+// by "." or ")" — the ordered-list marker — is a shape rather than a
+// single character and is handled by orderedListMarker instead.
+const commonMarkLineStartMarkers = "#-+>=~|"
 
 // CollectReviews writes collect-reviews's envelope as Markdown to w.
 func (md *Markdown) CollectReviews(w io.Writer, envelope CollectReviewsEnvelope) error {
@@ -129,17 +137,49 @@ func writeMarkdownSuggestions(b *strings.Builder, suggestions []collect.Suggesti
 // markdownAnchors renders every anchor as one inline code span,
 // "file:line" or "file:line-end_line", joined by ", ". anchor.file is a
 // verbatim field (§8.3.2): the span is never escaped, only fenced, one
-// backtick longer than the longest run already inside it.
+// backtick longer than the longest run already inside it — and, first,
+// run through sanitizeVerbatimSpan, since no fence length can protect an
+// inline span from a line break inside it.
 func markdownAnchors(anchors []collect.Anchor) string {
 	spans := make([]string, 0, len(anchors))
 	for _, a := range anchors {
-		text := a.File + ":" + strconv.Itoa(a.Line)
+		text := sanitizeVerbatimSpan(a.File) + ":" + strconv.Itoa(a.Line)
 		if a.EndLine != nil {
 			text += "-" + strconv.Itoa(*a.EndLine)
 		}
 		spans = append(spans, markdownCodeSpan(text))
 	}
 	return strings.Join(spans, ", ")
+}
+
+// sanitizeVerbatimSpan replaces every control character in s with a visible
+// escape sequence (\n, \r, \t, or \xNN) before the content is wrapped in an
+// inline code span. anchor.file is documented as verbatim — displaying
+// exactly as written — but that guarantee has one exception: an inline
+// code span cannot survive an embedded line break, no matter how long the
+// backtick fence is (this bead's own P0), so a control character is the one
+// thing this field cannot carry through unaltered. internal/schema's
+// pattern and internal/structural's pathProblem both already reject a
+// control character in anchor.file before it ever reaches the store — this
+// is the renderer's own defence in depth, for the case where it did not.
+func sanitizeVerbatimSpan(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case unicode.IsControl(r):
+			fmt.Fprintf(&b, `\x%02x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // markdownCodeSpan wraps content in an inline code span, sized one
@@ -192,22 +232,74 @@ func longestBacktickRun(s string) int {
 	return longest
 }
 
-// escapeMarkdown backslash-escapes every character in commonMarkEscapable,
-// one at a time (§8.3.2) — the treatment every free-text prose field gets:
-// body, summary, suggestion summary, pros, and cons. Structurally-
-// constrained fields (id, profile, ordinal, verdict, category, effort,
-// scope) never pass through this function; their grammars already exclude
-// every character it would touch.
+// escapeMarkdown backslash-escapes free-text prose per §8.3.2's
+// position-based rule: derived from what CommonMark says each character
+// can do, and where, rather than a hand-picked subset of the full
+// escapable set. Characters that can change meaning anywhere in a line
+// (commonMarkEscapableAnywhere) are always escaped; characters that only
+// open a block when they are the first non-whitespace character on a line
+// (commonMarkLineStartMarkers, plus the digit-run-then-"."-or-")"
+// ordered-list marker) are escaped only there. This is the treatment every
+// free-text prose field gets: body, summary, suggestion summary, pros, and
+// cons. Structurally-constrained fields (id, profile, ordinal, verdict,
+// category, effort, scope) never pass through this function; their
+// grammars already exclude every character it would touch.
 func escapeMarkdown(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = escapeMarkdownLine(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// escapeMarkdownLine escapes one line: the anywhere set is escaped at every
+// position, and whatever block-opening construct — if any — begins at the
+// first non-whitespace character is escaped there too.
+func escapeMarkdownLine(line string) string {
+	runes := []rune(line)
+	lead := 0
+	for lead < len(runes) && (runes[lead] == ' ' || runes[lead] == '\t') {
+		lead++
+	}
 	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if strings.ContainsRune(commonMarkEscapable, r) {
+	b.Grow(len(line) + 2)
+	b.WriteString(string(runes[:lead]))
+	i := lead
+	end, delimiter, isOrderedList := orderedListMarker(runes, lead)
+	switch {
+	case isOrderedList:
+		b.WriteString(string(runes[lead:end]))
+		b.WriteByte('\\')
+		b.WriteRune(delimiter)
+		i = end + 1
+	case lead < len(runes) && strings.ContainsRune(commonMarkLineStartMarkers, runes[lead]):
+		b.WriteByte('\\')
+		b.WriteRune(runes[lead])
+		i = lead + 1
+	}
+	for ; i < len(runes); i++ {
+		if strings.ContainsRune(commonMarkEscapableAnywhere, runes[i]) {
 			b.WriteByte('\\')
 		}
-		b.WriteRune(r)
+		b.WriteRune(runes[i])
 	}
 	return b.String()
+}
+
+// orderedListMarker reports whether runes[i:] opens with a run of ASCII
+// digits immediately followed by "." or ")" — the ordered-list marker
+// CommonMark recognises at the start of a line (§8.3.2). end is the index
+// of the delimiter itself, so the caller can write the digits unescaped and
+// the delimiter escaped.
+func orderedListMarker(runes []rune, i int) (end int, delimiter rune, ok bool) {
+	j := i
+	for j < len(runes) && runes[j] >= '0' && runes[j] <= '9' {
+		j++
+	}
+	if j == i || j >= len(runes) || (runes[j] != '.' && runes[j] != ')') {
+		return 0, 0, false
+	}
+	return j, runes[j], true
 }
 
 // escapeMarkdownList escapes and joins a free-text list (pros or cons),

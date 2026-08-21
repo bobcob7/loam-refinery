@@ -142,7 +142,7 @@
           "$comment": "related: line, ref, anchor-path-safe",
           "type": "string",
           "minLength": 1,
-          "pattern": "^[^/\\\\][^\\\\]*$",
+          "pattern": "^[^/\\\\\\n\\r][^\\\\\\n\\r]*$",
           "examples": ["internal/fetch/client.go"]
         },
         "line": {

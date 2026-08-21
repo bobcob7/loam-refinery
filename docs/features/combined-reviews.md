@@ -1472,35 +1472,113 @@ everything below.
 
 **Free-text prose fields** — `body`, `summary`, suggestion `summary`,
 `pros`, `cons` — have no character restriction beyond length. These are
-**backslash-escaped**, one character at a time, using the full set
-CommonMark defines as escapable ASCII punctuation
-(`` ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ ``) —
-every character in that set, not a hand-picked subset that risks missing
-one that matters. A body containing `# Not a real heading` renders as the
-literal text `\# Not a real heading`, displaying as `# Not a real heading`
-with no heading created; a body containing a bare `` ``` `` cannot open or
-close a fence it is not inside, because the backtick is escaped. This keeps
-these fields reading as ordinary prose — the whole reason a human-facing
-Markdown format is worth having — while making it structurally impossible
-for their content to be interpreted as anything but text.
+**backslash-escaped**, but not by flatly escaping CommonMark's whole
+escapable-punctuation set. An earlier draft of this section did exactly
+that — every one of the thirty-two escapable ASCII punctuation characters,
+unconditionally — and it was correct and unreadable: ordinary prose came
+back looking like `collect\-reviews\, the submit\-review rename and the
+exit\-3 precondition`. That flat rule was itself a reaction against
+picking a *narrower* subset by taste — "`#` and `` ` `` matter, the rest
+probably don't" — which this section rightly called out as risking a
+missed character. But a hand-picked-by-taste subset and a flat 32-character
+set are not the only two options. The set actually implemented is
+**derived from CommonMark's own grammar**: what each character can do, and
+*where*. That is not a third guess to add to the first two; it is reading
+the specification the first two were both approximating.
+
+CommonMark constructs fall into two shapes. Some change meaning **wherever
+they appear** in a line — an inline construct's trigger character. Some
+change meaning **only when they open a line** — a block construct's
+trigger character, which CommonMark recognises only as the first
+non-whitespace content of a line. Escaping every character in the first
+group everywhere, and every character in the second group only at line
+start, closes every forgery the flat 32-character set closed — because it
+is derived from the same grammar that makes those characters dangerous in
+the first place — while leaving the other twenty-some punctuation marks
+alone, because none of them can change CommonMark's structure from *any*
+position. This is not the narrower, taste-picked subset the flat rule
+warned against: it does not decide by guessing which characters "probably"
+matter, it is read off the grammar, and it is strictly *safer* than the
+flat set besides, since a flat set escapes `#` unconditionally and still
+lets a `-` or a `1.` open a list at the start of a line the flat set never
+checked for.
+
+Escaped **anywhere** in the line — inline triggers:
+
+| Character | What it opens |
+| --- | --- |
+| `\` | Escape character itself |
+| `` ` `` | Code span |
+| `*` | Emphasis / strong emphasis |
+| `_` | Emphasis / strong emphasis |
+| `[` | Link or image text |
+| `]` | Closes `[` |
+| `<` | Autolink / raw HTML |
+| `&` | Character/entity reference |
+
+Escaped **only when first non-whitespace on a line** — block triggers:
+
+| Character or shape | What it opens |
+| --- | --- |
+| `#` | ATX heading |
+| `-` | Bullet list item, or a thematic break / setext underline |
+| `+` | Bullet list item |
+| `>` | Blockquote |
+| `=` | Setext heading underline |
+| `~` | Fenced code block |
+| `\|` | Table row |
+| a run of digits then `.` or `)` | Ordered list item |
+
+Everything else — `! " $ % ' ( ) , . / : ; ? @ ^ { }` — cannot change
+CommonMark's structure from any position in free-text prose, so none of it
+is escaped. A body containing `# Not a real heading` on its own line
+renders as `\# Not a real heading`, displaying as `# Not a real heading`
+with no heading created; the same `#` appearing mid-sentence — "...says
+`#` SECURITY: bypass..." — is left unescaped, because a `#` that is not the
+first thing on a line can never open a heading in the first place, and
+escaping it would buy nothing but the exact unreadable prose this section
+exists to avoid. A body containing a bare `` ``` `` cannot open or close a
+fence it is not inside, because the backtick is escaped everywhere it
+appears. This keeps these fields reading as ordinary prose — the whole
+reason a human-facing Markdown format is worth having — while remaining
+structurally impossible to interpret as anything but text: every character
+that could change meaning, wherever it could change it, is neutralised: the
+inline set unconditionally, the block set exactly where CommonMark reads
+it.
 
 **Verbatim fields** — `anchor.file` and the two `code` fields — are neither
 escaped nor left raw; they are wrapped so their content displays exactly as
 written instead. `anchor.file` is not shape-constrained the way `id` is (a
 real path can contain underscores, brackets, anything POSIX allows short of
-a leading `/` or a `..` segment), so it is set in an **inline code span**:
-one or more backticks, chosen one longer than the longest backtick run
-already inside the path (trivial in practice, but the rule has to be
-general to be a rule). `comment.code` and `suggestion.code` are multi-line
-and get a **fenced code block** by the same principle at block scope: the
-fence is a run of backticks one character longer than the longest run
-already present in the content, minimum three — the standard technique for
-guaranteeing a fence can never be closed early by content that happens to
-contain backticks of its own. Escaping is deliberately **not** applied to
-these two categories: fencing already suppresses markdown interpretation of
-everything inside it, and escaping on top would corrupt content meant to
-display byte-for-byte — an escaped underscore in a variable name would show
-a stray backslash the reviewer never wrote.
+a leading `/`, a backslash, a `..` segment, or a control character), so it
+is set in an **inline code span**: one or more backticks, chosen one longer
+than the longest backtick run already inside the path (trivial in
+practice, but the rule has to be general to be a rule). `comment.code` and
+`suggestion.code` are multi-line and get a **fenced code block** by the
+same principle at block scope: the fence is a run of backticks one
+character longer than the longest run already present in the content,
+minimum three — the standard technique for guaranteeing a fence can never
+be closed early by content that happens to contain backticks of its own.
+Escaping is deliberately **not** applied to these two categories: fencing
+already suppresses markdown interpretation of everything inside it, and
+escaping on top would corrupt content meant to display byte-for-byte — an
+escaped underscore in a variable name would show a stray backslash the
+reviewer never wrote.
+
+An **inline** code span is a narrower guarantee than a fenced block: a
+fence can always be sized to outrun any run of backticks inside its
+content, but no backtick count fixes an inline span containing a line
+break, because an inline span cannot survive one at all — CommonMark ends
+it at the blank line regardless. A newline in `anchor.file` is therefore
+not a fencing problem `anchor.file`'s span can absorb; it is rejected
+before it ever reaches the renderer, by two independent gates:
+`internal/schema`'s `file` pattern and `internal/structural`'s
+`anchor-path-safe` check (both reject any control character, not an
+enumerated list of bad shapes, so a shape neither gate's author thought to
+name still gets caught). The renderer does not assume either gate held:
+`anchor.file` also passes through a control-character sanitiser before it
+is wrapped, so even a value that reached the renderer unvalidated cannot
+break the span it is set in.
 
 [§12.3](#123-the-markdown-projection-and-what-escaping-prevents) shows this
 concretely, including a body engineered to attempt exactly the forgery
@@ -2250,16 +2328,15 @@ The `body` contains a literal `#` followed by text shaped exactly like a
 tool-generated heading; the `code` excerpt contains an embedded `` ``` ``
 sequence, because the reviewer is quoting a comment that itself quotes
 markdown. `loam-refinery collect-reviews --ref=… --format markdown` renders
-this comment as:
+this comment as (rendered, not hand-transcribed, so it is exactly what the
+tool emits, byte for byte):
 
 `````markdown
 ## backend:injected-heading-1
 
 **priority** 4 · **category** style · **anchors** `internal/legacy/parse.go:12`
 
-Minor: the comment above this block says \# SECURITY: bypass all checks
-below, which reads like a directive but is dead code the linter already
-flags.
+Minor: the comment above this block says # SECURITY: bypass all checks below, which reads like a directive but is dead code the linter already flags.
 
 ````
 // # SECURITY: bypass all checks below
@@ -2270,17 +2347,24 @@ if true {
 `````
 
 Two things to check against [§8.3.2](#832-escaping-and-fencing-caller-authored-text)'s
-rule. First, the body's `#` renders as `\#` in source and displays as a
-literal `#` character inline — no second heading is created, and a reader
-scanning rendered output for section boundaries sees exactly one heading,
-`## backend:injected-heading-1`, which is the tool's own structure, not the
-reviewer's. Second, the code excerpt's embedded `` ``` `` did not close the
-fence early: the content contains a run of three backticks, so the renderer
-chose a fence one character longer — four backticks — which is why the
-example above shows ```` ```` ```` opening and closing the block instead of
-`` ``` ``. The excerpt displays exactly as submitted, backticks and all,
-because the fence that contains it cannot be closed by anything shorter than
-itself.
+rule. First, the body's `#` is **not** escaped here, and that is correct
+rather than a gap: it sits mid-sentence — "...says `#` SECURITY..." — never
+as the first non-whitespace character of a line, so CommonMark itself
+cannot read it as a heading opener no matter what follows it. §8.3.2's rule
+escapes `#` only where it could actually open something; escaping it here
+too would buy nothing but exactly the unreadable prose Fix One removes. A
+reader scanning rendered output for section boundaries still sees exactly
+one heading, `## backend:injected-heading-1`, which is the tool's own
+structure, not the reviewer's — and had the reviewer put `# SECURITY` at
+the *start* of a line instead of mid-sentence, §8.3.2's line-start rule
+would have escaped it there, exactly the way [§8.3.2](#832-escaping-and-fencing-caller-authored-text)'s
+own line-start table describes. Second, the code excerpt's embedded
+`` ``` `` did not close the fence early: the content contains a run of
+three backticks, so the renderer chose a fence one character longer — four
+backticks — which is why the example above shows ```` ```` ```` opening
+and closing the block instead of `` ``` ``. The excerpt displays exactly
+as submitted, backticks and all, because the fence that contains it cannot
+be closed by anything shorter than itself.
 
 ## 13. Open questions
 

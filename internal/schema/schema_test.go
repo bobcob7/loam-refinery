@@ -84,6 +84,18 @@ func TestValidateReportsEveryLeafFailure(t *testing.T) {
 			message: "12 is greater than the maximum of 10",
 			field:   "priority",
 		},
+		{
+			// A newline embedded in an anchor path is the P0 this test guards:
+			// it must be rejected by the schema pattern, not just by
+			// internal/structural's pathProblem, since either gate alone is a
+			// single point of failure (docs/features/combined-reviews.md §8.3.2
+			// and the anchor-path-safe check).
+			name:    "a newline in the anchor path is rejected",
+			source:  `{"file":"internal/legacy/parse.go\n# FORGED HEADING"}`,
+			path:    "/comments/0/anchors/0/file",
+			message: `"internal/legacy/parse.go\n# FORGED HEADING" does not match ^[^/\\\n\r][^\\\n\r]*$`,
+			field:   "file",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
