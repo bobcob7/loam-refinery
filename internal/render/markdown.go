@@ -146,12 +146,20 @@ func writeMarkdownSuggestions(b *strings.Builder, suggestions []collect.Suggesti
 }
 
 // markdownAnchors renders every anchor as one inline code span,
-// "file:line" or "file:line-end_line", joined by ", ". anchor.file is a
-// verbatim field (§8.3.2): the span is never escaped, only fenced, one
-// backtick longer than the longest run already inside it — and, first,
-// run through sanitizeVerbatimSpan, since no fence length can protect an
-// inline span from a line break inside it.
+// "file:line" or "file:line-end_line", joined by ", ", or "(none)" when
+// there are zero — review-document.md §5 allows an architectural finding to
+// carry no anchors, so this is reachable, and the sibling escapeMarkdownList
+// already solved the identical problem the same way, for the identical
+// reason: a dangling "**anchors**" label with nothing after it reads as a
+// missing field, not a definite absence. anchor.file is a verbatim field
+// (§8.3.2): the span is never escaped, only fenced, one backtick longer
+// than the longest run already inside it — and, first, run through
+// sanitizeVerbatimSpan, since no fence length can protect an inline span
+// from a line break inside it.
 func markdownAnchors(anchors []collect.Anchor) string {
+	if len(anchors) == 0 {
+		return "(none)"
+	}
 	spans := make([]string, 0, len(anchors))
 	for _, a := range anchors {
 		text := sanitizeVerbatimSpan(a.File) + ":" + strconv.Itoa(a.Line)

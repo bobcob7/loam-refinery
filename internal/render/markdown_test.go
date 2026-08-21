@@ -68,18 +68,39 @@ func docs121Envelope() CollectReviewsEnvelope {
 	}
 }
 
-// headingIDs pattern is deliberately unqualified: writeMarkdownSubmissions
+// markdownHeadingIDs extracts every "## <id>" heading from rendered
+// Markdown, skipping lines inside a fenced code block. writeMarkdownSubmissions
 // never emits an ATX heading (only a bold label), so every "## " line this
-// renderer ever writes is a qualified comment id — the invariant Parity's
-// own extraction (§8.3.3) relies on being "safe to do exactly because ids
-// are structurally constrained."
-var headingIDPattern = regexp.MustCompile(`(?m)^## (.+)$`)
-
+// renderer writes outside a fence is a qualified comment id — the invariant
+// Parity's own extraction (§8.3.3) relies on being "safe to do exactly
+// because ids are structurally constrained." But comment.code and
+// suggestion.code are written verbatim and unescaped (§8.3.2), so an
+// excerpt whose own content contains a "## " line (§12.3's worked example
+// is exactly such an excerpt) must not be misread as a heading. Fence
+// tracking mirrors docSectionEnd's, defined later in this same file for
+// reading docs/features/combined-reviews.md: a line opens a fence at a
+// leading backtick run of 3 or more, and only a line that is entirely
+// backticks, at least as many as the opener, closes it — reused rather than
+// reinvented, since backtickRun already lives here for that purpose.
 func markdownHeadingIDs(rendered string) []string {
-	matches := headingIDPattern.FindAllStringSubmatch(rendered, -1)
-	ids := make([]string, 0, len(matches))
-	for _, m := range matches {
-		ids = append(ids, m[1])
+	ids := []string{}
+	fenceLen := 0
+	for _, line := range strings.Split(rendered, "\n") {
+		trimmed := strings.TrimSpace(line)
+		run := backtickRun(trimmed)
+		switch {
+		case fenceLen == 0 && run >= 3:
+			fenceLen = run
+			continue
+		case fenceLen > 0 && run >= fenceLen && run == len(trimmed):
+			fenceLen = 0
+			continue
+		case fenceLen > 0:
+			continue
+		}
+		if id, ok := strings.CutPrefix(line, "## "); ok {
+			ids = append(ids, id)
+		}
 	}
 	return ids
 }
@@ -108,6 +129,42 @@ func TestMarkdownParity_HeadingsMatchCommentIDs(t *testing.T) {
 		want = append(want, c.ID)
 	}
 	assert.Equal(t, want, markdownHeadingIDs(out.String()), "same members, same count, same order as Result.Comments")
+}
+
+// TestMarkdownParity_IgnoresHeadingShapedLinesInsideAFencedExcerpt is
+// refinery-1pw(a): comment.code and suggestion.code are verbatim and
+// deliberately unescaped (§8.3.2), so a fixture whose excerpt contains a
+// line starting with "## " — exactly the shape §12.3's own worked example
+// takes, a code excerpt full of markdown syntax — must not be read back as
+// a second qualified-id heading. Before this test, headingIDPattern matched
+// "^## " on any line, so this fixture would fail Parity even though the
+// render is correct: a false-failure, not a false-pass, since 8.3.3's
+// forgery defence is about what a caller displaying the rendered Markdown
+// sees, not what this test-only extractor counts — but exactly the shape
+// fixtures are heading toward per §12.3.
+//
+// Mutation this kills: reverting markdownHeadingIDs to match "^## " on any
+// line, fenced or not, would count the excerpt's own "## " line as a second
+// heading and fail this test.
+func TestMarkdownParity_IgnoresHeadingShapedLinesInsideAFencedExcerpt(t *testing.T) {
+	t.Parallel()
+	envelope := CollectReviewsEnvelope{
+		Ref: "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d", RepoName: "github.com/bobcob7/loam-refinery",
+		RepoKnown: true, StoreEnabled: true,
+		HeadCheck: CollectReviewsHeadCheck{Source: "repo"},
+		Result: &collect.Result{
+			Submissions: []collect.Submission{{Ordinal: 1, Profile: "backend", Verdict: "comment", Summary: "s"}},
+			Comments: []collect.Comment{{
+				ID: "backend:heading-shaped-excerpt-1", Profile: "backend", Priority: 1, Category: "style",
+				Body: "the excerpt below contains its own markdown heading",
+				Code: "some code\n## backend:forged-1\nmore code",
+			}},
+		},
+	}
+	var out bytes.Buffer
+	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
+	assert.Equal(t, []string{"backend:heading-shaped-excerpt-1"}, markdownHeadingIDs(out.String()),
+		"a '## ' line inside the fenced excerpt is not a second heading")
 }
 
 // markdownCommentBody extracts one comment section's rendered body line by
@@ -610,6 +667,46 @@ func TestMarkdownAnchorCodeSpan_SizedOneLongerThanLongestRunInPath(t *testing.T)
 }
 
 func intPtr(v int) *int { return &v }
+
+// TestMarkdownAnchors_ZeroAnchorsRendersADefiniteAbsence is refinery-1pw(b):
+// review-document.md §5 allows an architectural finding to carry no
+// anchors, so markdownAnchors(nil) is reachable in real output, and joining
+// zero spans with ", " produces "" — leaving "**anchors** " with nothing
+// after it, which reads as a missing field rather than a finding that
+// legitimately has none. The sibling escapeMarkdownList already solved the
+// identical problem for pros/cons with "(none)"; this pins the same answer
+// here.
+//
+// Mutation this kills: deleting the len(anchors) == 0 guard would go back
+// to joining zero spans into "".
+func TestMarkdownAnchors_ZeroAnchorsRendersADefiniteAbsence(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "(none)", markdownAnchors(nil))
+	assert.Equal(t, "(none)", markdownAnchors([]collect.Anchor{}))
+}
+
+// TestMarkdownComment_AnchorlessFindingRendersADefiniteAbsence is
+// refinery-1pw(b) at the CollectReviews level: an architectural finding
+// with no anchors must render "**anchors** (none)", not a bare "**anchors**"
+// label with nothing after it.
+func TestMarkdownComment_AnchorlessFindingRendersADefiniteAbsence(t *testing.T) {
+	t.Parallel()
+	envelope := CollectReviewsEnvelope{
+		Ref: "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d", RepoName: "github.com/bobcob7/loam-refinery",
+		RepoKnown: true, StoreEnabled: true,
+		HeadCheck: CollectReviewsHeadCheck{Source: "repo"},
+		Result: &collect.Result{
+			Submissions: []collect.Submission{{Ordinal: 1, Profile: "backend", Verdict: "comment", Summary: "s"}},
+			Comments: []collect.Comment{{
+				ID: "backend:architectural-1", Profile: "backend", Priority: 5, Category: "architecture",
+				Body: "the service and repository layers are not separated anywhere in this package",
+			}},
+		},
+	}
+	var out bytes.Buffer
+	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
+	assert.Contains(t, out.String(), "**anchors** (none)\n\n", "an anchorless finding renders a definite absence, not a dangling label")
+}
 
 // TestMarkdownFencedBlock_MinimumThreeBackticksWhenContentHasNone pins the
 // "minimum three" half of §8.3.2's fence rule: ordinary code with no

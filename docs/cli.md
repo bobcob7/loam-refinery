@@ -1298,8 +1298,13 @@ neither computes anything the other does not already have
 
 ### 7.2 Advisory registry
 
-An advisory is a small value with a name, a one-line description (reused verbatim
-by `prime`), and a check function over the parsed document. The registry is a
+An advisory is a small value: a name, a one-line summary, a title, a body, and a
+check function over the parsed document. The summary is not reused by `prime` —
+`prime` stays fixed and deliberately small ([§2.1](#21-prime)) and cannot absorb
+a per-check line — nor by `describe --list`, which prints names alone, no bodies
+([§2.2.5](#225---list)). Nothing renders it today; it is bookkeeping on the
+value, not a rung on the disclosure ladder. `describe --lens` explains a check
+from its title and body alone ([§2.2.2](#222-entry-content)). The registry is a
 slice built at construction, not package-level state — so tests can build a
 registry holding one advisory.
 

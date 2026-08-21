@@ -247,6 +247,15 @@ func TestDescribeResolvesLenses(t *testing.T) {
 			stderr: []string{"comments.code", "comments.suggestions.code"},
 		},
 		{
+			// refinery-gne: a root field's own name is one of its ambiguous
+			// candidates, unlike --lens=code above where neither candidate is
+			// a bare root field; this is the shape that went silent.
+			name:   "an ambiguous lens naming a root field still names both candidates",
+			args:   []string{"describe", "--lens=summary"},
+			code:   ExitUsage,
+			stderr: []string{"comments.suggestions.summary", "field:summary"},
+		},
+		{
 			name:   "an empty lens is a usage error",
 			args:   []string{"describe", "--lens="},
 			code:   ExitUsage,
@@ -480,13 +489,18 @@ func TestValidatePassesFlagsThrough(t *testing.T) {
 }
 
 // testRegistry holds one entry per namespace, plus the two field paths ending
-// in code that the ambiguity rule exists for.
+// in code that the ambiguity rule exists for, and a root field ("summary")
+// that a nested field path also ends in — refinery-gne's shape, where one
+// ambiguity candidate resolves directly off the root name rather than only
+// through the suffix scan.
 func testRegistry(t *testing.T) *entry.Registry {
 	t.Helper()
 	registry, err := entry.NewRegistry(&stubProvider{entries: []entry.Entry{
 		{Name: "comments.priority", Namespace: entry.NamespaceField, Title: "Priority", Body: "Integer 1-10."},
 		{Name: "comments.code", Namespace: entry.NamespaceField, Title: "Code", Body: "The problem as it stands."},
 		{Name: "comments.suggestions.code", Namespace: entry.NamespaceField, Title: "Resulting code", Body: "The fix."},
+		{Name: "summary", Namespace: entry.NamespaceField, Title: "Summary", Body: "The review's own summary."},
+		{Name: "comments.suggestions.summary", Namespace: entry.NamespaceField, Title: "Suggestion summary", Body: "The suggestion's summary."},
 		{Name: "id-unique", Namespace: entry.NamespaceCheck, Title: "Duplicate id", Body: "Two comments share an id."},
 		{Name: "ids", Namespace: entry.NamespaceTopic, Title: "Ids", Body: "Checkable claims."},
 	}})
