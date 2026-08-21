@@ -33,6 +33,30 @@ func TestOversizedRejectedInput_RecordsRunWithATruncatedFile(t *testing.T) {
 	assert.Empty(t, failed[0].Ref, "ref is empty when the run has none to report")
 }
 
+// TestListFailedRuns_ExitCode3RowHasNoPath proves read.go's guard already
+// covers exit 3, the row config.md section 4.5.1 documents for the
+// precondition (docs/cli.md §2.3.1): a row recorded with no file written at
+// all — Digest supplies the digest without ever calling WriteRejected —
+// reports an empty Path, exactly as the guard's own comment anticipated,
+// with no code change on the read side.
+func TestListFailedRuns_ExitCode3RowHasNoPath(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	digest := Digest([]byte(`{"ref":"4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"}`))
+	ref := "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"
+	require.NoError(t, s.Record(t.Context(), RunInput{
+		Repo: "github.com/example/example", Ref: ref, Digest: digest, ExitCode: 3,
+		ToolVersion: "0.1.0", SchemaVersion: "1",
+	}))
+	failed, total, err := s.ListFailedRuns(t.Context(), "github.com/example/example", "", 0)
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	require.Len(t, failed, 1)
+	assert.Equal(t, 3, failed[0].ExitCode)
+	assert.Empty(t, failed[0].Path, "the precondition fired before a document was examined; there is nothing to point at")
+	assert.Equal(t, ref, failed[0].Ref)
+}
+
 func TestListFailedRuns_KeptInputHasAPath(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)

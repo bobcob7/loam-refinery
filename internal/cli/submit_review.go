@@ -56,10 +56,14 @@ func (a *App) submitReview(ctx context.Context, args []string) int {
 		a.fail(err)
 		return ExitUsage
 	}
-	if result.Valid {
+	switch {
+	case result.Valid:
 		return ExitValid
+	case result.Precondition:
+		return ExitPrecondition
+	default:
+		return ExitInvalid
 	}
-	return ExitInvalid
 }
 
 // storeInput builds what documentStore needs to place and record this run
@@ -72,6 +76,7 @@ func (a *App) storeInput(source []byte, result *review.Result) StoreInput {
 		Dir:           a.dir,
 		Source:        source,
 		Valid:         result.Valid,
+		Precondition:  result.Precondition,
 		Comments:      result.Comments,
 		Errors:        result.Errors(),
 		Advisories:    result.Advisories(),

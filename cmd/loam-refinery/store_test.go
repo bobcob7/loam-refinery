@@ -74,6 +74,31 @@ func TestStoreAdapter_InvalidRunWritesRejectedAndRecordsRow(t *testing.T) {
 	assert.False(t, rows[0].ref.Valid, "no ref on a document with none")
 }
 
+// TestStoreAdapter_PreconditionRunRecordsARowAndWritesNoFile proves
+// refinery-uyb.6's storage rule (docs/config.md §5): an exit-3 run — the
+// precondition (docs/cli.md §2.3.1) fired before the document was examined
+// — records a row and places nothing in either tree. This is the mutation
+// docs/config.md §5 warns against: reaching for WriteRejected because Valid
+// also happens to be false would file an unexamined document under
+// rejected/, asserting a judgement the run never made.
+func TestStoreAdapter_PreconditionRunRecordsARowAndWritesNoFile(t *testing.T) {
+	home := homeFor(t)
+	adapter := newStoreAdapter(quietLog())
+	ref := "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"
+	source := []byte(`{"version":"1","verdict":"comment","ref":"` + ref + `","comments":[]}`)
+	err := adapter.Save(t.Context(), cli.StoreInput{
+		Dir: t.TempDir(), Source: source, Valid: false, Precondition: true, Ref: ref,
+		ToolVersion: "test", SchemaVersion: "1",
+	})
+	require.NoError(t, err)
+	assert.NoDirExists(t, filepath.Join(home, "reviews"), "a precondition run must not write to reviews/")
+	assert.NoDirExists(t, filepath.Join(home, "rejected"), "a precondition run must not write to rejected/ either — it was never examined")
+	rows := runsOf(t, filepath.Join(home, "store.db"))
+	require.Len(t, rows, 1, "the run still records a row")
+	assert.Equal(t, 3, rows[0].exitCode)
+	assert.Equal(t, ref, rows[0].ref.String)
+}
+
 // Fifty identical failures leave one file and fifty rows: content addressing
 // deduplicates the file, and every attempt still gets its own row
 // (docs/config.md §4.4.1).

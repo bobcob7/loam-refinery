@@ -89,6 +89,14 @@ type Result struct {
 	Verification Verification
 	Diagnostics  []Diagnostic
 	Skipped      []Skipped
+	// Precondition is true when the run stopped on the precondition
+	// (docs/cli.md §2.3.1) rather than being examined: ref names HEAD and
+	// an anchored file's working-tree copy has diverged from it. Valid is
+	// always false alongside it, and Diagnostics carries exactly one entry
+	// naming anchor-worktree-diverged once for the document. A caller maps
+	// this to exit 3, not exit 1 — docs/cli.md §4 argues why that is its
+	// own code — and stores a row with no file (docs/config.md §5).
+	Precondition bool
 }
 
 // Errors counts diagnostics that make the document unusable.

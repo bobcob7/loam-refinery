@@ -19,6 +19,18 @@ const (
 	ExitValid   = 0
 	ExitInvalid = 1
 	ExitUsage   = 2
+	// ExitPrecondition marks the precondition-failure band: the review is
+	// not wrong and the invocation is not wrong, but something about the
+	// reviewed state itself is, and no amount of revising the document or
+	// the command line fixes it (docs/cli.md §4). submit-review's one
+	// precondition (docs/cli.md §2.3.1) is the reviewed state not being a
+	// commit — ref names the repository's HEAD and at least one anchored
+	// file's working-tree copy has since diverged from it — reported once
+	// for the document, before structural checks, verification, or
+	// advisories run. The run still records a row, with no file
+	// (docs/config.md §5). Codes 3-9 are reserved for this band, the same
+	// way 101-125 is reserved for ExitTool's; only 3 is assigned today.
+	ExitPrecondition = 3
 	// ExitTool marks the tool-error band: the tool's own state could not be
 	// read or written, and neither revising the review nor fixing the
 	// command line will help. It covers a config file that could not be
@@ -106,7 +118,7 @@ const usage = `loam-refinery — check a review document
   loam-refinery schema [--annotated]             JSON Schema, for machines
   loam-refinery version
 
-exit 0 valid, 1 revise the review, 2 fix the invocation, 101 the tool failed
+exit 0 valid, 1 revise the review, 2 fix the invocation, 3 escalate: not a commit, 101 the tool failed
 `
 
 // Run dispatches one invocation and returns its exit code.

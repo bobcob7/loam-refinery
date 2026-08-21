@@ -99,18 +99,73 @@ func TestValidateStaysWithinBudget(t *testing.T) {
 		"each diagnostic costs about %d tokens; the ceiling is %d", perDiagnostic, perDiagnosticBudget)
 }
 
-// TestValidateUnverifiedAnchorStaysWithinBudget used to measure the
-// dirty-checkout row here: divergedRefDir produced a repository whose
-// working tree had moved past ref, and the assertion was that submit-review
-// still exited clean while reporting the anchors unverified. Making
-// verification unconditional (refinery-uyb.5) removes that outcome — the
-// same fixture now exits 1 through verification-required — so the test and
-// its exclusive helpers (unverifiedCounted, runValidateOK, unverifiedCount,
-// divergedRefDir, unverifiedAnchorsDoc) are deleted rather than patched to
-// keep passing. refinery-uyb.6, which adds the exit-3 precondition for a
-// diverged working tree, owns this row's replacement: a flat-cost budget
-// test against the exit-3 diagnostic, built on its own diverged-repository
-// fixture.
+// TestValidateWorktreeDivergedStaysWithinBudget measures docs/cli.md §6.1's
+// "submit-review, uncommitted work (exit 3)" row, left "not yet measured"
+// there on purpose: the old per-anchor figure (once carried by
+// TestValidateUnverifiedAnchorStaysWithinBudget, deleted by refinery-uyb.5)
+// measured verification.unverified entries accumulating inside an
+// otherwise-passing run, a shape docs/cli.md §2.3.1's precondition no longer
+// produces at all. This measures the replacement instead: one diagnostic for
+// the whole document, so the cost must be flat regardless of how many
+// anchors diverged — checked here across two sample sizes, the same way
+// TestReviewsStaysWithinBudgetPerRow checks a per-row cost, except the
+// marginal cost measured here must come out to exactly zero.
+func TestValidateWorktreeDivergedStaysWithinBudget(t *testing.T) {
+	t.Parallel()
+	// Measured against the real binary, not asserted from docs/cli.md §6.1:
+	// that row says "not yet measured" rather than naming a number, so
+	// there is nothing there to reproduce. 153 is what one diverged anchor
+	// and ten both cost — the file name, the ref, and the fixed two-remedy
+	// sentence dominate the message, which is why this lands well above the
+	// 80-token clean ceiling despite carrying exactly one diagnostic.
+	const budget = 153
+	dir, ref := divergedRefDir(t)
+	small, codeSmall := runValidate(t, dir, worktreeDivergedAnchorsDoc(ref, 1))
+	require.Equal(t, ExitPrecondition, codeSmall, small)
+	large, codeLarge := runValidate(t, dir, worktreeDivergedAnchorsDoc(ref, 10))
+	require.Equal(t, ExitPrecondition, codeLarge, large)
+	smallTokens, largeTokens := approxTokens(small), approxTokens(large)
+	assert.Equal(t, smallTokens, largeTokens,
+		"the precondition reports one diagnostic for the document regardless of anchor count, so 1 diverged anchor and 10 must cost the same")
+	assert.LessOrEqual(t, smallTokens, budget,
+		"an exit-3 precondition run costs about %d tokens; its ceiling is %d", smallTokens, budget)
+}
+
+// divergedRefDir makes a throwaway repository with one tracked file at HEAD,
+// then diverges the working tree from it without touching history — the
+// state a pre-commit review leaves behind, and the one this feature exists
+// to make checkable at all (refinery-9rh).
+func divergedRefDir(t *testing.T) (string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	run := func(args ...string) []byte {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+		return out
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("line one\nline two\nline three\n"), 0o644))
+	run("init", "--quiet")
+	run("add", "-A")
+	run("-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "--quiet", "-m", "seed")
+	ref := strings.TrimSpace(string(run("rev-parse", "HEAD")))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("line one, edited\nline two\nline three\n"), 0o644))
+	return dir, ref
+}
+
+// worktreeDivergedAnchorsDoc is a valid review with n anchors into the one
+// file divergedRefDir diverges, so every anchor is what the precondition
+// finds regardless of the line numbers named.
+func worktreeDivergedAnchorsDoc(ref string, n int) string {
+	anchors := make([]string, n)
+	for i := range anchors {
+		anchors[i] = fmt.Sprintf(`{"file":"file.txt","line":%d}`, i+1)
+	}
+	return `{"version":"1","verdict":"comment","summary":"The retry loop is sound and the deadline propagates to every call it makes.","ref":"` + ref + `",` +
+		`"comments":[{"id":"a-1","priority":5,"category":"correctness","body":"a body long enough for the schema to accept it","anchors":[` +
+		strings.Join(anchors, ",") + `],"suggestions":[]}]}`
+}
 
 // Outside a repository, verification cannot run at all, so SkipAll reports
 // three skipped checks — real content the in-repository case never has to

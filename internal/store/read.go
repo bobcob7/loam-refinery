@@ -146,10 +146,10 @@ func (s *Store) ListFailedRuns(ctx context.Context, repo, ref string, limit int)
 		// Every rejected input is now kept, truncated to its first 1 MiB
 		// when it was larger (config.md section 4.4.1), so an exit-1 row
 		// always has a file and Path is always computed for it — no stat
-		// needed to decide whether to omit it. A future exit code that
-		// records a row without ever writing a file (config.md section
-		// 4.5.2) would fall through this guard with an empty Path, same as
-		// today.
+		// needed to decide whether to omit it. Exit 3 is exactly such a row
+		// (config.md section 4.5.1): its precondition fires before a
+		// document is examined, so there is nothing to point at, and it
+		// falls through this guard with an empty Path, same as today.
 		path := ""
 		if row.ExitCode == 1 {
 			path = s.RejectedPath(repo, row.Digest)

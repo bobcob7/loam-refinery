@@ -37,14 +37,32 @@ func New(structural structuralChecker, advisories advisoryRunner, finder reposit
 
 // Validate parses and checks one document. It returns an error only when the
 // input is not a single JSON object, which is the one true stop.
+//
+// Verification runs before the structural tier now, not after it, because
+// the precondition it can report (docs/cli.md §2.3.1) has to be checked
+// before structural checks or advisories run at all: when ref names HEAD and
+// an anchored file has diverged in the working tree, nothing else about the
+// document is examined, and Result.Precondition is how the caller learns to
+// exit 3 rather than 1. Ordinary verification results are unaffected by the
+// reorder — no tier gates another either way — and still land after the
+// structural diagnostics once the precondition does not fire.
 func (v *Validator) Validate(ctx context.Context, source []byte, options Options) (*review.Result, error) {
 	doc, err := review.Parse(source)
 	if err != nil {
 		return nil, fmt.Errorf("reading review document: %w", err)
 	}
+	verified, skipped, verification := v.verify(ctx, doc, options)
+	if diagnostic, ok := worktreeDivergedDiagnostic(verification); ok {
+		return &review.Result{
+			Strict:       options.Strict,
+			Comments:     len(doc.Comments),
+			Verification: review.Verification{Source: verification.Source, Anchors: verification.Anchors},
+			Diagnostics:  []review.Diagnostic{diagnostic},
+			Precondition: true,
+		}, nil
+	}
 	result := &review.Result{Strict: options.Strict, Comments: len(doc.Comments)}
 	result.Diagnostics = append(result.Diagnostics, v.structural.Check(doc)...)
-	verified, skipped, verification := v.verify(ctx, doc, options)
 	verified = append(verified, unverified(verification, skipped)...)
 	result.Diagnostics = append(result.Diagnostics, verified...)
 	result.Skipped = append(result.Skipped, skipped...)
@@ -55,6 +73,31 @@ func (v *Validator) Validate(ctx context.Context, source []byte, options Options
 	review.SortDiagnostics(result.Diagnostics)
 	result.Valid = result.Errors() == 0 && (!options.Strict || result.Advisories() == 0)
 	return result, nil
+}
+
+// worktreeDivergedRemedy is appended to the first diverged anchor's own
+// message to build the precondition's diagnostic (docs/cli.md §2.3.1): one
+// diagnostic for the whole document, naming both remedies and saying
+// plainly that this is not a check to retry against the same ref.
+const worktreeDivergedRemedy = "; the reviewed state is not a commit. " +
+	`Commit what was reviewed, or run "git stash create" and resubmit against that SHA — do not retry against this ref.`
+
+// worktreeDivergedDiagnostic reports the precondition (docs/cli.md §2.3.1):
+// verify's own pass already found every diverged anchor, in
+// verification.Unverified, and reports it here only when Source is "repo" —
+// Unverified is populated only when ref is HEAD (internal/verify/verify.go),
+// so this never fires for any other ref, with no extra check needed. Several
+// anchors, or several files, can have diverged; only the first is named,
+// because the diagnostic is one per document, not one per anchor.
+func worktreeDivergedDiagnostic(verification review.Verification) (review.Diagnostic, bool) {
+	if verification.Source != "repo" || len(verification.Unverified) == 0 {
+		return review.Diagnostic{}, false
+	}
+	return review.Diagnostic{
+		Severity: review.SeverityError,
+		Name:     "anchor-worktree-diverged",
+		Message:  verification.Unverified[0].Message + worktreeDivergedRemedy,
+	}, true
 }
 
 // verify has three outcomes, not two, and none of them stops the run: a
@@ -80,27 +123,23 @@ func (v *Validator) verify(ctx context.Context, doc *review.Document, options Op
 }
 
 // unverified reports the one thing verification always asks now: whether the
-// anchor claims were actually checked. A repository that did not answer, an
-// anchor whose file could not be read, and an anchor whose working-tree copy
-// diverged from ref are the same answer to that question — no one confirmed
-// this — however different their causes, and there is no flag to accept the
-// gap instead.
+// anchor claims were actually checked. A repository that did not answer or
+// an anchor whose file could not be read are the same answer to that
+// question — no one confirmed this — however different their causes, and
+// there is no flag to accept the gap instead. A diverged working tree no
+// longer reaches here at all: worktreeDivergedDiagnostic already stopped the
+// run on it, in Validate, before this ever runs — verification.Unverified is
+// therefore always empty by the time this is called.
 func unverified(verification review.Verification, skipped []review.Skipped) []review.Diagnostic {
 	if verification.Anchors == 0 {
 		return nil
 	}
-	skipGap := verification.Source != "repo" || len(skipped) > 0
-	divergedGap := len(verification.Unverified) > 0
-	if !skipGap && !divergedGap {
+	if verification.Source == "repo" && len(skipped) == 0 {
 		return nil
 	}
 	reason := verification.Reason
 	if reason == "" {
-		parts := reasons(skipped)
-		if divergedGap {
-			parts = append(parts, fmt.Sprintf("%s diverged from ref in the working tree", plural(len(verification.Unverified), "anchor")))
-		}
-		reason = strings.Join(parts, "; ")
+		reason = strings.Join(reasons(skipped), "; ")
 	}
 	if reason == "" {
 		reason = "no repository answered"
@@ -110,14 +149,6 @@ func unverified(verification review.Verification, skipped []review.Skipped) []re
 		Name:     "verification-required",
 		Message:  fmt.Sprintf("the anchors were not verified: %s", reason),
 	}}
-}
-
-// plural matches the wording verify already uses for the same counts.
-func plural(n int, noun string) string {
-	if n == 1 {
-		return fmt.Sprintf("1 %s", noun)
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // reasons lists the distinct causes, in the order verification reported them,

@@ -29,23 +29,22 @@ type jsonResult struct {
 	Lenses       []string         `json:"lenses,omitempty"`
 }
 
+// jsonVerification carries no unverified field: docs/cli.md §5.2 states
+// outright that this command's output has none. anchor-worktree-diverged
+// used to have a soft, per-anchor home here, on a run that still passed;
+// docs/cli.md §2.3.1's precondition replaced that — a diverged anchor now
+// stops the run before verification even reaches per-anchor checking,
+// reported once, in diagnostics, at exit 3, never as a soft entry in a
+// passing verification block, because a passing run with a diverged anchor
+// in it can no longer happen. collect-reviews keeps the identical shape for
+// a different question, on head_check.diverged
+// (docs/features/combined-reviews.md §4.3.1), which is no reason to carry
+// it here too.
 type jsonVerification struct {
-	Source     string           `json:"source"`
-	Reason     string           `json:"reason,omitempty"`
-	Anchors    int              `json:"anchors"`
-	Verified   int              `json:"verified"`
-	Unverified []jsonUnverified `json:"unverified,omitempty"`
-}
-
-// jsonUnverified is one anchor a diverged working tree kept from being
-// checked. It carries the same shape a diagnostic does, minus severity: the
-// outcome is a fact about verification's coverage, not a finding about the
-// review.
-type jsonUnverified struct {
-	Name    string `json:"name"`
-	Comment string `json:"comment,omitempty"`
-	Path    string `json:"path,omitempty"`
-	Message string `json:"message"`
+	Source   string `json:"source"`
+	Reason   string `json:"reason,omitempty"`
+	Anchors  int    `json:"anchors"`
+	Verified int    `json:"verified"`
 }
 
 type jsonCounts struct {
@@ -82,21 +81,6 @@ func groupSkipped(skipped []review.Skipped) []jsonSkipped {
 	return out
 }
 
-// jsonUnverifiedList converts the unverified anchors, or nil when there are
-// none: omitempty on the field above already drops it either way, but a nil
-// slice makes that the one representation rather than two that happen to
-// render alike.
-func jsonUnverifiedList(unverified []review.Unverified) []jsonUnverified {
-	if len(unverified) == 0 {
-		return nil
-	}
-	out := make([]jsonUnverified, 0, len(unverified))
-	for _, u := range unverified {
-		out = append(out, jsonUnverified{Name: u.Name, Comment: u.Comment, Path: u.Path, Message: u.Message})
-	}
-	return out
-}
-
 type jsonDiagnostic struct {
 	Severity string `json:"severity"`
 	Name     string `json:"name"`
@@ -111,11 +95,10 @@ func (j *JSON) Result(w io.Writer, result *review.Result) error {
 		Valid:  result.Valid,
 		Strict: result.Strict,
 		Verification: jsonVerification{
-			Source:     result.Verification.Source,
-			Reason:     result.Verification.Reason,
-			Anchors:    result.Verification.Anchors,
-			Verified:   result.Verification.Verified,
-			Unverified: jsonUnverifiedList(result.Verification.Unverified),
+			Source:   result.Verification.Source,
+			Reason:   result.Verification.Reason,
+			Anchors:  result.Verification.Anchors,
+			Verified: result.Verification.Verified,
 		},
 		Counts: jsonCounts{
 			Comments:   result.Comments,

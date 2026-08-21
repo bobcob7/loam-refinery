@@ -241,23 +241,97 @@ func TestTheVerificationRequirementNamesEveryCause(t *testing.T) {
 		"a broken object store must not be hidden behind a malformed field")
 }
 
-// anchor-worktree-diverged is a member of "the anchor claims went unchecked"
-// the same way an unreadable file or an absent repository is: it withholds a
-// verification, and withholding one now fails the run. There is no flag left
-// to accept the gap instead.
-func TestADivergedAnchorFailsVerification(t *testing.T) {
+// anchor-worktree-diverged used to be folded into verification-required,
+// exit 1, once the ordinary per-anchor pass reached it. docs/cli.md §2.3.1
+// now makes it a precondition instead: refinery-uyb.6 replaces this test
+// with the ones below, which pin the precondition firing before structural
+// checks or advisories run, once for the document, and only when ref is
+// HEAD.
+
+// The precondition: any anchor verify reports diverged, with Source "repo",
+// stops the run before structural checks or advisories ever execute, and
+// reports exactly one diagnostic naming anchor-worktree-diverged — never
+// verification-required, which is a different check for a different cause
+// (docs/cli.md §2.3.1, §4).
+func TestWorktreeDivergedIsAPreconditionBeforeEverythingElse(t *testing.T) {
 	t.Parallel()
 	diverged := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
 		return nil, nil, review.Verification{Source: "repo", Anchors: 1, Verified: 0, Unverified: []review.Unverified{
-			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from ref in the working tree"},
+			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from 4f2c1a9 in the working tree"},
+		}}
+	}}
+	structural := &structuralCheckerMock{CheckFunc: func(*review.Document) []review.Diagnostic {
+		t.Fatal("structural checks must not run once the precondition has fired")
+		return nil
+	}}
+	advisories := &advisoryRunnerMock{RunFunc: func(*review.Document) ([]review.Diagnostic, []review.Skipped) {
+		t.Fatal("advisories must not run once the precondition has fired")
+		return nil, nil
+	}}
+	result, err := validator(structural, advisories, finder(diverged)).Validate(t.Context(), []byte(anchored), Options{})
+	require.NoError(t, err)
+	assert.Empty(t, structural.CheckCalls(), "the precondition must run before the structural tier")
+	assert.Empty(t, advisories.RunCalls(), "the precondition must run before advisories")
+	require.True(t, result.Precondition)
+	assert.False(t, result.Valid)
+	require.Len(t, result.Diagnostics, 1, "one diagnostic for the whole document, not one per anchor")
+	assert.Equal(t, "anchor-worktree-diverged", result.Diagnostics[0].Name)
+	assert.Equal(t, review.SeverityError, result.Diagnostics[0].Severity)
+	assert.Contains(t, result.Diagnostics[0].Message, "a.go differs from 4f2c1a9 in the working tree")
+	assert.Contains(t, result.Diagnostics[0].Message, "the reviewed state is not a commit")
+	assert.Contains(t, result.Diagnostics[0].Message, `git stash create`)
+	assert.Contains(t, result.Diagnostics[0].Message, "do not retry against this ref")
+}
+
+// Several diverged anchors, even across several files, still cost one
+// diagnostic — the flat cost docs/cli.md §6.1 documents, replacing the old
+// per-anchor row.
+func TestWorktreeDivergedReportsOneDiagnosticForSeveralAnchors(t *testing.T) {
+	t.Parallel()
+	diverged := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return nil, nil, review.Verification{Source: "repo", Anchors: 3, Verified: 0, Unverified: []review.Unverified{
+			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from 4f2c1a9 in the working tree"},
+			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/1", Message: "b.go differs from 4f2c1a9 in the working tree"},
+			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/2", Message: "c.go differs from 4f2c1a9 in the working tree"},
 		}}
 	}}
 	result, err := validator(passing(), quiet(), finder(diverged)).Validate(t.Context(), []byte(anchored), Options{})
 	require.NoError(t, err)
-	require.Equal(t, 1, result.Errors())
-	assert.Equal(t, "verification-required", result.Diagnostics[0].Name)
-	assert.Contains(t, result.Diagnostics[0].Message, "diverged")
-	assert.False(t, result.Valid)
-	require.Len(t, result.Verification.Unverified, 1, "the diverged anchor is still carried through to the result")
-	assert.Equal(t, "anchor-worktree-diverged", result.Verification.Unverified[0].Name)
+	require.Len(t, result.Diagnostics, 1, "one diagnostic per document, never one per diverged anchor")
+	assert.Contains(t, result.Diagnostics[0].Message, "a.go", "the first diverged anchor names the diagnostic")
+}
+
+// Mutation guard: the precondition must key off Source == "repo", the same
+// signal that guarantees it never fires for a ref other than HEAD
+// (internal/verify/verify.go only populates Unverified when isHEAD is
+// true) — a broader trigger, such as any non-empty Unverified regardless of
+// source, would be wrong, since "none" and "unavailable" never carry one.
+func TestWorktreeDivergedNeverFiresOutsideARepository(t *testing.T) {
+	t.Parallel()
+	outside := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
+		return nil, verify.ErrNoRepository
+	}}
+	result, err := validator(passing(), quiet(), outside).Validate(t.Context(), []byte(anchored), Options{})
+	require.NoError(t, err)
+	assert.False(t, result.Precondition)
+}
+
+// Mutation guard: a ref that is not HEAD never diverges, because
+// internal/verify never consults the working tree for it — reported here as
+// Source "repo" with an empty Unverified, exactly as a non-HEAD ref
+// resolves today. The precondition must not fire on it, and the run must
+// fall through to the ordinary structural-then-advisory path.
+func TestWorktreeDivergedNeverFiresWhenRefIsNotHEAD(t *testing.T) {
+	t.Parallel()
+	notHEAD := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return nil, nil, review.Verification{Source: "repo", Anchors: 1, Verified: 1}
+	}}
+	structural := &structuralCheckerMock{CheckFunc: func(*review.Document) []review.Diagnostic { return nil }}
+	advisories := &advisoryRunnerMock{RunFunc: func(*review.Document) ([]review.Diagnostic, []review.Skipped) { return nil, nil }}
+	result, err := validator(structural, advisories, finder(notHEAD)).Validate(t.Context(), []byte(anchored), Options{})
+	require.NoError(t, err)
+	assert.False(t, result.Precondition)
+	assert.Len(t, structural.CheckCalls(), 1, "the ordinary path still runs the structural tier")
+	assert.Len(t, advisories.RunCalls(), 1, "the ordinary path still runs advisories")
+	assert.True(t, result.Valid)
 }

@@ -23,6 +23,17 @@ func sha256Hex(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// Digest returns the digest data would be addressed by if it were written,
+// without writing anything. runs.digest is TEXT NOT NULL (config.md section
+// 4.5.1), and a run that keeps no file at all — exit 3, whose precondition
+// fires before a document is examined (config.md sections 4.5.1, 5) — still
+// needs one for its row. It is the same digest WriteReview and
+// WriteRejected already compute for placement, exported for a caller that
+// has no file to place.
+func Digest(data []byte) string {
+	return sha256Hex(data)
+}
+
 // ReviewPath returns the path a passing review of ref in repo, with the
 // given digest, occupies under the store — computed, never stored
 // (config.md section 4.5.1).

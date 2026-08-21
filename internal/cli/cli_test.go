@@ -141,6 +141,13 @@ func TestRunDispatches(t *testing.T) {
 	}
 }
 
+func TestExitPreconditionIsTheReservedPreconditionBand(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, 3, ExitPrecondition)
+	assert.NotEqual(t, ExitInvalid, ExitPrecondition, "a review that is wrong must not share a code with a state that is not")
+	assert.NotEqual(t, ExitUsage, ExitPrecondition, "a caller-typed mistake must not share a code with a precondition failure")
+}
+
 func TestExitToolIsTheReservedToolErrorBand(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, 101, ExitTool)
@@ -156,7 +163,7 @@ func TestUsageBannerNamesEveryExitCode(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, "")
 	h.app.Run(t.Context(), nil)
-	for _, code := range []string{"0", "1", "2", "101"} {
+	for _, code := range []string{"0", "1", "2", "3", "101"} {
 		assert.Contains(t, h.stderr.String(), code, "the usage banner must name exit %s", code)
 	}
 }
@@ -245,6 +252,7 @@ func TestValidateExitCodes(t *testing.T) {
 	}{
 		{name: "valid", result: &review.Result{Valid: true}, code: ExitValid},
 		{name: "invalid", result: &review.Result{}, code: ExitInvalid},
+		{name: "precondition", result: &review.Result{Precondition: true}, code: ExitPrecondition},
 		{name: "unparseable document", err: parseError(t), code: ExitInvalid},
 		{name: "wiring failure", err: errors.New("no repository finder"), code: ExitUsage},
 	}
@@ -340,6 +348,29 @@ func TestValidateSendsRefAndVerdictToTheStore(t *testing.T) {
 	assert.Equal(t, "approve", in.Verdict)
 	assert.Equal(t, 2, in.Comments)
 	assert.NotEmpty(t, in.Dir, "repository identity is resolved from the working directory")
+}
+
+// A precondition result reaches the store with Precondition set, so
+// documentStore knows to record a row and write no file (docs/config.md
+// §5) rather than reaching for WriteRejected because Valid happens to be
+// false too.
+func TestValidateSendsPreconditionToTheStore(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, `{"version":"1","ref":"4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"}`)
+	h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
+		return &review.Result{
+			Precondition: true,
+			Diagnostics: []review.Diagnostic{{
+				Severity: review.SeverityError, Name: "anchor-worktree-diverged", Message: "a.go differs",
+			}},
+		}, nil
+	}
+	require.Equal(t, ExitPrecondition, h.app.Run(t.Context(), []string{"submit-review"}))
+	require.Len(t, h.store.SaveCalls(), 1)
+	in := h.store.SaveCalls()[0].In
+	assert.False(t, in.Valid)
+	assert.True(t, in.Precondition)
+	assert.Equal(t, "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", in.Ref, "the ref is still read off the document that was submitted")
 }
 
 // An unparseable document never yields a ref or a verdict — there is no

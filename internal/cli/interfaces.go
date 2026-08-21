@@ -30,8 +30,15 @@ type StoreInput struct {
 	// Source is the exact bytes submitted, addressed and stored verbatim.
 	Source []byte
 	// Valid says whether this run exits 0 or 1 — which tree, if either,
-	// keeps the bytes (docs/config.md §5).
+	// keeps the bytes (docs/config.md §5). Meaningless when Precondition is
+	// true: exit 3 keeps neither tree regardless of what Valid says, and a
+	// documentStore must check Precondition first.
 	Valid bool
+	// Precondition says this run exits 3: the precondition (docs/cli.md
+	// §2.3.1) fired before the document was examined, so there is nothing
+	// to keep in either tree — a documentStore still records a row, with
+	// no file (docs/config.md §5).
+	Precondition bool
 	// Ref and Verdict come from the document as submitted; both are "" when
 	// the field was absent or not a string.
 	Ref     string
@@ -48,12 +55,14 @@ type StoreInput struct {
 }
 
 // documentStore persists one run per docs/config.md §5: exit 0 keeps the
-// review, exit 1 keeps the input unless it is oversized, and every call
-// records a row. A nil error covers both a run that stored something and one
-// with nothing to keep — store.enabled:false, most likely — so submit-review
-// cannot tell the two apart and does not need to. A non-nil error means the
-// store could not be established, written, or recorded to; the caller exits
-// ExitTool with nothing on stdout (docs/config.md §5.1).
+// review, exit 1 keeps the input unless it is oversized, exit 3 keeps
+// neither — the precondition (docs/cli.md §2.3.1) fires before the document
+// is examined, so there is nothing yet to keep — and every call records a
+// row regardless. A nil error covers both a run that stored something and
+// one with nothing to keep — store.enabled:false, most likely — so
+// submit-review cannot tell the two apart and does not need to. A non-nil
+// error means the store could not be established, written, or recorded to;
+// the caller exits ExitTool with nothing on stdout (docs/config.md §5.1).
 type documentStore interface {
 	Save(ctx context.Context, in StoreInput) error
 }
