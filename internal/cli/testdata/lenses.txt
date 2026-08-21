@@ -1,6 +1,23 @@
 {
   "entries": [
     {
+      "name": "assessment",
+      "namespace": "field",
+      "title": "Quality grade",
+      "body": "Quality grade: how good the work is, independent of verdict. Four bare words read as synonyms for \"fine,\" so each is anchored to a test the reviewer applies to its own findings: strong — name one specific thing in the change that exceeds what it needed. sound — the default; any comments filed sit in the optional band (priority 1-3). mixed — at least one reservation too substantial to fold into summary. weak — a finding serious enough to raise regardless of this review's own verdict. Optional, like profile: omit rather than pick the middle value to fill it. Deliberately orthogonal to verdict — weak with comment and mixed with approve are both coherent.",
+      "example": "\"sound\"",
+      "related": [
+        "verdict",
+        "priority"
+      ],
+      "provider": "schema"
+    }
+  ]
+}
+
+{
+  "entries": [
+    {
       "name": "comments",
       "namespace": "field",
       "title": "Findings",
@@ -334,7 +351,7 @@
     {
       "name": "summary",
       "namespace": "field",
-      "title": "Overall assessment",
+      "title": "Change overview",
       "body": "One to three sentences assessing the change as a whole, 30-1500 characters. Consumers read it without opening the comments, so state what is actually wrong and what holds up — restating the verdict (\"changes requested\") wastes the field. Under 60 characters on a review with three or more comments raises summary-thin. A suggestion's one-line summary is a different field: comments.suggestions.summary.",
       "example": "\"The retry loop is sound, but the context deadline is not propagated to the downstream call, so a cancelled request keeps retrying.\"",
       "related": [

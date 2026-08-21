@@ -2,7 +2,7 @@
   "index": [
     {
       "namespace": "field",
-      "names": ["anchors", "body", "category", "comments", "comments.code", "comments.suggestions.code", "comments.suggestions.summary", "cons", "effort", "end_line", "field:summary", "file", "id", "line", "priority", "profile", "pros", "ref", "scope", "suggestions", "verdict", "version"]
+      "names": ["anchors", "assessment", "body", "category", "comments", "comments.code", "comments.suggestions.code", "comments.suggestions.summary", "cons", "effort", "end_line", "field:summary", "file", "id", "line", "priority", "profile", "pros", "ref", "scope", "suggestions", "verdict", "version"]
     },
     {
       "namespace": "check",

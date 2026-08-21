@@ -1,12 +1,13 @@
 A review document is one JSON object. Unknown fields are rejected.
 
 root
-  version   "1"
-  verdict   approve | request_changes | comment
-  summary   1-3 sentences, 30-1500 chars
-  ref       40-char lowercase commit SHA; required, read by every anchor
-  profile   kebab-case name; optional, for collect-reviews attribution
-  comments  array; empty only when verdict is approve
+  version     "1"
+  verdict     approve | request_changes | comment
+  summary     1-3 sentences, 30-1500 chars
+  ref         40-char lowercase commit SHA; required, read by every anchor
+  profile     kebab-case name; optional, for collect-reviews attribution
+  comments    array; empty only when verdict is approve
+  assessment  strong | sound | mixed | weak; optional, quality grade orthogonal to verdict
 
 comment
   id           kebab slug + number, e.g. missing-context-2; unique

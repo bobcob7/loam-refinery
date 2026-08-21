@@ -51,7 +51,7 @@ func TestCommandsStayWithinBudget(t *testing.T) {
 		{name: "prime", args: []string{"prime"}, golden: "prime.txt", budget: 250},
 		{name: "describe", args: []string{"describe"}, golden: "describe.txt", budget: 850},
 		{name: "describe --list", args: []string{"describe", "--list"}, golden: "list.txt", budget: 380},
-		{name: "schema", args: []string{"schema"}, budget: 1000},
+		{name: "schema", args: []string{"schema"}, budget: 1100},
 		{name: "schema --annotated", args: []string{"schema", "--annotated"}, budget: 5000},
 	}
 	for _, test := range tests {

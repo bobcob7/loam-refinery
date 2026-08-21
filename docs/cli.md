@@ -1070,7 +1070,7 @@ nothing measures is a limit that erodes.
 | `describe` | 850 | Once per session that writes a review |
 | `describe --lens=NAME` | 350 each | Only on uncertainty or a failed check |
 | `describe --list` | 380 | Rare; discovery and the unknown-lens error |
-| `schema` | 1,000 | Rare; machine consumers only |
+| `schema` | 1,100 | Rare; machine consumers only |
 | `schema --annotated` | 5,000 | Rare; codegen only |
 | `submit-review`, clean | 80 | Every attempt |
 | `submit-review`, clean, no repository | 140 | Common for a document with no anchors to verify; an anchored document run outside a repository now fails instead of landing here — see [§2.3.1](#231-verifying-anchors) |
@@ -1211,7 +1211,16 @@ The two `schema` figures are large on purpose and are ceilings rather than
 targets. `schema --annotated` carries the descriptions every field lens renders
 from, so it is necessarily at least the sum of those entries — a small annotated
 schema would mean thin lenses, which is the opposite of what it is for. Both are
-rare, machine-facing calls that no loop pays.
+rare, machine-facing calls that no loop pays. Only `schema`'s minimal-form
+ceiling moved, from 1,000 to 1,100, when the `assessment` field arrived: the
+minimal form strips every description, so that growth is the enum and type
+alone — structural, and not trimmable without removing schema content itself.
+`schema --annotated`'s ceiling did not move. The field's first-draft
+description pushed annotated schema past 5,000, but that growth was prose,
+not structure, and tightening the description — to the density `verdict`'s
+own description already models — brought it back under the original ceiling
+with room to spare. A ceiling that yields whenever there was real slack left
+to find is not a ceiling.
 
 Budgets are **per entry**, not per command, for `describe --lens`. That is what
 keeps the ceiling meaningful as the registry grows: a registry of 200 entries
