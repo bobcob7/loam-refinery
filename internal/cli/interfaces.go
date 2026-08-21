@@ -6,6 +6,7 @@ import (
 
 	"github.com/bobcob7/loam-refinery/internal/entry"
 	"github.com/bobcob7/loam-refinery/internal/profile"
+	"github.com/bobcob7/loam-refinery/internal/render"
 	"github.com/bobcob7/loam-refinery/internal/review"
 	"github.com/bobcob7/loam-refinery/internal/store"
 	"github.com/bobcob7/loam-refinery/internal/validate"
@@ -80,6 +81,16 @@ type renderer interface {
 	// a non-nil empty slice renders "profiles":[] rather than null - the
 	// same empty-directory guarantee internal/profile.Reader.List makes.
 	Profiles(w io.Writer, profiles []profile.Profile) error
+	// CollectReviews writes collect-reviews's JSON envelope
+	// (docs/features/combined-reviews.md §8.1) — the one function that
+	// decides what collect-reviews found (§8.3.1). Unlike every other
+	// method here, its own value type lives in internal/render rather than
+	// a domain package: internal/collect deliberately does not know about
+	// repo, store.enabled, or head_check (internal/collect's own package
+	// doc), so there is no third, lower package for both this interface
+	// and internal/render to share it from the way review.Result serves
+	// Result above.
+	CollectReviews(w io.Writer, envelope render.CollectReviewsEnvelope) error
 }
 
 // entryRegistry resolves lens names to entries.
@@ -116,6 +127,29 @@ type reviewStore interface {
 	// ReadContent reads the file at path, as named by a Review's or
 	// FailedRun's Path (docs/config.md §6.1, --content).
 	ReadContent(path string) ([]byte, error)
+	// DistinctDigests returns one row per distinct digest among passing
+	// runs for repo and ref, oldest first — the enumeration
+	// collect-reviews's own reader loops over
+	// (docs/features/combined-reviews.md §5.3.1), mirroring
+	// internal/store.Store.DistinctDigests. An empty slice and a nil error
+	// answer a repo or ref the store has never heard of, the same
+	// answered-as-empty posture every other method here already has.
+	DistinctDigests(ctx context.Context, repo, ref string) ([]store.DigestRow, error)
+	// ReviewPath resolves one distinct digest to the stored file it names
+	// (docs/features/combined-reviews.md notes on refinery-uyb.11: "digest
+	// to path is not on the reviewStore interface" until now), so
+	// collect-reviews can turn DistinctDigests's rows into ReadContent
+	// calls without collect-reviews knowing the store's own directory
+	// layout. Mirrors internal/store.Store.ReviewPath's formula exactly;
+	// unlike that method it can fail, because computing it here still
+	// means resolving the store root from config first.
+	ReviewPath(ctx context.Context, repo, ref, digest string) (string, error)
+	// StoreEnabled reports store.enabled, read from the same config
+	// submit-review's storing does (docs/config.md §3) — collect-reviews's
+	// own store.enabled field (docs/features/combined-reviews.md §8.1),
+	// reported rather than gated on, since disabling storing never gates
+	// reading (§9).
+	StoreEnabled(ctx context.Context) (bool, error)
 }
 
 // profileSource reads reviewer profiles for prime --profile and prime

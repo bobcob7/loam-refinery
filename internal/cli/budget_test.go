@@ -370,6 +370,7 @@ func runValidate(t *testing.T, dir, source string) (string, int) {
 		panickyProfileSource(),
 		realRegistry(t),
 		render.NewJSON(),
+		noopHeadChecker(),
 		CheckNames{},
 		Build{Version: "test", Commit: "test", Schema: schema.Version()},
 		func(bool) ([]byte, error) { return nil, nil },
@@ -433,6 +434,7 @@ func runReal(t *testing.T, args ...string) string {
 		panickyProfileSource(),
 		realRegistry(t),
 		render.NewJSON(),
+		noopHeadChecker(),
 		CheckNames{},
 		Build{Version: "test", Commit: "test", Schema: schema.Version()},
 		func(annotated bool) ([]byte, error) {
@@ -532,6 +534,18 @@ func (a *realReviewsAdapter) ListRepos(ctx context.Context) ([]store.RepoCount, 
 
 func (a *realReviewsAdapter) ReadContent(path string) ([]byte, error) {
 	return a.st.ReadContent(path)
+}
+
+func (a *realReviewsAdapter) DistinctDigests(ctx context.Context, repo, ref string) ([]store.DigestRow, error) {
+	return a.st.DistinctDigests(ctx, repo, ref)
+}
+
+func (a *realReviewsAdapter) ReviewPath(_ context.Context, repo, ref, digest string) (string, error) {
+	return a.st.ReviewPath(repo, ref, digest), nil
+}
+
+func (a *realReviewsAdapter) StoreEnabled(context.Context) (bool, error) {
+	return true, nil
 }
 
 // fixedStoreRootLen is the length every store root newRealStore creates is
@@ -661,6 +675,7 @@ func runReviews(t *testing.T, reviews reviewStore, args ...string) string {
 		panickyProfileSource(),
 		realRegistry(t),
 		render.NewJSON(),
+		noopHeadChecker(),
 		CheckNames{},
 		Build{Version: "test", Commit: "test", Schema: schema.Version()},
 		func(annotated bool) ([]byte, error) {

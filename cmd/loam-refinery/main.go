@@ -81,6 +81,7 @@ func wire(log *slog.Logger, stdin io.Reader, stdout, stderr io.Writer) (*cli.App
 		newProfilesAdapter(),
 		registry,
 		render.NewJSON(),
+		newHeadCheckAdapter(log),
 		checkNames(),
 		cli.Build{Version: version, Commit: commit(), Schema: schema.Version()},
 		schemaText,

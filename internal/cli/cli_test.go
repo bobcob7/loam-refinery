@@ -25,13 +25,14 @@ import (
 )
 
 type harness struct {
-	app       *App
-	validator *documentValidatorMock
-	store     *documentStoreMock
-	reviews   *reviewStoreMock
-	profiles  *profileSourceMock
-	stdout    *bytes.Buffer
-	stderr    *bytes.Buffer
+	app         *App
+	validator   *documentValidatorMock
+	store       *documentStoreMock
+	reviews     *reviewStoreMock
+	profiles    *profileSourceMock
+	headChecker *headCheckerMock
+	stdout      *bytes.Buffer
+	stderr      *bytes.Buffer
 }
 
 func newHarness(t *testing.T, stdin string) *harness {
@@ -47,6 +48,7 @@ func newHarness(t *testing.T, stdin string) *harness {
 	}
 	reviewsMock := noopReviewStore()
 	profilesMock := panickyProfileSource()
+	headCheckerMock := noopHeadChecker()
 	app := New(
 		validator,
 		storeMock,
@@ -54,6 +56,7 @@ func newHarness(t *testing.T, stdin string) *harness {
 		profilesMock,
 		testRegistry(t),
 		render.NewJSON(),
+		headCheckerMock,
 		CheckNames{
 			Structural:   []string{"id-unique"},
 			Verification: []string{"ref-unknown"},
@@ -72,7 +75,7 @@ func newHarness(t *testing.T, stdin string) *harness {
 		stderr,
 		slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	)
-	return &harness{app: app, validator: validator, store: storeMock, reviews: reviewsMock, profiles: profilesMock, stdout: stdout, stderr: stderr}
+	return &harness{app: app, validator: validator, store: storeMock, reviews: reviewsMock, profiles: profilesMock, headChecker: headCheckerMock, stdout: stdout, stderr: stderr}
 }
 
 // panickyProfileSource stands in for profileSource wherever a test drives a
@@ -106,6 +109,24 @@ func noopReviewStore() *reviewStoreMock {
 		ListReposFunc: func(context.Context) ([]store.RepoCount, error) { return nil, nil },
 		ReadContentFunc: func(string) ([]byte, error) {
 			return nil, errors.New("noopReviewStore: no content")
+		},
+		DistinctDigestsFunc: func(context.Context, string, string) ([]store.DigestRow, error) {
+			return nil, nil
+		},
+		ReviewPathFunc: func(context.Context, string, string, string) (string, error) {
+			return "", errors.New("noopReviewStore: no path")
+		},
+		StoreEnabledFunc: func(context.Context) (bool, error) { return false, nil },
+	}
+}
+
+// noopHeadChecker stands in for headChecker wherever a test drives a command
+// other than collect-reviews: it reports "none" and never errors, the same
+// answer CheckDivergence gives outside a repository.
+func noopHeadChecker() *headCheckerMock {
+	return &headCheckerMock{
+		CheckDivergenceFunc: func(context.Context, string, *review.Document, map[string]string) (string, bool, []DivergedAnchor, error) {
+			return "none", false, nil, nil
 		},
 	}
 }

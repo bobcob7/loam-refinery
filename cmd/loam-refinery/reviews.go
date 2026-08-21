@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/bobcob7/loam-refinery/internal/config"
 	"github.com/bobcob7/loam-refinery/internal/store"
@@ -92,6 +93,47 @@ func (a *reviewsAdapter) ListRepos(ctx context.Context) ([]store.RepoCount, erro
 // here that ever opens a tree rather than store.db (docs/config.md §6.3).
 func (a *reviewsAdapter) ReadContent(path string) ([]byte, error) {
 	return os.ReadFile(path)
+}
+
+// DistinctDigests implements internal/cli's reviewStore
+// (docs/features/combined-reviews.md §5.3.1), the enumeration
+// collect-reviews reads.
+func (a *reviewsAdapter) DistinctDigests(ctx context.Context, repo, ref string) ([]store.DigestRow, error) {
+	st, ok, err := a.open(ctx)
+	if err != nil || !ok {
+		return nil, err
+	}
+	defer st.Close()
+	return st.DistinctDigests(ctx, repo, ref)
+}
+
+// ReviewPath implements internal/cli's reviewStore: the digest-to-path half
+// of collect-reviews's own reader (refinery-uyb.11's notes: "digest to path
+// is not on the reviewStore interface" until now). It mirrors
+// internal/store.Store.ReviewPath's own formula rather than opening a
+// *Store just to call it — a Store's root is always cfg.Store.Path, the
+// same value store.New and store.NewReadOnly are constructed with, so
+// nothing beyond the config file is needed to compute it. Keep this in sync
+// with internal/store/files.go's ReviewPath if that formula ever changes.
+func (a *reviewsAdapter) ReviewPath(ctx context.Context, repo, ref, digest string) (string, error) {
+	cfg, err := loadValidConfig()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cfg.Store.Path, "reviews", filepath.FromSlash(repo), ref, digest+".json"), nil
+}
+
+// StoreEnabled implements internal/cli's reviewStore: collect-reviews's own
+// store.enabled field (docs/features/combined-reviews.md §8.1), read from
+// the same config storeAdapter.Save already reads it from. store.enabled
+// never gates a read (§9), so this is reported, never consulted, by every
+// other method here.
+func (a *reviewsAdapter) StoreEnabled(ctx context.Context) (bool, error) {
+	cfg, err := loadValidConfig()
+	if err != nil {
+		return false, err
+	}
+	return cfg.Store.Enabled, nil
 }
 
 // open resolves the store directory from config and opens it read-only for

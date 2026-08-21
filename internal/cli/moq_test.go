@@ -7,6 +7,7 @@ import (
 	"context"
 	"github.com/bobcob7/loam-refinery/internal/entry"
 	"github.com/bobcob7/loam-refinery/internal/profile"
+	"github.com/bobcob7/loam-refinery/internal/render"
 	"github.com/bobcob7/loam-refinery/internal/review"
 	"github.com/bobcob7/loam-refinery/internal/store"
 	"github.com/bobcob7/loam-refinery/internal/validate"
@@ -102,6 +103,9 @@ var _ renderer = &rendererMock{}
 //
 //		// make and configure a mocked renderer
 //		mockedrenderer := &rendererMock{
+//			CollectReviewsFunc: func(w io.Writer, envelope render.CollectReviewsEnvelope) error {
+//				panic("mock out the CollectReviews method")
+//			},
 //			EntriesFunc: func(w io.Writer, entries []entry.Entry) error {
 //				panic("mock out the Entries method")
 //			},
@@ -124,6 +128,9 @@ var _ renderer = &rendererMock{}
 //
 //	}
 type rendererMock struct {
+	// CollectReviewsFunc mocks the CollectReviews method.
+	CollectReviewsFunc func(w io.Writer, envelope render.CollectReviewsEnvelope) error
+
 	// EntriesFunc mocks the Entries method.
 	EntriesFunc func(w io.Writer, entries []entry.Entry) error
 
@@ -141,6 +148,13 @@ type rendererMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// CollectReviews holds details about calls to the CollectReviews method.
+		CollectReviews []struct {
+			// W is the w argument value.
+			W io.Writer
+			// Envelope is the envelope argument value.
+			Envelope render.CollectReviewsEnvelope
+		}
 		// Entries holds details about calls to the Entries method.
 		Entries []struct {
 			// W is the w argument value.
@@ -179,11 +193,48 @@ type rendererMock struct {
 			Groups []entry.Group
 		}
 	}
-	lockEntries  sync.RWMutex
-	lockIndex    sync.RWMutex
-	lockProfiles sync.RWMutex
-	lockResult   sync.RWMutex
-	lockSummary  sync.RWMutex
+	lockCollectReviews sync.RWMutex
+	lockEntries        sync.RWMutex
+	lockIndex          sync.RWMutex
+	lockProfiles       sync.RWMutex
+	lockResult         sync.RWMutex
+	lockSummary        sync.RWMutex
+}
+
+// CollectReviews calls CollectReviewsFunc.
+func (mock *rendererMock) CollectReviews(w io.Writer, envelope render.CollectReviewsEnvelope) error {
+	if mock.CollectReviewsFunc == nil {
+		panic("rendererMock.CollectReviewsFunc: method is nil but renderer.CollectReviews was just called")
+	}
+	callInfo := struct {
+		W        io.Writer
+		Envelope render.CollectReviewsEnvelope
+	}{
+		W:        w,
+		Envelope: envelope,
+	}
+	mock.lockCollectReviews.Lock()
+	mock.calls.CollectReviews = append(mock.calls.CollectReviews, callInfo)
+	mock.lockCollectReviews.Unlock()
+	return mock.CollectReviewsFunc(w, envelope)
+}
+
+// CollectReviewsCalls gets all the calls that were made to CollectReviews.
+// Check the length with:
+//
+//	len(mockedrenderer.CollectReviewsCalls())
+func (mock *rendererMock) CollectReviewsCalls() []struct {
+	W        io.Writer
+	Envelope render.CollectReviewsEnvelope
+} {
+	var calls []struct {
+		W        io.Writer
+		Envelope render.CollectReviewsEnvelope
+	}
+	mock.lockCollectReviews.RLock()
+	calls = mock.calls.CollectReviews
+	mock.lockCollectReviews.RUnlock()
+	return calls
 }
 
 // Entries calls EntriesFunc.
@@ -555,6 +606,9 @@ var _ reviewStore = &reviewStoreMock{}
 //
 //		// make and configure a mocked reviewStore
 //		mockedreviewStore := &reviewStoreMock{
+//			DistinctDigestsFunc: func(ctx context.Context, repo string, ref string) ([]store.DigestRow, error) {
+//				panic("mock out the DistinctDigests method")
+//			},
 //			KnownFunc: func(ctx context.Context, repo string) (bool, error) {
 //				panic("mock out the Known method")
 //			},
@@ -573,6 +627,12 @@ var _ reviewStore = &reviewStoreMock{}
 //			RepoNameFunc: func(ctx context.Context, dir string) (string, bool, error) {
 //				panic("mock out the RepoName method")
 //			},
+//			ReviewPathFunc: func(ctx context.Context, repo string, ref string, digest string) (string, error) {
+//				panic("mock out the ReviewPath method")
+//			},
+//			StoreEnabledFunc: func(ctx context.Context) (bool, error) {
+//				panic("mock out the StoreEnabled method")
+//			},
 //		}
 //
 //		// use mockedreviewStore in code that requires reviewStore
@@ -580,6 +640,9 @@ var _ reviewStore = &reviewStoreMock{}
 //
 //	}
 type reviewStoreMock struct {
+	// DistinctDigestsFunc mocks the DistinctDigests method.
+	DistinctDigestsFunc func(ctx context.Context, repo string, ref string) ([]store.DigestRow, error)
+
 	// KnownFunc mocks the Known method.
 	KnownFunc func(ctx context.Context, repo string) (bool, error)
 
@@ -598,8 +661,23 @@ type reviewStoreMock struct {
 	// RepoNameFunc mocks the RepoName method.
 	RepoNameFunc func(ctx context.Context, dir string) (string, bool, error)
 
+	// ReviewPathFunc mocks the ReviewPath method.
+	ReviewPathFunc func(ctx context.Context, repo string, ref string, digest string) (string, error)
+
+	// StoreEnabledFunc mocks the StoreEnabled method.
+	StoreEnabledFunc func(ctx context.Context) (bool, error)
+
 	// calls tracks calls to the methods.
 	calls struct {
+		// DistinctDigests holds details about calls to the DistinctDigests method.
+		DistinctDigests []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Repo is the repo argument value.
+			Repo string
+			// Ref is the ref argument value.
+			Ref string
+		}
 		// Known holds details about calls to the Known method.
 		Known []struct {
 			// Ctx is the ctx argument value.
@@ -646,13 +724,72 @@ type reviewStoreMock struct {
 			// Dir is the dir argument value.
 			Dir string
 		}
+		// ReviewPath holds details about calls to the ReviewPath method.
+		ReviewPath []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Repo is the repo argument value.
+			Repo string
+			// Ref is the ref argument value.
+			Ref string
+			// Digest is the digest argument value.
+			Digest string
+		}
+		// StoreEnabled holds details about calls to the StoreEnabled method.
+		StoreEnabled []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+		}
 	}
-	lockKnown          sync.RWMutex
-	lockListFailedRuns sync.RWMutex
-	lockListRepos      sync.RWMutex
-	lockListReviews    sync.RWMutex
-	lockReadContent    sync.RWMutex
-	lockRepoName       sync.RWMutex
+	lockDistinctDigests sync.RWMutex
+	lockKnown           sync.RWMutex
+	lockListFailedRuns  sync.RWMutex
+	lockListRepos       sync.RWMutex
+	lockListReviews     sync.RWMutex
+	lockReadContent     sync.RWMutex
+	lockRepoName        sync.RWMutex
+	lockReviewPath      sync.RWMutex
+	lockStoreEnabled    sync.RWMutex
+}
+
+// DistinctDigests calls DistinctDigestsFunc.
+func (mock *reviewStoreMock) DistinctDigests(ctx context.Context, repo string, ref string) ([]store.DigestRow, error) {
+	if mock.DistinctDigestsFunc == nil {
+		panic("reviewStoreMock.DistinctDigestsFunc: method is nil but reviewStore.DistinctDigests was just called")
+	}
+	callInfo := struct {
+		Ctx  context.Context
+		Repo string
+		Ref  string
+	}{
+		Ctx:  ctx,
+		Repo: repo,
+		Ref:  ref,
+	}
+	mock.lockDistinctDigests.Lock()
+	mock.calls.DistinctDigests = append(mock.calls.DistinctDigests, callInfo)
+	mock.lockDistinctDigests.Unlock()
+	return mock.DistinctDigestsFunc(ctx, repo, ref)
+}
+
+// DistinctDigestsCalls gets all the calls that were made to DistinctDigests.
+// Check the length with:
+//
+//	len(mockedreviewStore.DistinctDigestsCalls())
+func (mock *reviewStoreMock) DistinctDigestsCalls() []struct {
+	Ctx  context.Context
+	Repo string
+	Ref  string
+} {
+	var calls []struct {
+		Ctx  context.Context
+		Repo string
+		Ref  string
+	}
+	mock.lockDistinctDigests.RLock()
+	calls = mock.calls.DistinctDigests
+	mock.lockDistinctDigests.RUnlock()
+	return calls
 }
 
 // Known calls KnownFunc.
@@ -876,6 +1013,82 @@ func (mock *reviewStoreMock) RepoNameCalls() []struct {
 	mock.lockRepoName.RLock()
 	calls = mock.calls.RepoName
 	mock.lockRepoName.RUnlock()
+	return calls
+}
+
+// ReviewPath calls ReviewPathFunc.
+func (mock *reviewStoreMock) ReviewPath(ctx context.Context, repo string, ref string, digest string) (string, error) {
+	if mock.ReviewPathFunc == nil {
+		panic("reviewStoreMock.ReviewPathFunc: method is nil but reviewStore.ReviewPath was just called")
+	}
+	callInfo := struct {
+		Ctx    context.Context
+		Repo   string
+		Ref    string
+		Digest string
+	}{
+		Ctx:    ctx,
+		Repo:   repo,
+		Ref:    ref,
+		Digest: digest,
+	}
+	mock.lockReviewPath.Lock()
+	mock.calls.ReviewPath = append(mock.calls.ReviewPath, callInfo)
+	mock.lockReviewPath.Unlock()
+	return mock.ReviewPathFunc(ctx, repo, ref, digest)
+}
+
+// ReviewPathCalls gets all the calls that were made to ReviewPath.
+// Check the length with:
+//
+//	len(mockedreviewStore.ReviewPathCalls())
+func (mock *reviewStoreMock) ReviewPathCalls() []struct {
+	Ctx    context.Context
+	Repo   string
+	Ref    string
+	Digest string
+} {
+	var calls []struct {
+		Ctx    context.Context
+		Repo   string
+		Ref    string
+		Digest string
+	}
+	mock.lockReviewPath.RLock()
+	calls = mock.calls.ReviewPath
+	mock.lockReviewPath.RUnlock()
+	return calls
+}
+
+// StoreEnabled calls StoreEnabledFunc.
+func (mock *reviewStoreMock) StoreEnabled(ctx context.Context) (bool, error) {
+	if mock.StoreEnabledFunc == nil {
+		panic("reviewStoreMock.StoreEnabledFunc: method is nil but reviewStore.StoreEnabled was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+	}{
+		Ctx: ctx,
+	}
+	mock.lockStoreEnabled.Lock()
+	mock.calls.StoreEnabled = append(mock.calls.StoreEnabled, callInfo)
+	mock.lockStoreEnabled.Unlock()
+	return mock.StoreEnabledFunc(ctx)
+}
+
+// StoreEnabledCalls gets all the calls that were made to StoreEnabled.
+// Check the length with:
+//
+//	len(mockedreviewStore.StoreEnabledCalls())
+func (mock *reviewStoreMock) StoreEnabledCalls() []struct {
+	Ctx context.Context
+} {
+	var calls []struct {
+		Ctx context.Context
+	}
+	mock.lockStoreEnabled.RLock()
+	calls = mock.calls.StoreEnabled
+	mock.lockStoreEnabled.RUnlock()
 	return calls
 }
 

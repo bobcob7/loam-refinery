@@ -65,6 +65,7 @@ type App struct {
 	profiles    profileSource
 	registry    entryRegistry
 	renderer    renderer
+	headChecker headChecker
 	names       CheckNames
 	build       Build
 	dir         string
@@ -83,6 +84,7 @@ func New(
 	profiles profileSource,
 	registry entryRegistry,
 	structured renderer,
+	headChecker headChecker,
 	names CheckNames,
 	build Build,
 	schemaText func(annotated bool) ([]byte, error),
@@ -98,6 +100,7 @@ func New(
 		profiles:    profiles,
 		registry:    registry,
 		renderer:    structured,
+		headChecker: headChecker,
 		names:       names,
 		build:       build,
 		schemaText:  schemaText,
@@ -115,6 +118,7 @@ const usage = `loam-refinery — check a review document
   loam-refinery describe [--lens=NAME,...]       the contract, disclosed on demand
   loam-refinery submit-review [path]             check a review (- or omitted: stdin)
   loam-refinery reviews [--repo=NAME]            what an earlier submit-review stored
+  loam-refinery collect-reviews --ref=SHA        every stored review for one commit, combined
   loam-refinery schema [--annotated]             JSON Schema, for machines
   loam-refinery version
 
@@ -137,6 +141,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return a.submitReview(ctx, rest)
 	case "reviews":
 		return a.reviews(ctx, rest)
+	case "collect-reviews":
+		return a.collectReviews(ctx, rest)
 	case "schema":
 		return a.schema(rest)
 	case "version":

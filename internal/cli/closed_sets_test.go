@@ -85,3 +85,16 @@ func TestPrimeFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
 	sort.Strings(want)
 	assert.Equal(t, want, flagNames(t, "prime"), "docs/cli.md §3: prime accepts exactly --profile and --list")
 }
+
+// TestCollectReviewsFlagSetIsExactlyTheDocumentedFlags pins
+// docs/features/combined-reviews.md §2.2's flag table: --ref, --repo, and
+// --format, and nothing else — collect-reviews does not inherit reviews's
+// --limit, --content, --failed, or --list, since it answers a
+// submit-review-shaped question about one commit, not a reviews-shaped
+// question about the store as a log (§2).
+func TestCollectReviewsFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
+	t.Parallel()
+	want := []string{"format", "ref", "repo"}
+	sort.Strings(want)
+	assert.Equal(t, want, flagNames(t, "collect-reviews"), "docs/features/combined-reviews.md §2.2: collect-reviews accepts exactly --ref, --repo, and --format")
+}

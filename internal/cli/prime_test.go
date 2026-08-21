@@ -27,6 +27,7 @@ func newPrimeApp(t *testing.T, profiles profileSource, args ...string) (int, str
 		profiles,
 		testRegistry(t),
 		render.NewJSON(),
+		noopHeadChecker(),
 		CheckNames{},
 		Build{Version: "1.2.3", Commit: "abc", Schema: "1"},
 		func(bool) ([]byte, error) { return nil, nil },
