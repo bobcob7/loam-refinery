@@ -75,9 +75,27 @@ type DigestRow struct {
 // the total number matching before limit was applied (config.md section
 // 6.1). ref, when non-empty, restricts the result to that commit; limit of
 // 0 means unlimited.
+//
+// Against a store still at schema version 1 (s.hasAssessment false), this
+// runs ListReviewsLegacy instead of ListReviews — the same rows, from a
+// query that does not name the assessment column, because a version-1
+// database has none (refinery-xij). legacyReviewRun upgrades each row to
+// sqlc.Run shape with Assessment left invalid, so every row-to-Review
+// conversion below runs unmodified regardless of which query produced it.
 func (s *Store) ListReviews(ctx context.Context, repo, ref string, limit int) ([]Review, int, error) {
 	arg := nullString(ref)
-	rows, err := s.queries.ListReviews(ctx, sqlc.ListReviewsParams{Repo: repo, Ref: arg, Limit: int64(sqlLimit(limit))})
+	var rows []sqlc.Run
+	var err error
+	if s.hasAssessment {
+		rows, err = s.queries.ListReviews(ctx, sqlc.ListReviewsParams{Repo: repo, Ref: arg, Limit: int64(sqlLimit(limit))})
+	} else {
+		var legacy []sqlc.ListReviewsLegacyRow
+		legacy, err = s.queries.ListReviewsLegacy(ctx, sqlc.ListReviewsLegacyParams{Repo: repo, Ref: arg, Limit: int64(sqlLimit(limit))})
+		rows = make([]sqlc.Run, 0, len(legacy))
+		for _, row := range legacy {
+			rows = append(rows, legacyReviewRun(row))
+		}
+	}
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing reviews: %w", err)
 	}
@@ -127,10 +145,22 @@ func (s *Store) DistinctDigests(ctx context.Context, repo, ref string) ([]Digest
 
 // ListFailedRuns returns up to limit runs for repo that stored no review,
 // newest first, and the total number matching before limit was applied.
-// ref and limit behave as in ListReviews.
+// ref and limit behave as in ListReviews, including the schema-version-1
+// fallback to ListFailedRunsLegacy (see ListReviews's doc comment).
 func (s *Store) ListFailedRuns(ctx context.Context, repo, ref string, limit int) ([]FailedRun, int, error) {
 	arg := nullString(ref)
-	rows, err := s.queries.ListFailedRuns(ctx, sqlc.ListFailedRunsParams{Repo: repo, Ref: arg, Limit: int64(sqlLimit(limit))})
+	var rows []sqlc.Run
+	var err error
+	if s.hasAssessment {
+		rows, err = s.queries.ListFailedRuns(ctx, sqlc.ListFailedRunsParams{Repo: repo, Ref: arg, Limit: int64(sqlLimit(limit))})
+	} else {
+		var legacy []sqlc.ListFailedRunsLegacyRow
+		legacy, err = s.queries.ListFailedRunsLegacy(ctx, sqlc.ListFailedRunsLegacyParams{Repo: repo, Ref: arg, Limit: int64(sqlLimit(limit))})
+		rows = make([]sqlc.Run, 0, len(legacy))
+		for _, row := range legacy {
+			rows = append(rows, legacyFailedRun(row))
+		}
+	}
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing failed runs: %w", err)
 	}
@@ -195,6 +225,47 @@ func sqlLimit(limit int) int {
 		return unlimited
 	}
 	return limit
+}
+
+// legacyReviewRun upgrades a ListReviewsLegacy row to sqlc.Run shape.
+// Assessment is left at its zero value (an invalid sql.NullString), which
+// is exactly what every caller downstream already treats as absent — the
+// same state a NULL assessment column reads back as on a migrated store.
+func legacyReviewRun(row sqlc.ListReviewsLegacyRow) sqlc.Run {
+	return sqlc.Run{
+		ID:            row.ID,
+		At:            row.At,
+		Repo:          row.Repo,
+		Ref:           row.Ref,
+		Digest:        row.Digest,
+		ExitCode:      row.ExitCode,
+		Verdict:       row.Verdict,
+		NumComments:   row.NumComments,
+		NumErrors:     row.NumErrors,
+		NumAdvisories: row.NumAdvisories,
+		NumSkipped:    row.NumSkipped,
+		ToolVersion:   row.ToolVersion,
+		SchemaVersion: row.SchemaVersion,
+	}
+}
+
+// legacyFailedRun is legacyReviewRun for a ListFailedRunsLegacy row.
+func legacyFailedRun(row sqlc.ListFailedRunsLegacyRow) sqlc.Run {
+	return sqlc.Run{
+		ID:            row.ID,
+		At:            row.At,
+		Repo:          row.Repo,
+		Ref:           row.Ref,
+		Digest:        row.Digest,
+		ExitCode:      row.ExitCode,
+		Verdict:       row.Verdict,
+		NumComments:   row.NumComments,
+		NumErrors:     row.NumErrors,
+		NumAdvisories: row.NumAdvisories,
+		NumSkipped:    row.NumSkipped,
+		ToolVersion:   row.ToolVersion,
+		SchemaVersion: row.SchemaVersion,
+	}
 }
 
 // countsOf reads the four nullable counters off a runs row.

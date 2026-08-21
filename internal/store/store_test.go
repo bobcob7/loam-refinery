@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -226,6 +227,15 @@ func TestOpen_PathWithQuestionMarkStaysInsideDirectory(t *testing.T) {
 // against the thirteen columns that predated assessment — changes nothing
 // any existing test checks, since every other test here asks about one
 // column or one constraint rather than the whole set.
+//
+// This pins a freshly created database only. A database migrate() carries
+// forward from schema version 1 has assessment last rather than eighth,
+// because SQLite's ALTER TABLE ADD COLUMN always appends (sql/migrations/
+// 0002_assessment.sql) — a deliberate, separately pinned divergence, not
+// an oversight: see TestMigrate_FromSchemaVersion1AddsAssessmentColumn's
+// own column-order assertion. Every query that reads assessment names an
+// explicit column list rather than relying on table order (query.sql), so
+// nothing downstream of either shape depends on this order matching.
 func TestOpen_RunsTableIsExactlyTheFourteenDocumentedColumns(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -343,9 +353,11 @@ CREATE INDEX runs_digest   ON runs(digest);
 // TestMigrate_FromSchemaVersion1AddsAssessmentColumn builds a database at
 // schema version 1 by hand, with a row already in it, then opens it through
 // this package's own Open and checks migrate carried it to schemaVersion
-// (2): the assessment column exists, the CHECK on it is live, and the row
-// that predates the column survives with assessment reading back NULL —
-// not an empty string masquerading as one.
+// (2): the assessment column exists, at the end of the column order rather
+// than eighth (see TestOpen_RunsTableIsExactlyTheFourteenDocumentedColumns's
+// doc comment for why that is pinned deliberately, not left to drift), the
+// CHECK on it is live, and the row that predates the column survives with
+// assessment reading back NULL — not an empty string masquerading as one.
 func TestMigrate_FromSchemaVersion1AddsAssessmentColumn(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -382,7 +394,13 @@ func TestMigrate_FromSchemaVersion1AddsAssessmentColumn(t *testing.T) {
 	}
 	require.NoError(t, rows.Err())
 	require.NoError(t, rows.Close())
-	assert.Contains(t, names, "assessment", "migrating from schema version 1 must add the assessment column")
+	wantMigratedOrder := []string{
+		"id", "at", "repo", "ref", "digest", "exit_code", "verdict",
+		"num_comments", "num_errors", "num_advisories", "num_skipped",
+		"tool_version", "schema_version", "assessment",
+	}
+	assert.Equal(t, wantMigratedOrder, names,
+		"migrating from schema version 1 must add assessment, appended last (ALTER TABLE ADD COLUMN's own behavior) rather than in the fresh-schema position")
 
 	var verdict string
 	var assessment sql.NullString
@@ -394,4 +412,27 @@ func TestMigrate_FromSchemaVersion1AddsAssessmentColumn(t *testing.T) {
 		"INSERT INTO runs (at, repo, digest, exit_code, assessment, tool_version, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
 		"2026-08-19T00:00:00Z", "repo", "digest-post-migration", 0, "bogus", "v1", "v1")
 	assert.Error(t, err, "the migrated database's assessment CHECK must reject an invalid value")
+}
+
+// TestOpen_RefusesADatabaseNewerThanThisBinaryKnows exercises migrate's
+// downgrade branch (version > schemaVersion) — reworded by this branch
+// while no test in the suite ever took it. A database stamped with a
+// schema version ahead of what this binary embeds is the shape a newer
+// binary's Open would leave behind; an older binary opening it for writing
+// must refuse rather than silently reinterpret an unknown layout as one it
+// understands.
+func TestOpen_RefusesADatabaseNewerThanThisBinaryKnows(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "store.db")
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	_, err = db.ExecContext(t.Context(), fmt.Sprintf("PRAGMA user_version = %d", schemaVersion+1))
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	_, err = Open(t.Context(), path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), fmt.Sprintf("schema version %d", schemaVersion+1))
+	assert.Contains(t, err.Error(), fmt.Sprintf("this binary knows %d", schemaVersion))
 }

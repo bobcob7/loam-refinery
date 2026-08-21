@@ -44,6 +44,14 @@ var migrations = map[int]string{
 // runs changes (config.md §4.5.4).
 const schemaVersion = 2
 
+// assessmentColumnVersion is the schema version migration0002 (1 -> 2)
+// leaves a database at: the first version whose runs table has an
+// assessment column. NewReadOnly compares a store's PRAGMA user_version
+// against this constant rather than against schemaVersion, so a later
+// migration unrelated to assessment does not change what "the assessment
+// column is absent" means for a read-only store (refinery-xij).
+const assessmentColumnVersion = 2
+
 // busyTimeoutMillis is the milliseconds a writer waits for a lock before
 // giving up (config.md §4.6). It doubles as the budget convertToWAL retries
 // against: PRAGMA journal_mode=WAL bypasses the busy handler this same
@@ -275,4 +283,18 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("setting schema version: %w", err)
 	}
 	return tx.Commit()
+}
+
+// readSchemaVersion reads PRAGMA user_version on db as it is right now,
+// with no transaction around it: unlike migrate's version check, which
+// deliberately takes the write lock so its read and its action on that
+// read are atomic against a concurrent writer, this is read-only by
+// design — the only caller is NewReadOnly, on a connection opened mode=ro
+// that must never take a write lock at all.
+func readSchemaVersion(ctx context.Context, db *sql.DB) (int, error) {
+	var version int
+	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return 0, fmt.Errorf("reading schema version: %w", err)
+	}
+	return version, nil
 }

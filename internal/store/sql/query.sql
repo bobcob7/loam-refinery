@@ -43,9 +43,39 @@ WHERE repo = sqlc.arg(repo)
 GROUP BY digest
 ORDER BY at ASC;
 
+-- name: ListReviewsLegacy :many
+-- Same rows as ListReviews, for a store still at schema version 1 (before
+-- migration0002 added assessment): the column list omits assessment
+-- because it does not exist yet. Callers report assessment as absent for
+-- every row this returns (refinery-xij) rather than erroring, the same way
+-- an absent assessment is already represented everywhere else in this
+-- feature.
+SELECT id, at, repo, ref, digest, exit_code, verdict,
+  num_comments, num_errors, num_advisories, num_skipped,
+  tool_version, schema_version
+FROM runs
+WHERE repo = sqlc.arg(repo)
+  AND exit_code = 0
+  AND (sqlc.narg(ref) IS NULL OR ref = sqlc.narg(ref))
+ORDER BY at DESC
+LIMIT sqlc.arg(limit);
+
 -- name: ListFailedRuns :many
 -- The other half of the log: runs that stored no review (--failed).
 SELECT * FROM runs
+WHERE repo = sqlc.arg(repo)
+  AND exit_code != 0
+  AND (sqlc.narg(ref) IS NULL OR ref = sqlc.narg(ref))
+ORDER BY at DESC
+LIMIT sqlc.arg(limit);
+
+-- name: ListFailedRunsLegacy :many
+-- Same rows as ListFailedRuns, for a store still at schema version 1. See
+-- ListReviewsLegacy.
+SELECT id, at, repo, ref, digest, exit_code, verdict,
+  num_comments, num_errors, num_advisories, num_skipped,
+  tool_version, schema_version
+FROM runs
 WHERE repo = sqlc.arg(repo)
   AND exit_code != 0
   AND (sqlc.narg(ref) IS NULL OR ref = sqlc.narg(ref))
