@@ -11,7 +11,7 @@ excerpt ({{template "code"}}, bead .4's), and the suggestions
 (internal/render/html_view_finding.go). */ -}}
 {{define "finding"}}
 <details class="finding" id="{{.ID}}">
-<summary>{{.ID}}</summary>
+<summary><a href="#{{fragmentHref .ID}}">{{.ID}}</a></summary>
 <p>{{.Body}}</p>
 </details>
 {{end}}

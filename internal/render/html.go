@@ -43,9 +43,12 @@ type HTML struct {
 
 // NewHTML returns the HTML renderer, with every template partial parsed
 // once at construction — adding a partial never means editing a parse
-// list, per htmlTemplatesFS's own comment.
+// list, per htmlTemplatesFS's own comment. Funcs must run before ParseFS:
+// html/template resolves a {{ }} action's function name at parse time,
+// so hrefFuncs (html_href.go, bead .2's own file) is registered here,
+// the one place any partial's fragment-href call becomes resolvable.
 func NewHTML() *HTML {
-	tmpl := template.Must(template.New("report.gohtml").ParseFS(htmlTemplatesFS, "templates/*.gohtml", "templates/*.css", "templates/*.js"))
+	tmpl := template.Must(template.New("report.gohtml").Funcs(hrefFuncs).ParseFS(htmlTemplatesFS, "templates/*.gohtml", "templates/*.css", "templates/*.js"))
 	return &HTML{tmpl: tmpl}
 }
 
