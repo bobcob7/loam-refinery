@@ -64,9 +64,17 @@ Explicitly out of scope:
    repository either: the store is a directory under the user's home
    ([config.md §2](config.md#2-locations)). Amended; see
    [Amendments](#amendments) below.
-2. **The schema is the documentation.** Field descriptions and examples live in
-   the annotated schema, and `describe` renders from it, so explanation cannot
-   drift from enforcement.
+2. **The schema is the documentation for lenses.** Field descriptions and
+   examples live in the annotated schema, and `describe --lens=NAME` renders
+   each entry from it ([§2.2.3](#223-the-entry-registry)), so a lens
+   explanation cannot drift from enforcement. `describe`'s own summary
+   ([§2.2](#22-describe)) is different: hand-written prose, chosen to read
+   well as one paragraph rather than assembled from entries. Nothing renders
+   it from the schema, so nothing stops its prose from going stale — what
+   stops it is narrower: a test pins the summary's field list against the
+   schema's own property list, so a field can go undocumented there for no
+   longer than it takes CI to notice. Amended; see
+   [Amendments](#amendments) below.
 3. **Pay for detail on demand.** No command emits everything it knows. `prime`
    teaches the loop, `describe` summarizes the contract, `describe --lens` opens one
    field or one failed check. A caller reads the paragraph it needs and nothing
@@ -118,6 +126,16 @@ back as one attributed output.
 | Principle | Standing |
 | --- | --- |
 | Aggregating reviews is out of scope (§1, explicitly out of scope) | **Amended, narrowly.** `collect-reviews` combines the reviews stored for one ref into one attributed output — see [docs/features/combined-reviews.md](features/combined-reviews.md). Findings are combined, never fused across profiles, ranked, or reduced to one verdict; within one claimed profile, a later submission is marked current relative to an earlier one, without deleting the earlier one's findings. Aggregation across *refs* remains entirely out of scope: `collect-reviews` combines within one ref and refuses to run without one. |
+
+A third amendment corrects the record rather than the tool: the schema
+gained the `profile` field in the same branch that added `collect-reviews`,
+and `describe`'s hand-written summary went a full amendment pass without
+mentioning it — proof that "the schema is the documentation" was never true
+of that summary the way it is of a lens.
+
+| Principle | Standing |
+| --- | --- |
+| The schema is the documentation (design principle 2) | **Amended, narrowly.** True of `describe --lens=NAME`, which renders each entry from the annotated schema. Not true of `describe`'s own summary, which is hand-written prose and always was — nothing ever rendered it from the schema. What changed is that the gap is now mechanically pinned: a test compares the summary's field list against the schema's property list, field for field, so a field added to one without the other fails the build instead of surviving an amendment pass unnoticed. |
 
 ## 2. Commands
 
