@@ -2165,12 +2165,11 @@ unprofiled `D3` follows, `ordinal: 3`:
       "suggestions": [ /* … */ ]
     },
     {
-      "id": "backend:stale-cache-1",
-      "profile": "backend",
-      "priority": 8,
-      "category": "correctness",
-      "body": "The write path updates the DB but never invalidates the cache entry; on closer read, the batch-update path has the same gap.",
-      "anchors": [{ "file": "internal/cache/store.go", "line": 41 }],
+      "id": "#3:todo-left-in-1",
+      "priority": 2,
+      "category": "style",
+      "body": "A TODO from the previous change is still here and looks resolved by this one.",
+      "anchors": [{ "file": "internal/cache/store.go", "line": 12 }],
       "suggestions": [ /* … */ ]
     },
     {
@@ -2183,11 +2182,12 @@ unprofiled `D3` follows, `ordinal: 3`:
       "suggestions": [ /* … */ ]
     },
     {
-      "id": "#3:todo-left-in-1",
-      "priority": 2,
-      "category": "style",
-      "body": "A TODO from the previous change is still here and looks resolved by this one.",
-      "anchors": [{ "file": "internal/cache/store.go", "line": 12 }],
+      "id": "backend:stale-cache-1",
+      "profile": "backend",
+      "priority": 8,
+      "category": "correctness",
+      "body": "The write path updates the DB but never invalidates the cache entry; on closer read, the batch-update path has the same gap.",
+      "anchors": [{ "file": "internal/cache/store.go", "line": 41 }],
       "suggestions": [ /* … */ ]
     }
   ]

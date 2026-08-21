@@ -1191,10 +1191,13 @@ name is cacheable — across a session, and across the agent's own memory of wha
 cmd/loam-refinery/main.go              flag parsing, wiring, exit codes
 internal/cli/                     subcommand implementations
 internal/cli/interfaces.go        validator, renderer
+internal/cli/testdata/            golden files for describe, --list, and prime output
 internal/review/review.go         document types, enums, priority bands
 internal/schema/schema.go         //go:embed of the schema, draft compilation
 internal/schema/review.schema.json
+internal/validate/                assembles the three check tiers into one result
 internal/structural/              hard checks
+internal/verify/                  anchor claims checked against the repository
 internal/advisory/                advisory registry and implementations
 internal/advisory/interfaces.go   advisory
 internal/entry/                   entry registry, namespaces, alias resolution
@@ -1202,6 +1205,7 @@ internal/entry/interfaces.go      provider
 internal/entry/schema.go          field:* provider, reads the annotated schema
 internal/entry/checks.go          check:* provider, reads the check registries
 internal/entry/topics/            topic:* entries, //go:embed of hand-written md
+internal/collect/                 collect-reviews's merge semantics, qualified ids
 internal/render/                  the json renderer
 internal/config/                  locations, the config file, precedence
 internal/profile/                 the profile directory, frontmatter, bodies
