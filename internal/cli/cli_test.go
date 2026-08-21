@@ -128,7 +128,7 @@ func TestRunDispatches(t *testing.T) {
 		{name: "schema", args: []string{"schema"}, code: ExitValid, stdout: "minimal\n"},
 		{name: "annotated schema", args: []string{"schema", "--annotated"}, code: ExitValid, stdout: "annotated\n"},
 		{name: "a bad flag", args: []string{"submit-review", "--nope"}, code: ExitUsage},
-		{name: "an unknown format", args: []string{"describe", "--format=yaml"}, code: ExitUsage, stderr: `unknown format "yaml"`},
+		{name: "format is not a flag anymore", args: []string{"describe", "--format=yaml"}, code: ExitUsage, stderr: "flag provided but not defined: -format"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -485,10 +485,10 @@ func TestAnEmptyElementIsNotReportedAsAnEmptyList(t *testing.T) {
 	assert.Contains(t, h.stderr.String(), "empty name")
 }
 
-// Exit 1 has to mean the same thing in both formats. Writing the failure past
-// the renderer left --format=json exiting 1 with an empty stdout, which reads
-// to a caller unmarshalling it as a crashed tool rather than as a document to
-// repair.
+// Exit 1 has to mean the same thing in the one format there is. Writing the
+// failure past the renderer left submit-review exiting 1 with an empty
+// stdout, which reads to a caller unmarshalling it as a crashed tool rather
+// than as a document to repair.
 func TestAnUnparseableDocumentIsRenderedInTheChosenFormat(t *testing.T) {
 	t.Parallel()
 	t.Run("the failure is a document, not prose", func(t *testing.T) {
@@ -497,7 +497,7 @@ func TestAnUnparseableDocumentIsRenderedInTheChosenFormat(t *testing.T) {
 		h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
 			return nil, parseError(t)
 		}
-		require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"submit-review", "--format=json"}))
+		require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"submit-review"}))
 		var payload struct {
 			Valid       bool `json:"valid"`
 			Diagnostics []struct {
@@ -601,34 +601,21 @@ func TestUnverifiedAnchorsFailWhicheverSourceCouldNotAnswer(t *testing.T) {
 	}
 }
 
-// The one format left is still a decision, and a wrong --format has to fail the
-// same way on both commands that take it. Nothing else in the suite would
-// notice the flag being ignored entirely.
-func TestFormatAcceptsOnlyJSON(t *testing.T) {
+// TestFormatIsAnUnknownFlagEverywhereItUsedToBeAccepted pins docs/cli.md
+// §5.1: submit-review, describe, and reviews carry no --format flag at all
+// (refinery-uyb.4), so passing it is an ordinary unknown-flag mistake, not
+// a recognized-but-rejected value — the flag package's own error, not a
+// hand-rolled "format is gone" message, which is collect-reviews's framing
+// to use, not these three's.
+func TestFormatIsAnUnknownFlagEverywhereItUsedToBeAccepted(t *testing.T) {
 	t.Parallel()
-	for _, command := range []string{"submit-review", "describe"} {
-		for _, test := range []struct {
-			name   string
-			value  string
-			code   int
-			stderr string
-		}{
-			{name: "json", value: "json", code: -1},
-			{name: "text says where it went", value: "text", code: ExitUsage, stderr: "the text format is gone"},
-			{name: "another format is unknown", value: "yaml", code: ExitUsage, stderr: `unknown format "yaml"`},
-			{name: "empty is unknown", value: "", code: ExitUsage, stderr: `unknown format ""`},
-		} {
-			t.Run(command+"/"+test.name, func(t *testing.T) {
-				t.Parallel()
-				h := newHarness(t, `{"version":"1"}`)
-				code := h.app.Run(t.Context(), []string{command, "--format=" + test.value})
-				if test.code == -1 {
-					assert.NotEqual(t, ExitUsage, code, "json is the format that works")
-					return
-				}
-				assert.Equal(t, test.code, code)
-				assert.Contains(t, h.stderr.String(), test.stderr)
-			})
-		}
+	for _, command := range []string{"submit-review", "describe", "reviews"} {
+		t.Run(command, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, `{"version":"1"}`)
+			code := h.app.Run(t.Context(), []string{command, "--format=json"})
+			assert.Equal(t, ExitUsage, code)
+			assert.Contains(t, h.stderr.String(), "flag provided but not defined: -format")
+		})
 	}
 }

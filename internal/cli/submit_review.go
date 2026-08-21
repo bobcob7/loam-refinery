@@ -10,7 +10,7 @@ import (
 	"github.com/bobcob7/loam-refinery/internal/validate"
 )
 
-const submitReviewUsage = `usage: loam-refinery submit-review [path] [--strict] [--format json]
+const submitReviewUsage = `usage: loam-refinery submit-review [path] [--strict]
 `
 
 // submitReview checks one review document. Every check runs: a failure in one
@@ -18,14 +18,9 @@ const submitReviewUsage = `usage: loam-refinery submit-review [path] [--strict] 
 func (a *App) submitReview(ctx context.Context, args []string) int {
 	set := a.flagSet("submit-review", submitReviewUsage)
 	strict := set.Bool("strict", false, "treat advisories as errors")
-	format := set.String("format", "json", "output format: json")
 	paths, err := parseAnywhere(set, args)
 	if err != nil {
 		return usageOrHelp(err)
-	}
-	if err := a.checkFormat(*format); err != nil {
-		a.fail(err)
-		return ExitUsage
 	}
 	if len(paths) > 1 {
 		a.fail(fmt.Errorf("submit-review takes at most one path, got %d", len(paths)))
@@ -105,7 +100,7 @@ const checkDocumentUnparseable = "document-unparseable"
 
 // unparseable turns a document that never parsed into a result the renderer can
 // express. The alternative is prose written past the renderer, which leaves
-// --format=json exiting 1 with nothing on stdout: a caller unmarshalling that
+// submit-review exiting 1 with nothing on stdout: a caller unmarshalling that
 // sees a crashed tool rather than a document to repair. Going through the
 // renderer also keeps the promise prime makes, that an exit 1 names a check and
 // hands back the describe command for it.

@@ -38,32 +38,42 @@ func flagNames(t *testing.T, command string) []string {
 	return names
 }
 
-// TestReviewsFlagSetIsExactlyTheSevenDocumentedFlags pins docs/config.md
-// §6's flag table: reviews accepts --repo, --ref, --limit, --content,
-// --failed, --list, and --format, and nothing else. Individually testing
-// that each of the seven works — internal/cli/reviews_test.go already
-// does — does not notice an eighth flag added beside them; walking the
-// actual FlagSet and comparing the whole set does.
-func TestReviewsFlagSetIsExactlyTheSevenDocumentedFlags(t *testing.T) {
+// TestReviewsFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's flag
+// table: reviews accepts --repo, --ref, --limit, --content, --failed, and
+// --list, and nothing else — --format is gone (refinery-uyb.4;
+// docs/cli.md §5.1). Individually testing that each flag works —
+// internal/cli/reviews_test.go already does — does not notice an extra
+// flag added beside them; walking the actual FlagSet and comparing the
+// whole set does.
+func TestReviewsFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
 	t.Parallel()
-	want := []string{"content", "failed", "format", "limit", "list", "ref", "repo"}
+	want := []string{"content", "failed", "limit", "list", "ref", "repo"}
 	sort.Strings(want)
-	assert.Equal(t, want, flagNames(t, "reviews"), "docs/config.md §6: reviews accepts exactly these seven flags")
+	assert.Equal(t, want, flagNames(t, "reviews"), "docs/cli.md §3: reviews accepts exactly these six flags")
 }
 
 // TestSubmitReviewFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's
-// table for submit-review: --strict and --format — refinery-uyb.5 dropped
+// table for submit-review: --strict alone. refinery-uyb.5 dropped
 // --warn-only, --disable, and --require-verification (docs/cli.md §2.3.1,
 // §3; docs/features/combined-reviews.md §3.3, "No disable, no warn-only");
-// --format is a separate, later removal (refinery-uyb.4) and stays pinned
-// here until that bead narrows this same want list to {"strict"} alone —
-// whichever of the two lands second should extend this comment, not fight
-// the other's edit.
+// refinery-uyb.4 dropped --format, the flag's only remaining companion
+// (docs/cli.md §5.1, "--format exists where there is a format to
+// choose").
 func TestSubmitReviewFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
 	t.Parallel()
-	want := []string{"format", "strict"}
+	want := []string{"strict"}
+	assert.Equal(t, want, flagNames(t, "submit-review"), "docs/cli.md §3: submit-review accepts exactly --strict, and nothing about storing or format")
+}
+
+// TestDescribeFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's
+// table for describe: --lens and --list, and nothing else — no --format
+// (refinery-uyb.4; docs/cli.md §5.1), the same removal made to
+// submit-review and reviews.
+func TestDescribeFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
+	t.Parallel()
+	want := []string{"lens", "list"}
 	sort.Strings(want)
-	assert.Equal(t, want, flagNames(t, "submit-review"), "docs/cli.md §3: submit-review accepts exactly these two flags, and none about storing")
+	assert.Equal(t, want, flagNames(t, "describe"), "docs/cli.md §3: describe accepts exactly --lens and --list")
 }
 
 // TestPrimeFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's table

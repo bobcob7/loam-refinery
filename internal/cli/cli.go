@@ -153,20 +153,6 @@ func (a *App) fail(err error) {
 	fmt.Fprintf(a.stderr, "loam-refinery: %v\n", err)
 }
 
-// checkFormat accepts the one format there is. The flag outlived the choice it
-// used to make: keeping it means every caller already passing --format=json
-// keeps working, and a caller passing --format=text is told what happened
-// rather than being handed an unknown-flag error to guess at.
-func (a *App) checkFormat(format string) error {
-	if format == "json" {
-		return nil
-	}
-	if format == "text" {
-		return fmt.Errorf("the text format is gone; json is the only format, and --format=json or no flag at all selects it")
-	}
-	return fmt.Errorf("unknown format %q: json is the only format", format)
-}
-
 // errNoNames marks a flag given with nothing in it, which each caller names in
 // its own vocabulary. An empty element inside a list is a different mistake and
 // keeps its own message.
