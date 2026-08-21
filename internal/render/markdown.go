@@ -83,7 +83,12 @@ func writeMarkdownEnvelope(b *strings.Builder, envelope CollectReviewsEnvelope) 
 // qualified comment id, and nothing else, so Parity's own heading parse
 // (§8.3.3) never has to filter out a non-id heading). ordinal, profile,
 // verdict, and superseded_by are structurally-constrained (§8.3.2) and are
-// written as-is; summary is free-text prose and is escaped.
+// written as-is; summary is free-text prose and is escaped. The escaped
+// summary is indented with indentLines, not a literal "  " prefix, because
+// a summary can itself contain a newline: in CommonMark only the first
+// line of a list item's continuation content is anchored by the marker,
+// so a second line without its own copy of the indent falls out of the
+// bullet it explains (refinery-3u2).
 func writeMarkdownSubmissions(b *strings.Builder, submissions []collect.Submission) {
 	b.WriteString("**Submissions**\n\n")
 	for _, s := range submissions {
@@ -95,7 +100,7 @@ func writeMarkdownSubmissions(b *strings.Builder, submissions []collect.Submissi
 		if s.SupersededBy != nil {
 			fmt.Fprintf(b, " · superseded_by=#%d", *s.SupersededBy)
 		}
-		b.WriteString("\n\n  " + escapeMarkdown(s.Summary) + "\n\n")
+		b.WriteString("\n\n" + indentLines(escapeMarkdown(s.Summary), "  ") + "\n\n")
 	}
 }
 
@@ -120,7 +125,13 @@ func writeMarkdownComment(b *strings.Builder, c collect.Comment) {
 // writeMarkdownSuggestions writes a comment's suggestions. summary, pros,
 // and cons are free-text and escaped; effort and scope are
 // structurally-constrained enums (§8.3.2) and are not; code, when present,
-// is a verbatim field fenced the same way comment.code is.
+// is a verbatim field fenced the same way comment.code is, then indented
+// with indentLines so the fence itself — not just its content — carries
+// the list item's two-space continuation indent. Without that, the fence
+// opens at column 0 two lines below the bullet it explains, and in
+// CommonMark a blank line followed by column-zero content ends the list
+// rather than continuing it, detaching the excerpt from its bullet and
+// starting the next suggestion as a fresh list (refinery-3u2).
 func writeMarkdownSuggestions(b *strings.Builder, suggestions []collect.Suggestion) {
 	b.WriteString("**Suggestions**\n\n")
 	for _, s := range suggestions {
@@ -128,7 +139,7 @@ func writeMarkdownSuggestions(b *strings.Builder, suggestions []collect.Suggesti
 		fmt.Fprintf(b, "  - pros: %s\n", escapeMarkdownList(s.Pros))
 		fmt.Fprintf(b, "  - cons: %s\n", escapeMarkdownList(s.Cons))
 		if s.Code != "" {
-			b.WriteString("\n" + markdownFencedBlock(s.Code) + "\n")
+			b.WriteString("\n" + indentLines(markdownFencedBlock(s.Code), "  ") + "\n")
 		}
 		b.WriteString("\n")
 	}
@@ -213,6 +224,19 @@ func markdownFencedBlock(content string) string {
 		content += "\n"
 	}
 	return fence + "\n" + content + fence
+}
+
+// indentLines prefixes every line of s with prefix. It exists because
+// prefixing only the first line of a multi-line block keeps that block
+// inside a list item's continuation for exactly one line: CommonMark
+// requires the same indent on every subsequent line too, or the item ends
+// at the first line that falls short of it (refinery-3u2).
+func indentLines(s, prefix string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = prefix + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 // longestBacktickRun returns the length of the longest consecutive run of

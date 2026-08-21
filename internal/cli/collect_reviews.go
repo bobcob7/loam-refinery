@@ -186,36 +186,38 @@ func (r *collectReader) ReadReview(ctx context.Context, digest string) ([]byte, 
 
 // collectHeadCheck answers §4.3's head_check question for the whole
 // combined result: has an anchor already confirmed at submission time
-// drifted from ref since. headChecker only ever answers for one parsed
-// document at a time, so this loops over every surviving submission's own
-// Document and merges what comes back — source and is_head are read from
-// the first call (every submission shares the one ref this command was
-// asked about, so every call must agree), and diverged is the
-// concatenation of every call's own entries, staying nil until the first
-// non-nil one arrives so "the check does not apply" survives having zero
-// submissions to check against.
+// drifted from ref since. Repository discovery and the HEAD check are
+// per-invocation facts, not per-submission ones, so headChecker.Discover is
+// called exactly once regardless of how many submissions survived
+// (refinery-k3h); only the returned HeadCheck's Diverged call — which of
+// one submission's own anchors have drifted — is repeated per submission,
+// since that answer genuinely differs from one document to the next.
 //
 // With no submissions at all, there is nothing to loop over, but
 // head_check is still always present (§4.3.1) — a synthetic document
-// carrying only ref, no comments, is enough for headChecker to answer
-// source and is_head from, and AnchorCount()==0 means the recheck itself
-// has nothing to withhold, so diverged still comes back correctly (empty
-// when is_head is true, absent otherwise).
+// carrying only ref, no comments, is enough for Diverged to answer from,
+// and AnchorCount()==0 means the recheck itself has nothing to withhold, so
+// diverged still comes back correctly (empty when is_head is true, absent
+// otherwise).
 func (a *App) collectHeadCheck(ctx context.Context, ref string, submissions []collect.Submission) (string, bool, []DivergedAnchor, error) {
+	head, err := a.headChecker.Discover(ctx, a.dir, ref)
+	if err != nil {
+		return "", false, nil, err
+	}
+	source, isHead := head.Source(), head.IsHead()
 	if len(submissions) == 0 {
 		doc := &review.Document{Ref: review.Field[string]{Value: ref, Present: true, OK: true}}
-		return a.headChecker.CheckDivergence(ctx, a.dir, doc, nil)
-	}
-	var source string
-	var isHead bool
-	var diverged []DivergedAnchor
-	for i, sub := range submissions {
-		s, head, d, err := a.headChecker.CheckDivergence(ctx, a.dir, sub.Document, sub.QualifiedIDs)
+		diverged, err := head.Diverged(ctx, doc, nil)
 		if err != nil {
 			return "", false, nil, err
 		}
-		if i == 0 {
-			source, isHead = s, head
+		return source, isHead, diverged, nil
+	}
+	var diverged []DivergedAnchor
+	for _, sub := range submissions {
+		d, err := head.Diverged(ctx, sub.Document, sub.QualifiedIDs)
+		if err != nil {
+			return "", false, nil, err
 		}
 		if d != nil {
 			if diverged == nil {

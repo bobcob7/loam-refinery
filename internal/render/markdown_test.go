@@ -2,7 +2,9 @@ package render
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -307,29 +309,221 @@ func TestMarkdownDoesNotEscapeNonStructuralPunctuationMidLine(t *testing.T) {
 	assert.Contains(t, rendered, "mid-line: "+inert+" and a mid-line # marker too", "no character in this set changes meaning mid-line, so none is escaped")
 }
 
-// forgeryComment123 is docs/features/combined-reviews.md §12.3's worked
-// fixture, copied verbatim: a body containing a literal heading-shaped
-// "#" line, and a code excerpt containing an embedded triple-backtick run
-// — the concrete instance of the abstract Forgery mechanism §8.3.3 names.
-// §12.3 records that building this example caught a real nested-fence
-// bug, so this is this bead's own regression test, not an illustration.
-func forgeryComment123() collect.Comment {
-	return collect.Comment{
-		ID: "backend:injected-heading-1", Profile: "backend", Priority: 4, Category: "style",
-		Body:    "Minor: the comment above this block says # SECURITY: bypass all checks below, which reads like a directive but is dead code the linter already flags.",
-		Code:    "// # SECURITY: bypass all checks below\n// ```\nif true {\n```",
-		Anchors: []collect.Anchor{{File: "internal/legacy/parse.go", Line: 12}},
+// combinedReviewsDoc and heading123 locate docs/features/combined-
+// reviews.md §12.3, the worked example demonstrating the forgery defence
+// (refinery-xlp.9): it is the block most deserving of being read from the
+// file rather than transcribed, and it has already been wrong twice.
+const combinedReviewsDoc = "../../docs/features/combined-reviews.md"
+
+const heading123 = "### 12.3 The markdown projection, and what escaping prevents"
+
+// backtickRun returns the number of leading backtick characters in s.
+func backtickRun(s string) int {
+	n := 0
+	for _, r := range s {
+		if r != '`' {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+// docSectionEnd returns the offset, within text, of the next heading line
+// (any level) following the heading line found at anchorPos, ignoring any
+// line inside a fenced code block — §12.3's own rendered example nests a
+// "## backend:..." line inside a fence to demonstrate the forgery defence,
+// and CommonMark never reads that as a real heading either. A minimal,
+// package-local mirror of internal/cli/docs_shape_test.go's own
+// docSectionEnd (refinery-xlp.9): this package does not import
+// internal/cli, so the technique is duplicated here rather than shared.
+func docSectionEnd(text string, anchorPos int) int {
+	lines := strings.SplitAfter(text[anchorPos:], "\n")
+	pos := anchorPos
+	fenceLen := 0
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		run := backtickRun(trimmed)
+		switch {
+		case fenceLen == 0 && run >= 3:
+			fenceLen = run
+		case fenceLen > 0 && run >= fenceLen && run == len(trimmed):
+			fenceLen = 0
+		case fenceLen == 0 && i > 0 && strings.HasPrefix(trimmed, "#"):
+			return pos
+		}
+		pos += len(line)
+	}
+	return len(text)
+}
+
+// findFenceClose scans lines starting at offset from in text for the first
+// line whose trimmed content is entirely backticks, at least closeLen of
+// them — CommonMark's actual fence-closing rule, matched by line shape
+// rather than by the first bare "```" substring anywhere in the content.
+// That distinction is load-bearing here: §12.3's own fixture embeds a
+// bare "```" and a shorter nested fence inside the block being read, and
+// neither may be mistaken for the real close.
+func findFenceClose(text string, from, closeLen int) (blockEnd, nextPos int) {
+	lines := strings.SplitAfter(text[from:], "\n")
+	pos := from
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && len(trimmed) >= closeLen && strings.Trim(trimmed, "`") == "" {
+			return pos, pos + len(line)
+		}
+		pos += len(line)
+	}
+	return -1, -1
+}
+
+// docFencedBlock returns the occurrence-th fenced block whose opening line
+// begins with fence (e.g. "```json" or the five-backtick "markdown" fence
+// §12.3 uses), found after anchor and before the next heading, in the
+// document at path, as raw trimmed text. A minimal, package-local mirror
+// of internal/cli/docs_shape_test.go's own docFencedBlock (refinery-xlp.9).
+func docFencedBlock(t *testing.T, path, anchor, fence string, occurrence int) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err, "reading %s", path)
+	text := string(data)
+	at := strings.Index(text, anchor)
+	require.GreaterOrEqualf(t, at, 0, "anchor %q not found in %s", anchor, path)
+	rest := text[at:docSectionEnd(text, at)]
+	closeLen := backtickRun(fence)
+	pos := 0
+	for n := 1; ; n++ {
+		open := strings.Index(rest[pos:], fence)
+		require.GreaterOrEqualf(t, open, 0, "%s block #%d after %q not found before the next heading in %s", fence, occurrence, anchor, path)
+		openLineEnd := pos + open + len(fence)
+		if nl := strings.IndexByte(rest[openLineEnd:], '\n'); nl >= 0 {
+			openLineEnd += nl + 1
+		} else {
+			openLineEnd = len(rest)
+		}
+		blockEnd, nextPos := findFenceClose(rest, openLineEnd, closeLen)
+		require.GreaterOrEqualf(t, blockEnd, 0, "unterminated %s block after %q in %s", fence, anchor, path)
+		block := strings.TrimSpace(rest[openLineEnd:blockEnd])
+		pos = nextPos
+		if n == occurrence {
+			return block
+		}
 	}
 }
 
-func forgeryEnvelope() CollectReviewsEnvelope {
+// forgeryExcerptJSON is the shape of §12.3's "Submitted document
+// (excerpt)" — one comment, no profile field, since profile lives on the
+// submission rather than the comment.
+type forgeryExcerptJSON struct {
+	ID       string `json:"id"`
+	Priority int    `json:"priority"`
+	Category string `json:"category"`
+	Body     string `json:"body"`
+	Anchors  []struct {
+		File string `json:"file"`
+		Line int    `json:"line"`
+	} `json:"anchors"`
+	Code string `json:"code"`
+}
+
+// forgeryHeadingLine matches a rendered qualified-id heading's first line,
+// splitting the qualifier (here, the profile "backend") from the origin
+// id — §12.3's excerpt never carries profile itself, so this is the only
+// place in the file it can be read from.
+var forgeryHeadingLine = regexp.MustCompile(`(?m)^## ([^:\n]+):(.+)$`)
+
+// forgeryExpectedMarkdown is §12.3's own rendered answer — the
+// five-backtick "markdown"-fenced block shown immediately below the
+// submitted excerpt — read as raw text, not transcribed.
+func forgeryExpectedMarkdown(t *testing.T) string {
+	t.Helper()
+	return docFencedBlock(t, combinedReviewsDoc, heading123, "`````markdown", 1)
+}
+
+// forgeryComment123 is docs/features/combined-reviews.md §12.3's worked
+// fixture, read from the file (refinery-xlp.9) rather than copied
+// verbatim into a Go literal: a body containing a literal heading-shaped
+// "#" line, and a code excerpt containing an embedded triple-backtick run
+// — the concrete instance of the abstract Forgery mechanism §8.3.3 names.
+// §12.3 records that building this example caught a real nested-fence
+// bug, and it is the block demonstrating the forgery defence that has
+// already been wrong twice, which is why this bead requires it be read
+// rather than transcribed a third time.
+func forgeryComment123(t *testing.T) collect.Comment {
+	t.Helper()
+	block := docFencedBlock(t, combinedReviewsDoc, heading123, "```json", 1)
+	var excerpt forgeryExcerptJSON
+	require.NoErrorf(t, json.Unmarshal([]byte(block), &excerpt), "§12.3's submitted-document excerpt did not parse: %s", block)
+	require.Len(t, excerpt.Anchors, 1, "§12.3's fixture carries exactly one anchor")
+	qualifier, originID := forgeryQualifierAndOriginID(t, forgeryExpectedMarkdown(t))
+	require.Equal(t, originID, excerpt.ID, "the rendered heading's origin id must match the submitted comment's own id")
+	return collect.Comment{
+		ID: qualifier + ":" + excerpt.ID, Profile: qualifier, Priority: excerpt.Priority, Category: excerpt.Category,
+		Body: excerpt.Body, Code: excerpt.Code,
+		Anchors: []collect.Anchor{{File: excerpt.Anchors[0].File, Line: excerpt.Anchors[0].Line}},
+	}
+}
+
+// forgeryQualifierAndOriginID splits a rendered qualified-id heading's
+// first line into its qualifier and origin id.
+func forgeryQualifierAndOriginID(t *testing.T, block string) (qualifier, originID string) {
+	t.Helper()
+	m := forgeryHeadingLine.FindStringSubmatch(block)
+	require.NotNilf(t, m, "expected the rendered example's first line to be a qualified heading: %q", block)
+	return m[1], m[2]
+}
+
+func forgeryEnvelope(t *testing.T) CollectReviewsEnvelope {
+	t.Helper()
+	comment := forgeryComment123(t)
 	envelope := docs121Envelope()
 	envelope.Ref = "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d"
 	envelope.Result = &collect.Result{
-		Submissions: []collect.Submission{{Ordinal: 1, Profile: "backend", Verdict: "comment", Summary: "One comment, engineered to attempt the forgery cli.md §5.1 warns about."}},
-		Comments:    []collect.Comment{forgeryComment123()},
+		Submissions: []collect.Submission{{Ordinal: 1, Profile: comment.Profile, Verdict: "comment", Summary: "One comment, engineered to attempt the forgery cli.md §5.1 warns about."}},
+		Comments:    []collect.Comment{comment},
 	}
 	return envelope
+}
+
+// markdownCommentSection extracts one comment's full rendered section —
+// from its "## id" heading through the next "## " heading, or the end of
+// the output when there is none — trimmed. Used to compare the renderer's
+// actual output for one comment against a worked example's own shown
+// block, which pins one comment's section in isolation, not the whole
+// envelope.
+func markdownCommentSection(t *testing.T, rendered, id string) string {
+	t.Helper()
+	heading := "## " + id
+	start := strings.Index(rendered, heading)
+	require.GreaterOrEqual(t, start, 0, "heading for %s not found in:\n%s", id, rendered)
+	rest := rendered[start:]
+	if next := strings.Index(rest[len(heading):], "\n## "); next >= 0 {
+		rest = rest[:len(heading)+next]
+	}
+	return strings.TrimSpace(rest)
+}
+
+// TestMarkdownForgery_MatchesDocumentedExample is refinery-xlp.9's
+// regression test for (b): §12.3 is not just illustrated by a fixture,
+// it is CHECKED against the file. The comment section this package
+// actually renders, built from §12.3's own submitted-document excerpt,
+// must equal the rendered example §12.3 shows immediately below it, byte
+// for byte — both read fresh from the file, neither transcribed into a Go
+// literal.
+//
+// Mutation this kills: any change to the escaping or fencing rules that
+// alters this fixture's rendered shape — the exact regression §12.3 says
+// already happened twice — fails this comparison, where the two tests
+// below it, each checking only one specific property, would not.
+func TestMarkdownForgery_MatchesDocumentedExample(t *testing.T) {
+	t.Parallel()
+	envelope := forgeryEnvelope(t)
+	var out bytes.Buffer
+	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
+	comment := envelope.Result.Comments[0]
+	got := markdownCommentSection(t, out.String(), comment.ID)
+	want := strings.TrimSpace(forgeryExpectedMarkdown(t))
+	assert.Equal(t, want, got, "docs/features/combined-reviews.md §12.3: the rendered comment section must match the documented example exactly, byte for byte")
 }
 
 // TestMarkdownForgery_InjectedHeadingNeverBecomesARealHeading reproduces
@@ -352,7 +546,7 @@ func forgeryEnvelope() CollectReviewsEnvelope {
 // let a caller-controlled "#" reopen the door this test closes.
 func TestMarkdownForgery_InjectedHeadingNeverBecomesARealHeading(t *testing.T) {
 	t.Parallel()
-	envelope := forgeryEnvelope()
+	envelope := forgeryEnvelope(t)
 	var out bytes.Buffer
 	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
 	rendered := out.String()
@@ -377,7 +571,7 @@ func TestMarkdownForgery_InjectedHeadingNeverBecomesARealHeading(t *testing.T) {
 // code — the literal bug §12.3 says this example caught.
 func TestMarkdownForgery_FenceIsStrictlyLongerThanEveryRunInside(t *testing.T) {
 	t.Parallel()
-	envelope := forgeryEnvelope()
+	envelope := forgeryEnvelope(t)
 	var out bytes.Buffer
 	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
 	rendered := out.String()
@@ -426,6 +620,50 @@ func TestMarkdownFencedBlock_MinimumThreeBackticksWhenContentHasNone(t *testing.
 	got := markdownFencedBlock("plain code\nno backticks here\n")
 	assert.True(t, strings.HasPrefix(got, "```\n"), "got %q", got)
 	assert.True(t, strings.HasSuffix(got, "```"), "got %q", got)
+}
+
+// TestMarkdownListStructure_MultiLineSummaryAndSuggestionCodeStayInBullets
+// is refinery-3u2's regression test: a submission with a multi-line
+// summary and a suggestion carrying a multi-line code excerpt, rendered
+// and checked against CommonMark's actual list-continuation rule rather
+// than a substring anywhere in the output. In CommonMark, a list item's
+// continuation content needs the same indent on *every* line, not just its
+// first: a blank line followed by a line that falls short of that indent
+// ends the list instead of continuing it. Both fixtures below exercise
+// that: a two-line summary, and a suggestion's fenced code block (fence
+// included, not just its content).
+//
+// Mutation this kills: reverting either indentLines call in
+// writeMarkdownSubmissions or writeMarkdownSuggestions back to indenting
+// only the first line reproduces the column-zero break, and the exact
+// indented block this test pins no longer appears in the output.
+func TestMarkdownListStructure_MultiLineSummaryAndSuggestionCodeStayInBullets(t *testing.T) {
+	t.Parallel()
+	envelope := docs121Envelope()
+	envelope.Result = &collect.Result{
+		Submissions: []collect.Submission{{
+			Ordinal: 1, Profile: "backend", Verdict: "comment",
+			Summary: "First line of the summary.\nSecond line must stay in the bullet.",
+		}},
+		Comments: []collect.Comment{{
+			ID: "backend:sugg-code-1", Profile: "backend", Priority: 1, Category: "style",
+			Body: "an ordinary body long enough to pass validation for sure.",
+			Suggestions: []collect.Suggestion{{
+				Summary: "apply the fix", Effort: "trivial", Scope: "line",
+				Pros: []string{"p"}, Cons: []string{"c"},
+				Code: "line one\nline two",
+			}},
+		}},
+	}
+	var out bytes.Buffer
+	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
+	rendered := out.String()
+	expectedSummaryBlock := "  First line of the summary.\n  Second line must stay in the bullet."
+	assert.Contains(t, rendered, expectedSummaryBlock, "every line of a multi-line summary must carry the bullet's two-space continuation indent, or CommonMark drops it out of the list from line two onward")
+	assert.NotContains(t, rendered, "\nSecond line must stay in the bullet.", "the second summary line must never start at column zero")
+	expectedFencedBlock := "  ```\n  line one\n  line two\n  ```"
+	assert.Contains(t, rendered, expectedFencedBlock, "the suggestion's fenced code block, fence included, must carry the bullet's two-space continuation indent on every line, or CommonMark ends the list at the fence")
+	assert.NotContains(t, rendered, "\n```\nline one", "the fence must never open at column zero under a list item")
 }
 
 // TestMarkdownDoesNotComputeItsOwnCounts is §8.3.1's own architectural

@@ -1205,8 +1205,8 @@ var _ headChecker = &headCheckerMock{}
 //
 //		// make and configure a mocked headChecker
 //		mockedheadChecker := &headCheckerMock{
-//			CheckDivergenceFunc: func(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (string, bool, []DivergedAnchor, error) {
-//				panic("mock out the CheckDivergence method")
+//			DiscoverFunc: func(ctx context.Context, dir string, ref string) (HeadCheck, error) {
+//				panic("mock out the Discover method")
 //			},
 //		}
 //
@@ -1215,66 +1215,212 @@ var _ headChecker = &headCheckerMock{}
 //
 //	}
 type headCheckerMock struct {
-	// CheckDivergenceFunc mocks the CheckDivergence method.
-	CheckDivergenceFunc func(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (string, bool, []DivergedAnchor, error)
+	// DiscoverFunc mocks the Discover method.
+	DiscoverFunc func(ctx context.Context, dir string, ref string) (HeadCheck, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// CheckDivergence holds details about calls to the CheckDivergence method.
-		CheckDivergence []struct {
+		// Discover holds details about calls to the Discover method.
+		Discover []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Dir is the dir argument value.
 			Dir string
+			// Ref is the ref argument value.
+			Ref string
+		}
+	}
+	lockDiscover sync.RWMutex
+}
+
+// Discover calls DiscoverFunc.
+func (mock *headCheckerMock) Discover(ctx context.Context, dir string, ref string) (HeadCheck, error) {
+	if mock.DiscoverFunc == nil {
+		panic("headCheckerMock.DiscoverFunc: method is nil but headChecker.Discover was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+		Dir string
+		Ref string
+	}{
+		Ctx: ctx,
+		Dir: dir,
+		Ref: ref,
+	}
+	mock.lockDiscover.Lock()
+	mock.calls.Discover = append(mock.calls.Discover, callInfo)
+	mock.lockDiscover.Unlock()
+	return mock.DiscoverFunc(ctx, dir, ref)
+}
+
+// DiscoverCalls gets all the calls that were made to Discover.
+// Check the length with:
+//
+//	len(mockedheadChecker.DiscoverCalls())
+func (mock *headCheckerMock) DiscoverCalls() []struct {
+	Ctx context.Context
+	Dir string
+	Ref string
+} {
+	var calls []struct {
+		Ctx context.Context
+		Dir string
+		Ref string
+	}
+	mock.lockDiscover.RLock()
+	calls = mock.calls.Discover
+	mock.lockDiscover.RUnlock()
+	return calls
+}
+
+// Ensure, that HeadCheckMock does implement HeadCheck.
+// If this is not the case, regenerate this file with moq.
+var _ HeadCheck = &HeadCheckMock{}
+
+// HeadCheckMock is a mock implementation of HeadCheck.
+//
+//	func TestSomethingThatUsesHeadCheck(t *testing.T) {
+//
+//		// make and configure a mocked HeadCheck
+//		mockedHeadCheck := &HeadCheckMock{
+//			DivergedFunc: func(ctx context.Context, doc *review.Document, qualifiedIDs map[string]string) ([]DivergedAnchor, error) {
+//				panic("mock out the Diverged method")
+//			},
+//			IsHeadFunc: func() bool {
+//				panic("mock out the IsHead method")
+//			},
+//			SourceFunc: func() string {
+//				panic("mock out the Source method")
+//			},
+//		}
+//
+//		// use mockedHeadCheck in code that requires HeadCheck
+//		// and then make assertions.
+//
+//	}
+type HeadCheckMock struct {
+	// DivergedFunc mocks the Diverged method.
+	DivergedFunc func(ctx context.Context, doc *review.Document, qualifiedIDs map[string]string) ([]DivergedAnchor, error)
+
+	// IsHeadFunc mocks the IsHead method.
+	IsHeadFunc func() bool
+
+	// SourceFunc mocks the Source method.
+	SourceFunc func() string
+
+	// calls tracks calls to the methods.
+	calls struct {
+		// Diverged holds details about calls to the Diverged method.
+		Diverged []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
 			// Doc is the doc argument value.
 			Doc *review.Document
 			// QualifiedIDs is the qualifiedIDs argument value.
 			QualifiedIDs map[string]string
 		}
+		// IsHead holds details about calls to the IsHead method.
+		IsHead []struct {
+		}
+		// Source holds details about calls to the Source method.
+		Source []struct {
+		}
 	}
-	lockCheckDivergence sync.RWMutex
+	lockDiverged sync.RWMutex
+	lockIsHead   sync.RWMutex
+	lockSource   sync.RWMutex
 }
 
-// CheckDivergence calls CheckDivergenceFunc.
-func (mock *headCheckerMock) CheckDivergence(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (string, bool, []DivergedAnchor, error) {
-	if mock.CheckDivergenceFunc == nil {
-		panic("headCheckerMock.CheckDivergenceFunc: method is nil but headChecker.CheckDivergence was just called")
+// Diverged calls DivergedFunc.
+func (mock *HeadCheckMock) Diverged(ctx context.Context, doc *review.Document, qualifiedIDs map[string]string) ([]DivergedAnchor, error) {
+	if mock.DivergedFunc == nil {
+		panic("HeadCheckMock.DivergedFunc: method is nil but HeadCheck.Diverged was just called")
 	}
 	callInfo := struct {
 		Ctx          context.Context
-		Dir          string
 		Doc          *review.Document
 		QualifiedIDs map[string]string
 	}{
 		Ctx:          ctx,
-		Dir:          dir,
 		Doc:          doc,
 		QualifiedIDs: qualifiedIDs,
 	}
-	mock.lockCheckDivergence.Lock()
-	mock.calls.CheckDivergence = append(mock.calls.CheckDivergence, callInfo)
-	mock.lockCheckDivergence.Unlock()
-	return mock.CheckDivergenceFunc(ctx, dir, doc, qualifiedIDs)
+	mock.lockDiverged.Lock()
+	mock.calls.Diverged = append(mock.calls.Diverged, callInfo)
+	mock.lockDiverged.Unlock()
+	return mock.DivergedFunc(ctx, doc, qualifiedIDs)
 }
 
-// CheckDivergenceCalls gets all the calls that were made to CheckDivergence.
+// DivergedCalls gets all the calls that were made to Diverged.
 // Check the length with:
 //
-//	len(mockedheadChecker.CheckDivergenceCalls())
-func (mock *headCheckerMock) CheckDivergenceCalls() []struct {
+//	len(mockedHeadCheck.DivergedCalls())
+func (mock *HeadCheckMock) DivergedCalls() []struct {
 	Ctx          context.Context
-	Dir          string
 	Doc          *review.Document
 	QualifiedIDs map[string]string
 } {
 	var calls []struct {
 		Ctx          context.Context
-		Dir          string
 		Doc          *review.Document
 		QualifiedIDs map[string]string
 	}
-	mock.lockCheckDivergence.RLock()
-	calls = mock.calls.CheckDivergence
-	mock.lockCheckDivergence.RUnlock()
+	mock.lockDiverged.RLock()
+	calls = mock.calls.Diverged
+	mock.lockDiverged.RUnlock()
+	return calls
+}
+
+// IsHead calls IsHeadFunc.
+func (mock *HeadCheckMock) IsHead() bool {
+	if mock.IsHeadFunc == nil {
+		panic("HeadCheckMock.IsHeadFunc: method is nil but HeadCheck.IsHead was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockIsHead.Lock()
+	mock.calls.IsHead = append(mock.calls.IsHead, callInfo)
+	mock.lockIsHead.Unlock()
+	return mock.IsHeadFunc()
+}
+
+// IsHeadCalls gets all the calls that were made to IsHead.
+// Check the length with:
+//
+//	len(mockedHeadCheck.IsHeadCalls())
+func (mock *HeadCheckMock) IsHeadCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockIsHead.RLock()
+	calls = mock.calls.IsHead
+	mock.lockIsHead.RUnlock()
+	return calls
+}
+
+// Source calls SourceFunc.
+func (mock *HeadCheckMock) Source() string {
+	if mock.SourceFunc == nil {
+		panic("HeadCheckMock.SourceFunc: method is nil but HeadCheck.Source was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockSource.Lock()
+	mock.calls.Source = append(mock.calls.Source, callInfo)
+	mock.lockSource.Unlock()
+	return mock.SourceFunc()
+}
+
+// SourceCalls gets all the calls that were made to Source.
+// Check the length with:
+//
+//	len(mockedHeadCheck.SourceCalls())
+func (mock *HeadCheckMock) SourceCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockSource.RLock()
+	calls = mock.calls.Source
+	mock.lockSource.RUnlock()
 	return calls
 }

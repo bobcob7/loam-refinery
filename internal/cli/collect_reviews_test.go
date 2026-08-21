@@ -16,133 +16,53 @@ import (
 
 const combinedReviewsDoc = "../../docs/features/combined-reviews.md"
 
-// submissionA and submissionB are docs/features/combined-reviews.md §12.1's
-// two stored documents, copied verbatim — the same fixture internal/collect's
-// own worked-example test uses, reproduced here because it is unexported
-// there and this test drives the real command end to end, not the
-// collect-assemble Go value in isolation (the acceptance criteria's own
-// distinction: "not just the collect-assemble Go value in isolation").
-const submissionA = `{
-  "version": "1",
-  "verdict": "request_changes",
-  "profile": "backend",
-  "ref": "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d",
-  "summary": "The retry loop is sound, but the context deadline is not propagated to the downstream call.",
-  "comments": [
-    {
-      "id": "dropped-context-1",
-      "priority": 9,
-      "category": "correctness",
-      "body": "The retry loop calls c.do(context.Background(), req) rather than passing the caller's ctx.",
-      "anchors": [
-        { "file": "internal/fetch/client.go", "line": 88, "end_line": 94 }
-      ],
-      "suggestions": [
-        {
-          "summary": "Pass the caller's context straight through to c.do",
-          "effort": "trivial",
-          "scope": "line",
-          "pros": ["Cancellation and deadlines propagate immediately"],
-          "cons": ["A caller relying on retries outliving the request context sees a behavior change"]
-        }
-      ]
-    }
-  ]
-}`
+// heading121 is docs/features/combined-reviews.md §12.1's own heading text,
+// the anchor docFencedBlock searches after.
+const heading121 = "### 12.1 Two profiles, one ref"
 
-const submissionB = `{
-  "version": "1",
-  "verdict": "comment",
-  "profile": "security",
-  "ref": "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d",
-  "summary": "One low-severity logging concern; nothing blocking.",
-  "comments": [
-    {
-      "id": "dropped-context-1",
-      "priority": 3,
-      "category": "security",
-      "body": "The retry loop's debug log includes req.Header verbatim, which can carry an Authorization value on a retried request.",
-      "anchors": [
-        { "file": "internal/fetch/client.go", "line": 82 }
-      ],
-      "suggestions": [
-        {
-          "summary": "Redact known-sensitive headers before logging the request",
-          "effort": "small",
-          "scope": "file",
-          "pros": ["Removes the leak at the one place it can happen"],
-          "cons": ["A future header added to the allowlist could reopen this silently"]
-        }
-      ]
-    }
-  ]
-}`
+// submissionA and submissionB are §12.1's two stored documents, read from
+// the file itself (refinery-xlp.9) rather than copied into a Go literal:
+// before this fix, editing the doc's own displayed example changed nothing
+// this test fed the real command, so the example a reader copies could
+// drift from the example the test actually runs without anything noticing.
+// Occurrence 1 is Submission A, occurrence 2 is Submission B, occurrence 3
+// is the documented output TestCollectReviews_MatchesDocumentedShape_TwoProfilesOneRef
+// reads separately via docJSONBlock.
+func submissionA(t *testing.T) string {
+	t.Helper()
+	return docFencedBlock(t, combinedReviewsDoc, heading121, "```json", 1)
+}
+
+func submissionB(t *testing.T) string {
+	t.Helper()
+	return docFencedBlock(t, combinedReviewsDoc, heading121, "```json", 2)
+}
 
 const ref121 = "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d"
 
 const repo121 = "github.com/bobcob7/loam-refinery"
 
-// docs/features/combined-reviews.md §12.2's three stored documents.
-const submissionD1 = `{
-  "version": "1",
-  "verdict": "request_changes",
-  "profile": "backend",
-  "ref": "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a",
-  "summary": "Cache invalidation is missing on the write path.",
-  "comments": [
-    {
-      "id": "stale-cache-1",
-      "priority": 6,
-      "category": "correctness",
-      "body": "The write path updates the DB but never invalidates the cache entry.",
-      "anchors": [{ "file": "internal/cache/store.go", "line": 41 }],
-      "suggestions": []
-    }
-  ]
-}`
+// heading122 is docs/features/combined-reviews.md §12.2's own heading text.
+const heading122 = "### 12.2 One profile, revised, plus one unprofiled submission"
 
-const submissionD2 = `{
-  "version": "1",
-  "verdict": "request_changes",
-  "profile": "backend",
-  "ref": "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a",
-  "summary": "Cache invalidation is missing on two write paths, not one.",
-  "comments": [
-    {
-      "id": "stale-cache-1",
-      "priority": 8,
-      "category": "correctness",
-      "body": "The write path updates the DB but never invalidates the cache entry; on closer read, the batch-update path has the same gap.",
-      "anchors": [{ "file": "internal/cache/store.go", "line": 41 }],
-      "suggestions": []
-    },
-    {
-      "id": "missing-invalidation-1",
-      "priority": 8,
-      "category": "correctness",
-      "body": "Same gap as stale-cache-1, on the batch-update path.",
-      "anchors": [{ "file": "internal/cache/store.go", "line": 96 }],
-      "suggestions": []
-    }
-  ]
-}`
+// submissionD1, submissionD2, and submissionD3 are §12.2's three stored
+// documents, likewise read from the file rather than copied verbatim
+// (refinery-xlp.9). Occurrences 1-3 are D1, D2, and D3; occurrence 4 is the
+// documented output.
+func submissionD1(t *testing.T) string {
+	t.Helper()
+	return docFencedBlock(t, combinedReviewsDoc, heading122, "```json", 1)
+}
 
-const submissionD3 = `{
-  "version": "1",
-  "verdict": "comment",
-  "ref": "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a",
-  "summary": "One stray TODO; nothing blocking.",
-  "comments": [
-    {
-      "id": "todo-left-in-1",
-      "priority": 2,
-      "category": "style",
-      "body": "A TODO from the previous change is still here and looks resolved by this one.",
-      "anchors": [{ "file": "internal/cache/store.go", "line": 12 }],
-      "suggestions": []
-    }
-  ]
-}`
+func submissionD2(t *testing.T) string {
+	t.Helper()
+	return docFencedBlock(t, combinedReviewsDoc, heading122, "```json", 2)
+}
+
+func submissionD3(t *testing.T) string {
+	t.Helper()
+	return docFencedBlock(t, combinedReviewsDoc, heading122, "```json", 3)
+}
 
 const ref122 = "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a"
 
@@ -188,13 +108,20 @@ func setCollectReviewsStore(t *testing.T, mock *reviewStoreMock, repo, ref strin
 	}
 }
 
-// setHeadCheckStub configures mock to answer every call the same way — one
-// ref, one repository state — which is all these tests need: every
-// submission collect-reviews reads here was submitted against the ref
-// under test.
+// setHeadCheckStub configures mock to resolve one repository state — which
+// is all these tests need: every submission collect-reviews reads here was
+// submitted against the ref under test, and Discover is called exactly
+// once per run regardless of how many submissions Diverged is then asked
+// about (refinery-k3h).
 func setHeadCheckStub(mock *headCheckerMock, source string, isHead bool, diverged []DivergedAnchor) {
-	mock.CheckDivergenceFunc = func(context.Context, string, *review.Document, map[string]string) (string, bool, []DivergedAnchor, error) {
-		return source, isHead, diverged, nil
+	mock.DiscoverFunc = func(context.Context, string, string) (HeadCheck, error) {
+		return &HeadCheckMock{
+			SourceFunc: func() string { return source },
+			IsHeadFunc: func() bool { return isHead },
+			DivergedFunc: func(context.Context, *review.Document, map[string]string) ([]DivergedAnchor, error) {
+				return diverged, nil
+			},
+		}, nil
 	}
 }
 
@@ -279,7 +206,7 @@ func TestCollectReviews_FormatMarkdownRendersMarkdownNotJSON(t *testing.T) {
 	h := newHarness(t, "")
 	setCollectReviewsStore(t, h.reviews, repo121, ref121, true, true,
 		[]string{"digest-a", "digest-b"},
-		map[string]string{"digest-a": submissionA, "digest-b": submissionB},
+		map[string]string{"digest-a": submissionA(t), "digest-b": submissionB(t)},
 	)
 	setHeadCheckStub(h.headChecker, "repo", true, []DivergedAnchor{})
 	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + ref121, "--repo=" + repo121, "--format=markdown"})
@@ -382,7 +309,7 @@ func TestCollectReviews_UnreadableFileIsCountedNotDropped(t *testing.T) {
 	h := newHarness(t, "")
 	setCollectReviewsStore(t, h.reviews, "some/repo", testRef, true, true,
 		[]string{"digest-a", "digest-b"},
-		map[string]string{"digest-a": submissionA},
+		map[string]string{"digest-a": submissionA(t)},
 	)
 	setHeadCheckStub(h.headChecker, "none", false, nil)
 	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + testRef, "--repo=some/repo"})
@@ -408,7 +335,7 @@ func TestCollectReviews_ReviewPathFailureExitsToolNotUnreadable(t *testing.T) {
 	h := newHarness(t, "")
 	setCollectReviewsStore(t, h.reviews, "some/repo", testRef, true, true,
 		[]string{"digest-a", "digest-b"},
-		map[string]string{"digest-a": submissionA, "digest-b": submissionB},
+		map[string]string{"digest-a": submissionA(t), "digest-b": submissionB(t)},
 	)
 	h.reviews.ReviewPathFunc = func(context.Context, string, string, string) (string, error) {
 		return "", errors.New("config.json: permission denied")
@@ -497,45 +424,84 @@ func TestCollectReviews_DivergedPopulatedFieldsFlowThroughUnscrambled(t *testing
 	assert.Equal(t, "the anchored line no longer matches the working tree", entry["message"])
 }
 
-// TestCollectReviews_HeadCheckMergesDivergedAcrossSubmissionsUsingFirstsSourceAndIsHead
-// drives collectHeadCheck's cross-submission merge (§4.3) with two
-// submissions whose headChecker answers genuinely differ — unlike every
-// other test in this file, which stubs one identical answer for every
-// call via setHeadCheckStub and so cannot tell a merge from a pick
-// (refinery-hxc).
+// TestCollectReviews_HeadCheckMergesDivergedAcrossSubmissions drives
+// collectHeadCheck's cross-submission merge (§4.3) with two submissions
+// whose Diverged answers genuinely differ — unlike every other test in this
+// file, which stubs one identical answer for every call via
+// setHeadCheckStub and so cannot tell a merge from a pick (refinery-hxc).
+// Source and IsHead are invocation-level facts fixed once by the single
+// Discover call (refinery-k3h): only Diverged varies per submission here.
 //
 // Mutation this kills: replacing the diverged concatenation with "take the
 // last answer" would drop the first submission's entry from the merged
-// list; moving the i==0 source/is_head capture to the last submission
-// would report is_head:false (security's answer) instead of true
-// (backend's, the first submission processed).
-func TestCollectReviews_HeadCheckMergesDivergedAcrossSubmissionsUsingFirstsSourceAndIsHead(t *testing.T) {
+// list.
+func TestCollectReviews_HeadCheckMergesDivergedAcrossSubmissions(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, "")
 	setCollectReviewsStore(t, h.reviews, repo121, ref121, true, true,
 		[]string{"digest-a", "digest-b"},
-		map[string]string{"digest-a": submissionA, "digest-b": submissionB},
+		map[string]string{"digest-a": submissionA(t), "digest-b": submissionB(t)},
 	)
-	h.headChecker.CheckDivergenceFunc = func(_ context.Context, _ string, doc *review.Document, _ map[string]string) (string, bool, []DivergedAnchor, error) {
-		if doc.Profile.Value == "backend" {
-			return "repo", true, []DivergedAnchor{{Name: "anchor-worktree-diverged", Comment: "backend:dropped-context-1", File: "a.go", Message: "from backend's submission"}}, nil
-		}
-		return "repo", false, []DivergedAnchor{{Name: "anchor-worktree-diverged", Comment: "security:dropped-context-1", File: "b.go", Message: "from security's submission"}}, nil
+	h.headChecker.DiscoverFunc = func(context.Context, string, string) (HeadCheck, error) {
+		return &HeadCheckMock{
+			SourceFunc: func() string { return "repo" },
+			IsHeadFunc: func() bool { return true },
+			DivergedFunc: func(_ context.Context, doc *review.Document, _ map[string]string) ([]DivergedAnchor, error) {
+				if doc.Profile.Value == "backend" {
+					return []DivergedAnchor{{Name: "anchor-worktree-diverged", Comment: "backend:dropped-context-1", File: "a.go", Message: "from backend's submission"}}, nil
+				}
+				return []DivergedAnchor{{Name: "anchor-worktree-diverged", Comment: "security:dropped-context-1", File: "b.go", Message: "from security's submission"}}, nil
+			},
+		}, nil
 	}
 	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + ref121, "--repo=" + repo121})
 	require.Equal(t, ExitValid, code, h.stderr.String())
 	got := asObject(t, h.stdout.String())
 	headCheck := got["head_check"].(map[string]any)
-	assert.Equal(t, true, headCheck["is_head"], "is_head is the FIRST submission's answer (backend, true), not the last's (security, false)")
+	assert.Equal(t, true, headCheck["is_head"])
 	diverged, ok := headCheck["diverged"].([]any)
 	require.True(t, ok)
-	require.Len(t, diverged, 2, "both submissions' diverged entries are concatenated, not just the last one")
+	require.Len(t, diverged, 2, "both submissions' diverged entries are concatenated, not just one")
 	messages := make([]string, 0, 2)
 	for _, d := range diverged {
 		messages = append(messages, d.(map[string]any)["message"].(string))
 	}
 	assert.Contains(t, messages, "from backend's submission")
 	assert.Contains(t, messages, "from security's submission")
+}
+
+// TestCollectReviews_HeadCheckDiscoveredOnceDivergedOncePerSubmission is
+// refinery-k3h's own regression test, pinning the call count against the
+// mock: repository discovery and the HEAD check (Discover) are
+// invocation-level facts and must run exactly once per collect-reviews
+// invocation, never once per submission, no matter how many surviving
+// submissions there are; Diverged — the genuinely per-submission part of
+// the check — runs exactly once per surviving submission.
+//
+// Mutation this kills: calling Discover (or the old, unsplit
+// CheckDivergence) inside the per-submission loop would leave
+// DiscoverCalls() at 2, not 1, for these two submissions.
+func TestCollectReviews_HeadCheckDiscoveredOnceDivergedOncePerSubmission(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	setCollectReviewsStore(t, h.reviews, repo121, ref121, true, true,
+		[]string{"digest-a", "digest-b"},
+		map[string]string{"digest-a": submissionA(t), "digest-b": submissionB(t)},
+	)
+	headCheckMock := &HeadCheckMock{
+		SourceFunc: func() string { return "repo" },
+		IsHeadFunc: func() bool { return true },
+		DivergedFunc: func(context.Context, *review.Document, map[string]string) ([]DivergedAnchor, error) {
+			return []DivergedAnchor{}, nil
+		},
+	}
+	h.headChecker.DiscoverFunc = func(context.Context, string, string) (HeadCheck, error) {
+		return headCheckMock, nil
+	}
+	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + ref121, "--repo=" + repo121})
+	require.Equal(t, ExitValid, code, h.stderr.String())
+	assert.Len(t, h.headChecker.DiscoverCalls(), 1, "repository discovery and the HEAD check run once per invocation, not once per submission")
+	assert.Len(t, headCheckMock.DivergedCalls(), 2, "Diverged runs once per surviving submission — the genuinely per-submission part of the check")
 }
 
 // TestCollectReviews_MatchesDocumentedShape_TwoProfilesOneRef is the third
@@ -550,7 +516,7 @@ func TestCollectReviews_MatchesDocumentedShape_TwoProfilesOneRef(t *testing.T) {
 	h := newHarness(t, "")
 	setCollectReviewsStore(t, h.reviews, repo121, ref121, true, true,
 		[]string{"digest-a", "digest-b"},
-		map[string]string{"digest-a": submissionA, "digest-b": submissionB},
+		map[string]string{"digest-a": submissionA(t), "digest-b": submissionB(t)},
 	)
 	setHeadCheckStub(h.headChecker, "repo", true, []DivergedAnchor{})
 	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + ref121, "--repo=" + repo121})
@@ -573,14 +539,14 @@ func TestCollectReviews_MatchesDocumentedShape_RevisedAndUnprofiled(t *testing.T
 	h := newHarness(t, "")
 	setCollectReviewsStore(t, h.reviews, repo122, ref122, true, true,
 		[]string{"d1", "d2", "d3"},
-		map[string]string{"d1": submissionD1, "d2": submissionD2, "d3": submissionD3},
+		map[string]string{"d1": submissionD1(t), "d2": submissionD2(t), "d3": submissionD3(t)},
 	)
 	setHeadCheckStub(h.headChecker, "repo", false, nil)
 	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + ref122, "--repo=" + repo122})
 	require.Equal(t, ExitValid, code, h.stderr.String())
 	got := realJSON(t, h.stdout.String())
-	want := docJSONBlock(t, combinedReviewsDoc, "### 12.2 One profile, revised, plus one unprofiled submission", 1)
-	assertShapeMatchesDoc(t, got, combinedReviewsDoc, "### 12.2 One profile, revised, plus one unprofiled submission", 1,
+	want := docJSONBlock(t, combinedReviewsDoc, "### 12.2 One profile, revised, plus one unprofiled submission", 4)
+	assertShapeMatchesDoc(t, got, combinedReviewsDoc, "### 12.2 One profile, revised, plus one unprofiled submission", 4,
 		"docs/features/combined-reviews.md §12.2: the envelope's shape must match the documented example")
 	assert.Equal(t, want, got, "docs/features/combined-reviews.md §12.2: the envelope must match the worked example exactly, value for value")
 }

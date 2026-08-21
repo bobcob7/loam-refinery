@@ -1485,7 +1485,8 @@ eleven minutes later, same `ref`:
 ```
 
 Both submissions reached the store only because they verified cleanly
-against `ref` at submission time ([§3.4](#34-verification-is-required-to-submit)).
+against `ref` at submission time — verification that cannot be skipped or
+demoted ([cli.md §2.3.1](../cli.md#231-verifying-anchors)).
 `internal/fetch/client.go` has not changed on disk since either ran, so the
 head check at collection time finds nothing drifted.
 `loam-refinery collect-reviews --ref=4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d`
@@ -1568,7 +1569,8 @@ here means something sharper than it did before this revision: `diverged:
 []` says every anchor in this output not only holds against the tree right
 now, it was **confirmed once already, at submission**, and nothing has
 moved since — a stronger claim than "nothing currently contradicts it,"
-now that [§3.4](#34-verification-is-required-to-submit) guarantees every
+now that unconditional verification at submission
+([cli.md §2.3.1](../cli.md#231-verifying-anchors)) guarantees every
 stored anchor was checked at least once.
 
 ### 12.2 One profile, revised, plus one unprofiled submission
@@ -1578,12 +1580,81 @@ that never appears in the output: `backend` reviewed once, revised its own
 finding and added a second, and an unprimed reviewer with no `profile`
 also ran.
 
-- `D1`, `profile: "backend"`, stored earliest — one comment,
-  `stale-cache-1`, priority 6.
-- `D2`, `profile: "backend"`, stored second — a revision: `stale-cache-1`
-  again (id kept, body sharpened, priority raised to 8), plus a new
-  comment, `missing-invalidation-1`.
-- `D3`, no `profile`, stored latest — one comment, `todo-left-in-1`.
+**D1**, stored under `profile: "backend"`, stored earliest — one comment,
+`stale-cache-1`, priority 6:
+
+```json
+{
+  "version": "1",
+  "verdict": "request_changes",
+  "profile": "backend",
+  "ref": "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a",
+  "summary": "Cache invalidation is missing on the write path.",
+  "comments": [
+    {
+      "id": "stale-cache-1",
+      "priority": 6,
+      "category": "correctness",
+      "body": "The write path updates the DB but never invalidates the cache entry.",
+      "anchors": [{ "file": "internal/cache/store.go", "line": 41 }],
+      "suggestions": []
+    }
+  ]
+}
+```
+
+**D2**, stored under `profile: "backend"`, stored second — a revision:
+`stale-cache-1` again (id kept, body sharpened, priority raised to 8), plus
+a new comment, `missing-invalidation-1`:
+
+```json
+{
+  "version": "1",
+  "verdict": "request_changes",
+  "profile": "backend",
+  "ref": "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a",
+  "summary": "Cache invalidation is missing on two write paths, not one.",
+  "comments": [
+    {
+      "id": "stale-cache-1",
+      "priority": 8,
+      "category": "correctness",
+      "body": "The write path updates the DB but never invalidates the cache entry; on closer read, the batch-update path has the same gap.",
+      "anchors": [{ "file": "internal/cache/store.go", "line": 41 }],
+      "suggestions": []
+    },
+    {
+      "id": "missing-invalidation-1",
+      "priority": 8,
+      "category": "correctness",
+      "body": "Same gap as stale-cache-1, on the batch-update path.",
+      "anchors": [{ "file": "internal/cache/store.go", "line": 96 }],
+      "suggestions": []
+    }
+  ]
+}
+```
+
+**D3**, no `profile`, stored latest — one comment, `todo-left-in-1`:
+
+```json
+{
+  "version": "1",
+  "verdict": "comment",
+  "ref": "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a",
+  "summary": "One stray TODO; nothing blocking.",
+  "comments": [
+    {
+      "id": "todo-left-in-1",
+      "priority": 2,
+      "category": "style",
+      "body": "A TODO from the previous change is still here and looks resolved by this one.",
+      "anchors": [{ "file": "internal/cache/store.go", "line": 12 }],
+      "suggestions": []
+    }
+  ]
+}
+```
 
 `D1` and `D2` share a claimed profile; `D2` is later, so `D1` carries
 `superseded_by` and `D2` does not. Neither is dropped — `D1`'s

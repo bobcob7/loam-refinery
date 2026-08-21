@@ -13,9 +13,10 @@ import (
 
 // headCheckAdapter is the concrete implementation of internal/cli's
 // headChecker interface (docs/features/combined-reviews.md §4.3.2, routes
-// 2+3). It discovers the repository and constructs a Verifier fresh on every
-// call, the same way reviewsAdapter resolves the store fresh on every call,
-// rather than holding either across a run.
+// 2+3). It discovers the repository and constructs a Verifier once per
+// Discover call — once per collect-reviews invocation, not once per
+// submission (refinery-k3h) — and hands both back in the returned
+// resolvedHeadCheck for every submission's own Diverged call to reuse.
 type headCheckAdapter struct {
 	log *slog.Logger
 }
@@ -25,29 +26,57 @@ func newHeadCheckAdapter(log *slog.Logger) *headCheckAdapter {
 	return &headCheckAdapter{log: log}
 }
 
-// CheckDivergence implements internal/cli's headChecker. source mirrors
+// Discover implements internal/cli's headChecker. source mirrors
 // reviewsAdapter.RepoName's own discovery outcomes onto verification.source's
 // three values: "none" outside a repository, "unavailable" when one exists
 // but discovery itself failed, "repo" otherwise. isHead is asked through
-// verify.Verifier.RefIsHEAD rather than re-run with a second git call here,
-// so this and Verify's own internal isHEAD decision can never drift apart.
-// diverged is left nil whenever isHead is false, so a caller can tell "does
-// not apply" from "checked, found nothing" without inspecting source at all.
-func (a *headCheckAdapter) CheckDivergence(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (string, bool, []cli.DivergedAnchor, error) {
+// verify.Verifier.RefIsHEAD rather than re-run with a second git call per
+// submission, so this and Verify's own internal isHEAD decision can never
+// drift apart. Both are resolved here, once, and carried on the returned
+// resolvedHeadCheck so no later Diverged call repeats repository discovery
+// or the HEAD check.
+func (a *headCheckAdapter) Discover(ctx context.Context, dir, ref string) (cli.HeadCheck, error) {
 	repository, err := verify.Discover(ctx, dir)
 	if errors.Is(err, verify.ErrNoRepository) {
-		return "none", false, nil, nil
+		return &resolvedHeadCheck{source: "none"}, nil
 	}
 	if err != nil {
 		a.log.Debug("head check unavailable", "error", err)
-		return "unavailable", false, nil, nil
+		return &resolvedHeadCheck{source: "unavailable"}, nil
 	}
 	verifier := verify.New(repository, a.log)
-	if !verifier.RefIsHEAD(ctx, doc.Ref.Value) {
-		return "repo", false, nil, nil
+	if !verifier.RefIsHEAD(ctx, ref) {
+		return &resolvedHeadCheck{source: "repo"}, nil
 	}
-	_, _, verification := verifier.Verify(ctx, doc)
-	return "repo", true, translateDiverged(doc, verification.Unverified, qualifiedIDs), nil
+	return &resolvedHeadCheck{source: "repo", isHead: true, verifier: verifier}, nil
+}
+
+// resolvedHeadCheck is one collect-reviews invocation's resolved
+// repository/HEAD state (internal/cli.HeadCheck): Source and IsHead answer
+// from fields Discover already fixed; Diverged is the only method that does
+// per-submission work, reusing the one Verifier Discover built rather than
+// constructing its own.
+type resolvedHeadCheck struct {
+	source   string
+	isHead   bool
+	verifier *verify.Verifier
+}
+
+// Source implements internal/cli.HeadCheck.
+func (h *resolvedHeadCheck) Source() string { return h.source }
+
+// IsHead implements internal/cli.HeadCheck.
+func (h *resolvedHeadCheck) IsHead() bool { return h.isHead }
+
+// Diverged implements internal/cli.HeadCheck. It is left nil whenever
+// isHead is false, so a caller can tell "does not apply" from "checked,
+// found nothing" without inspecting Source() at all.
+func (h *resolvedHeadCheck) Diverged(ctx context.Context, doc *review.Document, qualifiedIDs map[string]string) ([]cli.DivergedAnchor, error) {
+	if !h.isHead {
+		return nil, nil
+	}
+	_, _, verification := h.verifier.Verify(ctx, doc)
+	return translateDiverged(doc, verification.Unverified, qualifiedIDs), nil
 }
 
 // translateDiverged turns verify.Verifier's per-anchor Unverified list into

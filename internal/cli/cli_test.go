@@ -121,12 +121,24 @@ func noopReviewStore() *reviewStoreMock {
 }
 
 // noopHeadChecker stands in for headChecker wherever a test drives a command
-// other than collect-reviews: it reports "none" and never errors, the same
-// answer CheckDivergence gives outside a repository.
+// other than collect-reviews: Discover reports "none" and never errors, the
+// same answer Discover gives outside a repository.
 func noopHeadChecker() *headCheckerMock {
 	return &headCheckerMock{
-		CheckDivergenceFunc: func(context.Context, string, *review.Document, map[string]string) (string, bool, []DivergedAnchor, error) {
-			return "none", false, nil, nil
+		DiscoverFunc: func(context.Context, string, string) (HeadCheck, error) {
+			return noopHeadCheckResult(), nil
+		},
+	}
+}
+
+// noopHeadCheckResult stands in for the HeadCheck a noopHeadChecker's
+// Discover returns: source "none", never diverges, never errors.
+func noopHeadCheckResult() *HeadCheckMock {
+	return &HeadCheckMock{
+		SourceFunc: func() string { return "none" },
+		IsHeadFunc: func() bool { return false },
+		DivergedFunc: func(context.Context, *review.Document, map[string]string) ([]DivergedAnchor, error) {
+			return nil, nil
 		},
 	}
 }

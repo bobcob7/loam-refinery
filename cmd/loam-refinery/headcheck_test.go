@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bobcob7/loam-refinery/internal/cli"
 	"github.com/bobcob7/loam-refinery/internal/review"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,12 +20,23 @@ import (
 // nil-vs-empty distinction for diverged are this adapter's own contract and
 // are pinned here, against real git.
 
+// discoverAndCheck runs the two-call sequence internal/cli.collectHeadCheck
+// itself makes: Discover once, then Diverged against doc, mirroring how a
+// real collect-reviews invocation drives headChecker (refinery-k3h).
+func discoverAndCheck(t *testing.T, dir string, doc *review.Document, qualifiedIDs map[string]string) (source string, isHead bool, diverged []cli.DivergedAnchor) {
+	t.Helper()
+	head, err := newHeadCheckAdapter(quietLog()).Discover(t.Context(), dir, doc.Ref.Value)
+	require.NoError(t, err)
+	d, err := head.Diverged(t.Context(), doc, qualifiedIDs)
+	require.NoError(t, err)
+	return head.Source(), head.IsHead(), d
+}
+
 func TestHeadCheckAdapter_SourceIsNoneOutsideARepository(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	doc := parseDoc(t, `{"ref":"`+strings.Repeat("a", 40)+`","comments":[]}`)
-	source, isHead, diverged, err := newHeadCheckAdapter(quietLog()).CheckDivergence(t.Context(), dir, doc, nil)
-	require.NoError(t, err)
+	source, isHead, diverged := discoverAndCheck(t, dir, doc, nil)
 	assert.Equal(t, "none", source)
 	assert.False(t, isHead)
 	assert.Nil(t, diverged, "diverged is absent, not empty, outside a repository")
@@ -39,8 +51,7 @@ func TestHeadCheckAdapter_SourceIsUnavailableWhenDiscoveryFails(t *testing.T) {
 	dir := t.TempDir()
 	runGit(t, dir, "init", "--bare", "-q")
 	doc := parseDoc(t, `{"ref":"`+strings.Repeat("a", 40)+`","comments":[]}`)
-	source, isHead, diverged, err := newHeadCheckAdapter(quietLog()).CheckDivergence(t.Context(), dir, doc, nil)
-	require.NoError(t, err)
+	source, isHead, diverged := discoverAndCheck(t, dir, doc, nil)
 	assert.Equal(t, "unavailable", source)
 	assert.False(t, isHead)
 	assert.Nil(t, diverged, "diverged is absent, not empty, when the repository could not be asked")
@@ -50,8 +61,7 @@ func TestHeadCheckAdapter_IsHeadTrueAndDivergedEmptyForAnUntouchedWorkingTree(t 
 	t.Parallel()
 	dir, sha := headCheckRepo(t, map[string]string{"a.go": "one\ntwo\n"})
 	doc := parseDoc(t, `{"ref":"`+sha+`","comments":[{"id":"c1","anchors":[{"file":"a.go","line":1}]}]}`)
-	source, isHead, diverged, err := newHeadCheckAdapter(quietLog()).CheckDivergence(t.Context(), dir, doc, map[string]string{"c1": "backend:c1"})
-	require.NoError(t, err)
+	source, isHead, diverged := discoverAndCheck(t, dir, doc, map[string]string{"c1": "backend:c1"})
 	assert.Equal(t, "repo", source)
 	assert.True(t, isHead)
 	require.NotNil(t, diverged, "diverged is present, not absent, once the check has run")
@@ -66,8 +76,7 @@ func TestHeadCheckAdapter_DivergedIsAbsentWhenRefIsNotHEAD(t *testing.T) {
 	t.Parallel()
 	dir, firstSHA, _ := headCheckTwoCommitRepo(t, "a.go", "first\n", "second\n")
 	doc := parseDoc(t, `{"ref":"`+firstSHA+`","comments":[{"id":"c1","anchors":[{"file":"a.go","line":1}]}]}`)
-	source, isHead, diverged, err := newHeadCheckAdapter(quietLog()).CheckDivergence(t.Context(), dir, doc, map[string]string{"c1": "backend:c1"})
-	require.NoError(t, err)
+	source, isHead, diverged := discoverAndCheck(t, dir, doc, map[string]string{"c1": "backend:c1"})
 	assert.Equal(t, "repo", source)
 	assert.False(t, isHead)
 	assert.Nil(t, diverged, "the check does not apply to a non-HEAD ref, so diverged must be absent, not []")
@@ -91,8 +100,7 @@ func TestHeadCheckAdapter_DivergedCarriesQualifiedIdsAndRealFilePathsNotPointers
 		{"id":"dropped-context-2","anchors":[{"file":"c.go","line":1}]}
 	]}`)
 	qualified := map[string]string{"dropped-context-1": "backend:dropped-context-1", "dropped-context-2": "#2:dropped-context-2"}
-	_, isHead, diverged, err := newHeadCheckAdapter(quietLog()).CheckDivergence(t.Context(), dir, doc, qualified)
-	require.NoError(t, err)
+	_, isHead, diverged := discoverAndCheck(t, dir, doc, qualified)
 	require.True(t, isHead)
 	require.Len(t, diverged, 2, "a.go's anchor did not diverge; only b.go's and c.go's did")
 	byFile := map[string]string{}
@@ -106,16 +114,20 @@ func TestHeadCheckAdapter_DivergedCarriesQualifiedIdsAndRealFilePathsNotPointers
 
 // A second submission's qualifiedIDs map is consulted independently: two
 // origin ids that collide across submissions must not resolve to each
-// other's qualified id.
+// other's qualified id. This also exercises refinery-k3h's fix directly: one
+// Discover call, its HeadCheck reused across two Diverged calls, exactly the
+// shape internal/cli.collectHeadCheck now drives for two surviving
+// submissions of the same ref.
 func TestHeadCheckAdapter_QualifiedIdsAreScopedToTheSuppliedMap(t *testing.T) {
 	t.Parallel()
 	dir, sha := headCheckRepo(t, map[string]string{"a.go": "line one\n"})
 	writeHeadCheckFile(t, dir, "a.go", "changed\n")
 	doc := parseDoc(t, `{"ref":"`+sha+`","comments":[{"id":"dropped-context-1","anchors":[{"file":"a.go","line":1}]}]}`)
-	adapter := newHeadCheckAdapter(quietLog())
-	_, _, first, err := adapter.CheckDivergence(t.Context(), dir, doc, map[string]string{"dropped-context-1": "backend:dropped-context-1"})
+	head, err := newHeadCheckAdapter(quietLog()).Discover(t.Context(), dir, sha)
 	require.NoError(t, err)
-	_, _, second, err := adapter.CheckDivergence(t.Context(), dir, doc, map[string]string{"dropped-context-1": "#2:dropped-context-1"})
+	first, err := head.Diverged(t.Context(), doc, map[string]string{"dropped-context-1": "backend:dropped-context-1"})
+	require.NoError(t, err)
+	second, err := head.Diverged(t.Context(), doc, map[string]string{"dropped-context-1": "#2:dropped-context-1"})
 	require.NoError(t, err)
 	require.Len(t, first, 1)
 	require.Len(t, second, 1)
