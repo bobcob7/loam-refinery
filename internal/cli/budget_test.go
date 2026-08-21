@@ -99,89 +99,18 @@ func TestValidateStaysWithinBudget(t *testing.T) {
 		"each diagnostic costs about %d tokens; the ceiling is %d", perDiagnostic, perDiagnosticBudget)
 }
 
-// docs/cli.md §6.1's dirty-checkout row was carried over from the
-// per-diagnostic cost and marked "not yet measured" — this measures it
-// against the real binary the way every other row is, and the way
-// TestReviewsStaysWithinBudgetPerRow measures a per-row cost: two sample
-// sizes, so the marginal cost of one more unverified anchor is what gets
-// checked against the ceiling rather than a single noisy sample.
-func TestValidateUnverifiedAnchorStaysWithinBudget(t *testing.T) {
-	t.Parallel()
-	const perUnverifiedBudget = 60
-	dir, ref := divergedRefDir(t)
-	small := unverifiedCount(t, runValidateOK(t, dir, unverifiedAnchorsDoc(ref, 3)))
-	large := unverifiedCount(t, runValidateOK(t, dir, unverifiedAnchorsDoc(ref, 10)))
-	require.Equal(t, 3, small.n)
-	require.Equal(t, 10, large.n)
-	perUnverified := (large.tokens - small.tokens) / (large.n - small.n)
-	assert.LessOrEqual(t, perUnverified, perUnverifiedBudget,
-		"each unverified anchor costs about %d tokens; the ceiling is %d", perUnverified, perUnverifiedBudget)
-}
-
-// unverifiedCounted is one measurement of a validate run reporting n
-// unverified anchors.
-type unverifiedCounted struct {
-	n      int
-	tokens int
-}
-
-// runValidateOK runs validate and requires it exited clean: an unverified
-// anchor withholds a verification, it does not fail the document.
-func runValidateOK(t *testing.T, dir, source string) string {
-	t.Helper()
-	out, code := runValidate(t, dir, source)
-	require.Equal(t, ExitValid, code, out)
-	return out
-}
-
-// unverifiedCount reads how many anchors a validate run reported unverified,
-// pairing it with the run's token cost.
-func unverifiedCount(t *testing.T, out string) unverifiedCounted {
-	t.Helper()
-	var payload struct {
-		Verification struct {
-			Unverified []struct{} `json:"unverified"`
-		} `json:"verification"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &payload))
-	return unverifiedCounted{n: len(payload.Verification.Unverified), tokens: approxTokens(out)}
-}
-
-// divergedRefDir makes a throwaway repository with one tracked file at HEAD,
-// then diverges the working tree from it without touching history — the
-// state a pre-commit review leaves behind, and the one this feature exists
-// to make checkable at all (refinery-9rh).
-func divergedRefDir(t *testing.T) (string, string) {
-	t.Helper()
-	dir := t.TempDir()
-	run := func(args ...string) []byte {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		require.NoError(t, err, string(out))
-		return out
-	}
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("line one\nline two\nline three\n"), 0o644))
-	run("init", "--quiet")
-	run("add", "-A")
-	run("-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "--quiet", "-m", "seed")
-	ref := strings.TrimSpace(string(run("rev-parse", "HEAD")))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("line one, edited\nline two\nline three\n"), 0o644))
-	return dir, ref
-}
-
-// unverifiedAnchorsDoc is a valid review with n anchors into the one file
-// divergedRefDir diverges, so every anchor is reported anchor-worktree-diverged
-// regardless of the line numbers named.
-func unverifiedAnchorsDoc(ref string, n int) string {
-	anchors := make([]string, n)
-	for i := range anchors {
-		anchors[i] = fmt.Sprintf(`{"file":"file.txt","line":%d}`, i+1)
-	}
-	return `{"version":"1","verdict":"comment","summary":"The retry loop is sound and the deadline propagates to every call it makes.","ref":"` + ref + `",` +
-		`"comments":[{"id":"a-1","priority":5,"category":"correctness","body":"a body long enough for the schema to accept it","anchors":[` +
-		strings.Join(anchors, ",") + `],"suggestions":[]}]}`
-}
+// TestValidateUnverifiedAnchorStaysWithinBudget used to measure the
+// dirty-checkout row here: divergedRefDir produced a repository whose
+// working tree had moved past ref, and the assertion was that submit-review
+// still exited clean while reporting the anchors unverified. Making
+// verification unconditional (refinery-uyb.5) removes that outcome — the
+// same fixture now exits 1 through verification-required — so the test and
+// its exclusive helpers (unverifiedCounted, runValidateOK, unverifiedCount,
+// divergedRefDir, unverifiedAnchorsDoc) are deleted rather than patched to
+// keep passing. refinery-uyb.6, which adds the exit-3 precondition for a
+// diverged working tree, owns this row's replacement: a flat-cost budget
+// test against the exit-3 diagnostic, built on its own diverged-repository
+// fixture.
 
 // Outside a repository, verification cannot run at all, so SkipAll reports
 // three skipped checks — real content the in-repository case never has to

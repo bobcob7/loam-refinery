@@ -18,16 +18,8 @@ import (
 type Options struct {
 	// Strict promotes advisories to errors for the exit code.
 	Strict bool
-	// Disabled advisory names are not run.
-	Disabled map[string]bool
-	// WarnOnly verification check names are demoted to advisories.
-	WarnOnly map[string]bool
 	// Dir is where repository discovery starts.
 	Dir string
-	// RequireVerification fails a run whose anchors were not actually checked.
-	// Off by default: a document is not wrong because no repository answered,
-	// and only the caller knows whether it needed one to.
-	RequireVerification bool
 }
 
 // Validator assembles one result from the three check tiers.
@@ -53,13 +45,11 @@ func (v *Validator) Validate(ctx context.Context, source []byte, options Options
 	result := &review.Result{Strict: options.Strict, Comments: len(doc.Comments)}
 	result.Diagnostics = append(result.Diagnostics, v.structural.Check(doc)...)
 	verified, skipped, verification := v.verify(ctx, doc, options)
-	if options.RequireVerification {
-		verified = append(verified, unverified(verification, skipped, options.WarnOnly)...)
-	}
-	result.Diagnostics = append(result.Diagnostics, demote(verified, options.WarnOnly)...)
+	verified = append(verified, unverified(verification, skipped)...)
+	result.Diagnostics = append(result.Diagnostics, verified...)
 	result.Skipped = append(result.Skipped, skipped...)
 	result.Verification = verification
-	advisories, unrun := v.advisories.Run(doc, options.Disabled)
+	advisories, unrun := v.advisories.Run(doc)
 	result.Diagnostics = append(result.Diagnostics, advisories...)
 	result.Skipped = append(result.Skipped, unrun...)
 	review.SortDiagnostics(result.Diagnostics)
@@ -89,30 +79,19 @@ func (v *Validator) verify(ctx context.Context, doc *review.Document, options Op
 	return repository.Verify(ctx, doc)
 }
 
-// unverified reports the one thing --require-verification asks about: whether
-// the anchor claims were actually checked. A repository that did not answer,
-// an anchor whose file could not be read, and an anchor whose working-tree
-// copy diverged from ref are the same answer to that question — no one
-// confirmed this — however different their causes.
-//
-// It is produced before demote, so --warn-only=verification-required demotes it
-// like any other verification check. Asking for both is contradictory, but it is
-// contradictory on the command line where a reader can see it, which beats a
-// flag that silently outranks another.
-func unverified(verification review.Verification, skipped []review.Skipped, warnOnly map[string]bool) []review.Diagnostic {
+// unverified reports the one thing verification always asks now: whether the
+// anchor claims were actually checked. A repository that did not answer, an
+// anchor whose file could not be read, and an anchor whose working-tree copy
+// diverged from ref are the same answer to that question — no one confirmed
+// this — however different their causes, and there is no flag to accept the
+// gap instead.
+func unverified(verification review.Verification, skipped []review.Skipped) []review.Diagnostic {
 	if verification.Anchors == 0 {
 		return nil
 	}
 	skipGap := verification.Source != "repo" || len(skipped) > 0
 	divergedGap := len(verification.Unverified) > 0
 	if !skipGap && !divergedGap {
-		return nil
-	}
-	// Each gap is excused on its own terms: --warn-only=anchor-worktree-diverged
-	// excuses only a diverged working tree, the same way --warn-only=ref-unknown
-	// excuses only a repository lacking the reviewed commit, and demoting one
-	// never waves through the other.
-	if (!skipGap || excused(skipped, warnOnly)) && (!divergedGap || warnOnly["anchor-worktree-diverged"]) {
 		return nil
 	}
 	reason := verification.Reason
@@ -141,29 +120,6 @@ func plural(n int, noun string) string {
 	return fmt.Sprintf("%d %ss", n, noun)
 }
 
-// excused reports whether the caller already accepted the condition that
-// stopped verification. --warn-only=ref-unknown says a repository legitimately
-// lacking the reviewed commit is not a failure; the anchor checks it skips are
-// that same fact reported again, and failing on them would make the two flags
-// impossible to combine — the caller could never say "verify these, but I know
-// this commit is gone".
-//
-// Each skip says for itself which check would excuse it, so demoting one check
-// never covers a gap some other condition caused: no repository at all, a file
-// git could not read, and a field too malformed to check name nothing, and no
-// flag waves them through.
-func excused(skipped []review.Skipped, warnOnly map[string]bool) bool {
-	if len(skipped) == 0 {
-		return false
-	}
-	for _, skip := range skipped {
-		if skip.Excuses == "" || !warnOnly[skip.Excuses] {
-			return false
-		}
-	}
-	return true
-}
-
 // reasons lists the distinct causes, in the order verification reported them,
 // so a document-side skip cannot hide a machine-side one behind it.
 func reasons(skipped []review.Skipped) []string {
@@ -177,15 +133,4 @@ func reasons(skipped []review.Skipped) []string {
 		out = append(out, skip.Reason)
 	}
 	return out
-}
-
-// demote turns the verification checks a caller named in --warn-only into
-// advisories, for a repository that legitimately lacks the reviewed commit.
-func demote(diagnostics []review.Diagnostic, warnOnly map[string]bool) []review.Diagnostic {
-	for i, diagnostic := range diagnostics {
-		if warnOnly[diagnostic.Name] {
-			diagnostics[i].Severity = review.SeverityAdvisory
-		}
-	}
-	return diagnostics
 }

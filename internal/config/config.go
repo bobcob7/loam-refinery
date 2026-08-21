@@ -38,11 +38,14 @@ type Config struct {
 	ConfigPath string
 }
 
-// flagOnlyKeys are validate's flags. They read as config keys, but a value
-// that changes whether a document is valid may not come from a file two
-// machines can disagree about (docs/config.md §3.1), so these are rejected
-// with a message naming the flag rather than "unknown key".
-var flagOnlyKeys = []string{"strict", "disable", "warn_only", "require_verification"}
+// flagOnlyKeys are the flags whose value changes whether a document is
+// valid, so they may not come from a file two machines can disagree about
+// (docs/config.md §3.1). strict is the only one left: submit-review dropped
+// --disable, --warn-only, and --require-verification entirely
+// (refinery-uyb.5), so a config file naming one of those three now falls
+// through to the ordinary "unknown key" branch below rather than being told
+// it is a flag.
+var flagOnlyKeys = []string{"strict"}
 
 // topLevelKeys and storeKeys are the closed sets docs/config.md §3
 // documents: the root object's keys, and store's keys. parse rejects
@@ -218,8 +221,8 @@ func loadFile(path string) (*Config, error) {
 }
 
 // parse decodes the config file's root object. Unknown keys are rejected
-// outright rather than ignored, and the four flag-only keys are named as
-// such rather than as unknown keys (docs/config.md §3, §3.1).
+// outright rather than ignored, and the one flag-only key is named as
+// such rather than as an unknown key (docs/config.md §3, §3.1).
 func parse(raw []byte, path string) (*Config, error) {
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &root); err != nil {

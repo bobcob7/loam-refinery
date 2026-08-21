@@ -239,7 +239,7 @@ func TestLoadFile_TopLevelUnknownKey(t *testing.T) {
 
 func TestLoadFile_FlagOnlyKeysNameTheFlagNotUnknownKey(t *testing.T) {
 	t.Parallel()
-	for _, key := range []string{"strict", "disable", "warn_only", "require_verification"} {
+	for _, key := range []string{"strict"} {
 		key := key
 		t.Run(key, func(t *testing.T) {
 			t.Parallel()
@@ -250,6 +250,29 @@ func TestLoadFile_FlagOnlyKeysNameTheFlagNotUnknownKey(t *testing.T) {
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), key)
 			assert.NotContains(t, err.Error(), "unknown key")
+		})
+	}
+}
+
+// disable, warn_only, and require_verification used to be flag-only keys too
+// (--disable, --warn-only, --require-verification), but refinery-uyb.5
+// dropped all three flags entirely. A config file naming one of them now
+// falls through to the ordinary "unknown key" message, distinct from
+// strict's continued "is a flag" message above (docs/config.md §3.1).
+func TestLoadFile_RemovedFlagKeysAreUnknownNotFlags(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"disable", "warn_only", "require_verification"} {
+		key := key
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			path := filepath.Join(dir, "config.json")
+			require.NoError(t, os.WriteFile(path, []byte(`{"version":"1","`+key+`":true}`), 0o600))
+			_, err := loadFile(path)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), key)
+			assert.Contains(t, err.Error(), "unknown key")
+			assert.NotContains(t, err.Error(), "is a flag")
 		})
 	}
 }

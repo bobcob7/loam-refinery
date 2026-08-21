@@ -47,13 +47,6 @@ func (d Diagnostic) LensName() string {
 type Skipped struct {
 	Name   string
 	Reason string
-	// Excuses names the check whose demotion accounts for this skip, and is
-	// empty when nothing does. --warn-only=ref-unknown says a repository
-	// lacking the reviewed commit is acceptable, and the anchor checks that
-	// absence skipped are the same fact again; a disk that could not be read,
-	// or a field too malformed to check, is not that fact and is nobody's to
-	// excuse.
-	Excuses string
 }
 
 // Verification records whether anchors were checked, and against what.

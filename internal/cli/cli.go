@@ -37,8 +37,8 @@ type Build struct {
 	Schema  string
 }
 
-// CheckNames are the registered check names, by tier, for validating
-// --disable and --warn-only.
+// CheckNames are the registered check names, by tier — used to enumerate
+// every check as skipped when a document never parsed (see unparseable).
 type CheckNames struct {
 	Structural   []string
 	Verification []string
@@ -204,13 +204,4 @@ func splitNames(value string) ([]string, error) {
 		names = append(names, trimmed)
 	}
 	return names, nil
-}
-
-func contains(names []string, name string) bool {
-	for _, candidate := range names {
-		if candidate == name {
-			return true
-		}
-	}
-	return false
 }

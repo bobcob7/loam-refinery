@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,7 +10,7 @@ import (
 	"github.com/bobcob7/loam-refinery/internal/validate"
 )
 
-const submitReviewUsage = `usage: loam-refinery submit-review [path] [--strict] [--require-verification] [--warn-only=NAME,...] [--disable=NAME,...] [--format json]
+const submitReviewUsage = `usage: loam-refinery submit-review [path] [--strict] [--format json]
 `
 
 // submitReview checks one review document. Every check runs: a failure in one
@@ -19,9 +18,6 @@ const submitReviewUsage = `usage: loam-refinery submit-review [path] [--strict] 
 func (a *App) submitReview(ctx context.Context, args []string) int {
 	set := a.flagSet("submit-review", submitReviewUsage)
 	strict := set.Bool("strict", false, "treat advisories as errors")
-	warnOnly := set.String("warn-only", "", "demote the named verification checks")
-	disable := set.String("disable", "", "skip the named advisories")
-	require := set.Bool("require-verification", false, "fail if the anchors were not checked")
 	format := set.String("format", "json", "output format: json")
 	paths, err := parseAnywhere(set, args)
 	if err != nil {
@@ -35,15 +31,7 @@ func (a *App) submitReview(ctx context.Context, args []string) int {
 		a.fail(fmt.Errorf("submit-review takes at most one path, got %d", len(paths)))
 		return ExitUsage
 	}
-	options := validate.Options{Strict: *strict, RequireVerification: *require, Dir: a.dir}
-	if options.Disabled, err = a.checkNames(*disable, "--disable", a.names.Advisory, isSet(set, "disable")); err != nil {
-		a.fail(err)
-		return ExitUsage
-	}
-	if options.WarnOnly, err = a.checkNames(*warnOnly, "--warn-only", a.names.Verification, isSet(set, "warn-only")); err != nil {
-		a.fail(err)
-		return ExitUsage
-	}
+	options := validate.Options{Strict: *strict, Dir: a.dir}
 	path := ""
 	if len(paths) == 1 {
 		path = paths[0]
@@ -144,37 +132,6 @@ func (a *App) unparseable(err error, strict bool) *review.Result {
 		}
 	}
 	return result
-}
-
-// checkNames validates a comma-separated list of check names against the tier
-// that accepts them. A typo is a usage error rather than a silent no-op.
-func (a *App) checkNames(value, flagName string, allowed []string, given bool) (map[string]bool, error) {
-	if !given {
-		return nil, nil
-	}
-	names, err := splitNames(value)
-	if errors.Is(err, errNoNames) {
-		return nil, fmt.Errorf("%s needs at least one check name", flagName)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", flagName, err)
-	}
-	selected := map[string]bool{}
-	for _, name := range names {
-		switch {
-		case contains(allowed, name):
-			selected[name] = true
-		case contains(a.names.Structural, name):
-			return nil, fmt.Errorf("%s: structural checks cannot be disabled or demoted (%s)", flagName, name)
-		case contains(a.names.Advisory, name):
-			return nil, fmt.Errorf("%s: %s is an advisory; advisories never fail a run, use --disable to silence it", flagName, name)
-		case contains(a.names.Verification, name):
-			return nil, fmt.Errorf("%s: %s is a verification check; it cannot be disabled, use --warn-only to demote it", flagName, name)
-		default:
-			return nil, fmt.Errorf("%s: unknown check %q", flagName, name)
-		}
-	}
-	return selected, nil
 }
 
 // read takes the document from a path, or from stdin for "-" and no path.

@@ -85,7 +85,7 @@ var _ advisoryRunner = &advisoryRunnerMock{}
 //
 //		// make and configure a mocked advisoryRunner
 //		mockedadvisoryRunner := &advisoryRunnerMock{
-//			RunFunc: func(doc *review.Document, disabled map[string]bool) ([]review.Diagnostic, []review.Skipped) {
+//			RunFunc: func(doc *review.Document) ([]review.Diagnostic, []review.Skipped) {
 //				panic("mock out the Run method")
 //			},
 //		}
@@ -96,7 +96,7 @@ var _ advisoryRunner = &advisoryRunnerMock{}
 //	}
 type advisoryRunnerMock struct {
 	// RunFunc mocks the Run method.
-	RunFunc func(doc *review.Document, disabled map[string]bool) ([]review.Diagnostic, []review.Skipped)
+	RunFunc func(doc *review.Document) ([]review.Diagnostic, []review.Skipped)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -104,29 +104,25 @@ type advisoryRunnerMock struct {
 		Run []struct {
 			// Doc is the doc argument value.
 			Doc *review.Document
-			// Disabled is the disabled argument value.
-			Disabled map[string]bool
 		}
 	}
 	lockRun sync.RWMutex
 }
 
 // Run calls RunFunc.
-func (mock *advisoryRunnerMock) Run(doc *review.Document, disabled map[string]bool) ([]review.Diagnostic, []review.Skipped) {
+func (mock *advisoryRunnerMock) Run(doc *review.Document) ([]review.Diagnostic, []review.Skipped) {
 	if mock.RunFunc == nil {
 		panic("advisoryRunnerMock.RunFunc: method is nil but advisoryRunner.Run was just called")
 	}
 	callInfo := struct {
-		Doc      *review.Document
-		Disabled map[string]bool
+		Doc *review.Document
 	}{
-		Doc:      doc,
-		Disabled: disabled,
+		Doc: doc,
 	}
 	mock.lockRun.Lock()
 	mock.calls.Run = append(mock.calls.Run, callInfo)
 	mock.lockRun.Unlock()
-	return mock.RunFunc(doc, disabled)
+	return mock.RunFunc(doc)
 }
 
 // RunCalls gets all the calls that were made to Run.
@@ -134,12 +130,10 @@ func (mock *advisoryRunnerMock) Run(doc *review.Document, disabled map[string]bo
 //
 //	len(mockedadvisoryRunner.RunCalls())
 func (mock *advisoryRunnerMock) RunCalls() []struct {
-	Doc      *review.Document
-	Disabled map[string]bool
+	Doc *review.Document
 } {
 	var calls []struct {
-		Doc      *review.Document
-		Disabled map[string]bool
+		Doc *review.Document
 	}
 	mock.lockRun.RLock()
 	calls = mock.calls.Run

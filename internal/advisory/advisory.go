@@ -47,24 +47,12 @@ func Checks() []review.Check {
 	return checks
 }
 
-// Names returns every advisory name, for validating --disable.
-func Names() []string {
-	names := make([]string, 0, len(All()))
-	for _, advisory := range All() {
-		names = append(names, advisory.Meta.Name)
-	}
-	return names
-}
-
-// Run evaluates every advisory that was not disabled. One advisory failing to
-// run never stops another.
-func (r *Registry) Run(doc *review.Document, disabled map[string]bool) ([]review.Diagnostic, []review.Skipped) {
+// Run evaluates every registered advisory. There is no way to disable one:
+// one advisory failing to run never stops another.
+func (r *Registry) Run(doc *review.Document) ([]review.Diagnostic, []review.Skipped) {
 	diagnostics := []review.Diagnostic{}
 	skipped := []review.Skipped{}
 	for _, advisory := range r.advisories {
-		if disabled[advisory.Meta.Name] {
-			continue
-		}
 		raised, unrun := advisory.Run(doc)
 		diagnostics = append(diagnostics, raised...)
 		skipped = append(skipped, unrun...)

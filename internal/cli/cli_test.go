@@ -390,26 +390,18 @@ func TestValidateReadsStdinOrAPath(t *testing.T) {
 	})
 }
 
-func TestValidateRejectsCheckNamesThatCannotBeUsed(t *testing.T) {
+// --disable, --warn-only, and --require-verification are gone: submit-review
+// no longer registers them, so the flag package's own "flag provided but not
+// defined" error is what a caller gets, the same as any other typo.
+func TestRemovedFlagsAreUnknownOnSubmitReview(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name   string
-		args   []string
-		stderr string
-	}{
-		{name: "an unknown advisory", args: []string{"--disable=nope"}, stderr: `--disable: unknown check "nope"`},
-		{name: "a structural check", args: []string{"--disable=id-unique"}, stderr: "structural checks cannot be disabled"},
-		{name: "a verification check in --disable", args: []string{"--disable=ref-unknown"}, stderr: "use --warn-only to demote it"},
-		{name: "an advisory in --warn-only", args: []string{"--warn-only=body-thin"}, stderr: "advisories never fail a run"},
-		{name: "an empty list", args: []string{"--disable="}, stderr: "--disable needs at least one check name"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for _, flag := range []string{"--disable=body-thin", "--warn-only=ref-unknown", "--require-verification"} {
+		t.Run(flag, func(t *testing.T) {
 			t.Parallel()
 			h := newHarness(t, "{}")
-			assert.Equal(t, ExitUsage, h.app.Run(t.Context(), append([]string{"submit-review"}, test.args...)))
-			assert.Contains(t, h.stderr.String(), test.stderr)
-			assert.Empty(t, h.validator.ValidateCalls(), "a typo surfaces before any work is done")
+			assert.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"submit-review", flag}))
+			assert.Contains(t, h.stderr.String(), "flag provided but not defined")
+			assert.Empty(t, h.validator.ValidateCalls(), "an unknown flag surfaces before any work is done")
 		})
 	}
 }
@@ -417,12 +409,9 @@ func TestValidateRejectsCheckNamesThatCannotBeUsed(t *testing.T) {
 func TestValidatePassesFlagsThrough(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, "{}")
-	require.Equal(t, ExitValid, h.app.Run(t.Context(),
-		[]string{"submit-review", "--strict", "--disable=body-thin", "--warn-only=ref-unknown"}))
+	require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"submit-review", "--strict"}))
 	options := h.validator.ValidateCalls()[0].Options
 	assert.True(t, options.Strict)
-	assert.True(t, options.Disabled["body-thin"])
-	assert.True(t, options.WarnOnly["ref-unknown"])
 	assert.NotEmpty(t, options.Dir, "verification starts from the working directory")
 }
 
@@ -491,8 +480,8 @@ func TestSubcommandsRejectStrayArguments(t *testing.T) {
 
 func TestAnEmptyElementIsNotReportedAsAnEmptyList(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t, `{"version":"1"}`)
-	assert.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"submit-review", "--disable=body-thin,,vacuous-body"}))
+	h := newHarness(t, "")
+	assert.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"describe", "--lens=priority,,id-unique"}))
 	assert.Contains(t, h.stderr.String(), "empty name")
 }
 
@@ -553,29 +542,61 @@ func TestTheUnparseableCheckNameIsTheRegisteredOne(t *testing.T) {
 		"the name the CLI reports must be a check describe --lens can open")
 }
 
-// The flag has to reach the validator, and has to be off unless asked for.
-// Nothing else in the suite would notice it defaulting to true.
-func TestRequireVerificationReachesTheValidatorAndDefaultsOff(t *testing.T) {
+// Verification is unconditional now: a document with any anchor, run where
+// no repository can answer it, exits 1 — this was previously an ordinary,
+// passing case (docs/cli.md §2.3.1, before its own amendment). Both ways a
+// repository can fail to answer — standing outside one entirely ("none") and
+// finding one git cannot ask ("unavailable") — must fail the same way, so
+// this is asserted for the validator's real, unmocked wiring: the exact
+// regression this bead exists to prevent is a mock that agrees with itself
+// while the real path still exits 0.
+func TestUnverifiedAnchorsFailOutsideARepository(t *testing.T) {
 	t.Parallel()
-	for _, test := range []struct {
-		name string
-		args []string
-		want bool
-	}{
-		{name: "absent by default", args: []string{"submit-review"}},
-		{name: "given", args: []string{"submit-review", "--require-verification"}, want: true},
-		{name: "given as false", args: []string{"submit-review", "--require-verification=false"}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
+	dir := t.TempDir()
+	anchoredDoc := `{"version":"1","verdict":"comment","summary":"a summary long enough for the schema to accept it",` +
+		`"comments":[{"id":"a-1","priority":5,"category":"correctness","body":"a body long enough for the schema to accept it",` +
+		`"anchors":[{"file":"a.go","line":1}],"suggestions":[]}]}`
+	out, code := runValidate(t, dir, anchoredDoc)
+	assert.Equal(t, ExitInvalid, code, out)
+	assert.Contains(t, out, "verification-required")
+}
+
+// A document naming no anchors has nothing for verification to withhold, so
+// it must keep exiting 0 in the same no-repository circumstance the anchored
+// case above now fails in — verification-required must never start firing on
+// nothing to verify.
+func TestZeroAnchorDocumentStillPassesOutsideARepository(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	clean := `{"version":"1","verdict":"approve","summary":"a summary long enough for the schema to accept it",` +
+		`"ref":"4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f","comments":[]}`
+	out, code := runValidate(t, dir, clean)
+	assert.Equal(t, ExitValid, code, out)
+}
+
+// The "none" and "unavailable" verification sources must fail the same way:
+// a repository git could not even ask must not read as though nothing had
+// to answer. This is asserted at the wiring level — the validator's own
+// account of Source is trusted, and the CLI's job is only to turn a result
+// it reports invalid into exit 1, whichever source produced it.
+func TestUnverifiedAnchorsFailWhicheverSourceCouldNotAnswer(t *testing.T) {
+	t.Parallel()
+	for _, source := range []string{"none", "unavailable"} {
+		t.Run(source, func(t *testing.T) {
 			t.Parallel()
 			h := newHarness(t, `{"version":"1"}`)
-			var got validate.Options
-			h.validator.ValidateFunc = func(_ context.Context, _ []byte, options validate.Options) (*review.Result, error) {
-				got = options
-				return &review.Result{Valid: true}, nil
+			h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
+				return &review.Result{
+					Valid: false,
+					Diagnostics: []review.Diagnostic{{
+						Severity: review.SeverityError,
+						Name:     "verification-required",
+						Message:  "the anchors were not verified: no repository answered",
+					}},
+					Verification: review.Verification{Source: source, Anchors: 1},
+				}, nil
 			}
-			require.Equal(t, ExitValid, h.app.Run(t.Context(), test.args))
-			assert.Equal(t, test.want, got.RequireVerification)
+			assert.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"submit-review"}))
 		})
 	}
 }

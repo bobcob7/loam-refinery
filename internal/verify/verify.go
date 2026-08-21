@@ -82,7 +82,7 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 		if verification.Anchors == 0 {
 			return []review.Diagnostic{diagnostic}, nil, verification
 		}
-		return []review.Diagnostic{diagnostic}, excusableSkips("the document ref does not resolve", "ref-unknown"), verification
+		return []review.Diagnostic{diagnostic}, skips("the document ref does not resolve"), verification
 	}
 	// HEAD is resolved once per run, the same way ref existence is: the
 	// working tree only ever matters when ref is the checked-out commit, and
@@ -373,16 +373,6 @@ func skips(reason string) []review.Skipped {
 	skipped := make([]review.Skipped, 0, len(anchorChecks))
 	for _, name := range anchorChecks {
 		skipped = append(skipped, review.Skipped{Name: name, Reason: reason})
-	}
-	return skipped
-}
-
-// excusableSkips reports the anchor checks as skipped by a condition the caller
-// can accept with --warn-only, naming the check that condition belongs to.
-func excusableSkips(reason, cause string) []review.Skipped {
-	skipped := skips(reason)
-	for i := range skipped {
-		skipped[i].Excuses = cause
 	}
 	return skipped
 }

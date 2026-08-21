@@ -52,15 +52,18 @@ func TestReviewsFlagSetIsExactlyTheSevenDocumentedFlags(t *testing.T) {
 }
 
 // TestSubmitReviewFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's
-// table for submit-review: --strict, --warn-only, --disable,
-// --require-verification, and --format — the same five whether read from
-// §3's table or from §2.3's prose, and, per §2.3, "no flag for it" about
-// storing: nothing here names a store setting.
+// table for submit-review: --strict and --format — refinery-uyb.5 dropped
+// --warn-only, --disable, and --require-verification (docs/cli.md §2.3.1,
+// §3; docs/features/combined-reviews.md §3.3, "No disable, no warn-only");
+// --format is a separate, later removal (refinery-uyb.4) and stays pinned
+// here until that bead narrows this same want list to {"strict"} alone —
+// whichever of the two lands second should extend this comment, not fight
+// the other's edit.
 func TestSubmitReviewFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
 	t.Parallel()
-	want := []string{"disable", "format", "require-verification", "strict", "warn-only"}
+	want := []string{"format", "strict"}
 	sort.Strings(want)
-	assert.Equal(t, want, flagNames(t, "submit-review"), "docs/cli.md §3: submit-review accepts exactly these five flags, and none about storing")
+	assert.Equal(t, want, flagNames(t, "submit-review"), "docs/cli.md §3: submit-review accepts exactly these two flags, and none about storing")
 }
 
 // TestPrimeFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's table
