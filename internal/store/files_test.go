@@ -228,7 +228,7 @@ func TestReviewPath_LayoutMatchesSpec(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	path := s.ReviewPath("github.com/bobcob7/loam-refinery", "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", "3f9a")
-	want := filepath.Join(s.Root(), "reviews", "github.com", "bobcob7", "loam-refinery", "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", "3f9a.json")
+	want := filepath.Join(s.root, "reviews", "github.com", "bobcob7", "loam-refinery", "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", "3f9a.json")
 	assert.Equal(t, want, path)
 }
 
@@ -236,7 +236,7 @@ func TestRejectedPath_LayoutMatchesSpec(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	path := s.RejectedPath("github.com/bobcob7/loam-refinery", "44136fa3")
-	want := filepath.Join(s.Root(), "rejected", "github.com", "bobcob7", "loam-refinery", "44136fa3.json")
+	want := filepath.Join(s.root, "rejected", "github.com", "bobcob7", "loam-refinery", "44136fa3.json")
 	assert.Equal(t, want, path)
 }
 
@@ -247,7 +247,7 @@ func TestWriteReview_InvalidRefNeverTouchesFilesystem(t *testing.T) {
 	s := newTestStore(t)
 	_, _, err := s.WriteReview("github.com/example/example", "not-a-ref", []byte("{}"))
 	assert.Error(t, err)
-	entries, statErr := os.ReadDir(filepath.Join(s.Root(), "reviews"))
+	entries, statErr := os.ReadDir(filepath.Join(s.root, "reviews"))
 	if statErr == nil {
 		assert.Empty(t, entries)
 	} else {
@@ -262,7 +262,7 @@ func TestWriteReview_InvalidRepoNeverTouchesFilesystem(t *testing.T) {
 	s := newTestStore(t)
 	_, _, err := s.WriteReview("../../etc", "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", []byte("{}"))
 	assert.Error(t, err)
-	entries, statErr := os.ReadDir(filepath.Join(s.Root(), "reviews"))
+	entries, statErr := os.ReadDir(filepath.Join(s.root, "reviews"))
 	if statErr == nil {
 		assert.Empty(t, entries)
 	} else {
@@ -275,7 +275,7 @@ func TestWriteRejected_InvalidRepoNeverTouchesFilesystem(t *testing.T) {
 	s := newTestStore(t)
 	_, _, err := s.WriteRejected("../../etc", []byte("junk"))
 	assert.Error(t, err)
-	entries, statErr := os.ReadDir(filepath.Join(s.Root(), "rejected"))
+	entries, statErr := os.ReadDir(filepath.Join(s.root, "rejected"))
 	if statErr == nil {
 		assert.Empty(t, entries)
 	} else {

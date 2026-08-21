@@ -290,3 +290,26 @@ func TestRepoName_GitFailurePropagates(t *testing.T) {
 	_, err := RepoName(t.Context(), git, "/tmp", nil)
 	assert.ErrorIs(t, err, boom)
 }
+
+// TestRepoName_OriginURLFailurePropagates proves refinery-xlp.12's fix at
+// the level the bug was actually observed: a git failure reading the origin
+// remote — a deadline-killed invocation among them — must surface as an
+// error out of RepoName, never fall through to local/<basename> the way an
+// ordinary "no origin configured" does. Before the fix, remoteName reported
+// ok=false for both an error and a genuinely absent origin, so RepoName
+// could not tell them apart and silently misnamed the repository.
+func TestRepoName_OriginURLFailurePropagates(t *testing.T) {
+	t.Parallel()
+	boom := errors.New("git did not answer: boom")
+	git := &gitRunnerMock{
+		rootFunc: func(ctx context.Context, dir string) (string, error) {
+			return "/home/me/scratch", nil
+		},
+		originURLFunc: func(ctx context.Context, root string) (string, error) {
+			return "", boom
+		},
+	}
+	name, err := RepoName(t.Context(), git, "/home/me/scratch", nil)
+	assert.ErrorIs(t, err, boom)
+	assert.Empty(t, name, "a failed origin lookup must not produce local/<basename> or any other name")
+}

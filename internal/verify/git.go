@@ -12,18 +12,24 @@ import (
 	"time"
 )
 
-// gitTimeout bounds one git call. Every call here is local and object-store
+// GitTimeout bounds one git call. Every call here is local and object-store
 // bound, so a slow one means something is wrong rather than something is big,
 // and a review tool must not hang a caller's pipeline waiting on it.
-const gitTimeout = 30 * time.Second
+//
+// Exported so internal/store's Git — which does its own classification of
+// git's failures and must not share run's error-wrapping behavior — can
+// still share this value rather than carry a byte-identical copy of it.
+const GitTimeout = 30 * time.Second
 
-// waitDelay bounds the wait after the kill. Killing the process is not enough
+// WaitDelay bounds the wait after the kill. Killing the process is not enough
 // on its own: Wait still blocks on the goroutines copying git's pipes, and a
 // descendant that inherited them — a hook, a credential helper, a pager — holds
-// them open after git itself is gone. Without this the call outlives gitTimeout
+// them open after git itself is gone. Without this the call outlives GitTimeout
 // indefinitely, and a hang is the one outcome the exit-code contract cannot
 // express.
-const waitDelay = 5 * time.Second
+//
+// Exported for the same reason as GitTimeout.
+const WaitDelay = 5 * time.Second
 
 // errNotAnswered marks a git call that ended because the deadline passed rather
 // than because git decided anything. ProcessState.Exited() catches this on Unix
@@ -81,12 +87,12 @@ type Repository struct {
 // Discover finds the repository containing dir the way git itself does, by
 // walking up until a repository root is found. It never touches the network.
 func Discover(ctx context.Context, dir string) (*Repository, error) {
-	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	ctx, cancel := context.WithTimeout(ctx, GitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 	cmd.Dir = dir
-	cmd.Env = plainEnv()
-	cmd.WaitDelay = waitDelay
+	cmd.Env = PlainEnv()
+	cmd.WaitDelay = WaitDelay
 	out, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() != nil {
@@ -123,7 +129,7 @@ func discoveryFailure(err error) error {
 	return fmt.Errorf("git could not identify a repository here: %s", refusal)
 }
 
-// plainEnv gives git an environment whose answers mean what they say.
+// PlainEnv gives git an environment whose answers mean what they say.
 //
 // LC_ALL and LANGUAGE pin the untranslated messages: discovery decides whether
 // a directory is a repository by reading what git said, and a German checkout
@@ -138,7 +144,11 @@ func discoveryFailure(err error) error {
 // The trace variables are dropped because they write to the same stderr the
 // silence is read from. Inheriting one from the caller's shell would make every
 // absent object look unreadable.
-func plainEnv() []string {
+//
+// Exported so internal/store's Git can share this exact value instead of
+// carrying a byte-identical copy of it; it is a value, not a behavior, so
+// sharing it does not change what any error path sees.
+func PlainEnv() []string {
 	env := make([]string, 0, len(os.Environ())+3)
 	for _, entry := range os.Environ() {
 		if strings.HasPrefix(entry, "GIT_TRACE") || strings.HasPrefix(entry, "GIT_CURL_VERBOSE") {
@@ -152,7 +162,7 @@ func plainEnv() []string {
 // complained reports whether git raised a problem, as opposed to saying nothing
 // or merely warning. The two prefixes are git's own severity markers and are
 // not translated, so this holds wherever it runs. It is the backstop under
-// plainEnv: silence carries the claim, and anything git calls an error or a
+// PlainEnv: silence carries the claim, and anything git calls an error or a
 // fatal withdraws it, whatever else may have reached stderr.
 func complained(stderr string) bool {
 	for line := range strings.SplitSeq(stderr, "\n") {
@@ -174,15 +184,6 @@ func firstLine(text string) string {
 	return text
 }
 
-// answered reports whether git ran and said no, as opposed to never running at
-// all. A non-zero exit is a statement about the repository and belongs in the
-// review; a missing binary or a cancelled context is a fact about this machine
-// and must not be reported as a finding against the document.
-func answered(err error) bool {
-	_, ok := exitStatus(err)
-	return ok
-}
-
 // exitStatus returns the status git exited with, and false when it never
 // exited at all. Exited() is the distinction a killed process fails: it also
 // arrives as an ExitError, carrying exit code -1 and no opinion whatsoever
@@ -201,11 +202,11 @@ func (r *Repository) Root() string {
 }
 
 func (r *Repository) run(ctx context.Context, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	ctx, cancel := context.WithTimeout(ctx, GitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", r.root}, args...)...)
-	cmd.Env = plainEnv()
-	cmd.WaitDelay = waitDelay
+	cmd.Env = PlainEnv()
+	cmd.WaitDelay = WaitDelay
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

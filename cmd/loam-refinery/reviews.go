@@ -18,13 +18,12 @@ import (
 // as empty rather than materialized (docs/config.md §2.2).
 type reviewsAdapter struct {
 	git *store.Git
-	log *slog.Logger
 }
 
 // newReviewsAdapter returns a reviewStore that resolves and opens the store
 // fresh on every call, mirroring newStoreAdapter.
 func newReviewsAdapter(log *slog.Logger) *reviewsAdapter {
-	return &reviewsAdapter{git: store.NewGit(log), log: log}
+	return &reviewsAdapter{git: store.NewGit(log)}
 }
 
 // RepoName implements internal/cli's reviewStore: it walks up from dir the

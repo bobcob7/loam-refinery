@@ -598,9 +598,10 @@ func TestAGitCallReturnsEvenWhenAChildHoldsItsPipes(t *testing.T) {
 	case err := <-done:
 		require.Error(t, err)
 		assert.ErrorIs(t, err, errNotAnswered, "the deadline, not the process state, carries this")
-		assert.False(t, answered(err), "a call that never finished is not git answering")
-		assert.Less(t, time.Since(start), waitDelay+10*time.Second)
-	case <-time.After(waitDelay + 15*time.Second):
+		_, ok := exitStatus(err)
+		assert.False(t, ok, "a call that never finished is not git answering")
+		assert.Less(t, time.Since(start), WaitDelay+10*time.Second)
+	case <-time.After(WaitDelay + 15*time.Second):
 		t.Fatal("the git call outlived its deadline: WaitDelay is not bounding the wait")
 	}
 }
@@ -645,15 +646,17 @@ func TestAnObjectStoreItCannotSearchIsNotAnAbsentRef(t *testing.T) {
 	})
 }
 
-// The deadline classification cannot fail on Unix through answered() alone,
+// The deadline classification cannot fail on Unix through exitStatus alone,
 // because a killed process already reports Exited() false there. This pins the
 // marker itself, which is what carries the answer on Windows.
 func TestADeadlineIsNeverReadAsGitAnswering(t *testing.T) {
 	t.Parallel()
 	exited := refused(t, 1)
-	require.True(t, answered(exited), "a real exit is git answering")
+	_, ok := exitStatus(exited)
+	require.True(t, ok, "a real exit is git answering")
 	timedOut := fmt.Errorf("%w: %w", errNotAnswered, exited)
-	assert.False(t, answered(timedOut),
+	_, ok = exitStatus(timedOut)
+	assert.False(t, ok,
 		"a call abandoned at its deadline is not an answer, whatever the platform says about the process")
 	assert.False(t, objectAbsent(timedOut), "and it is certainly not proof the object is absent")
 }
@@ -677,9 +680,10 @@ func TestRepositoryRunReturnsWhenAChildHoldsItsPipes(t *testing.T) {
 	case err := <-done:
 		require.Error(t, err)
 		assert.ErrorIs(t, err, errNotAnswered, "the deadline, not the process state, carries this")
-		assert.False(t, answered(err))
+		_, ok := exitStatus(err)
+		assert.False(t, ok)
 		assert.False(t, objectAbsent(err), "a call that never finished never found the object absent")
-	case <-time.After(waitDelay + 15*time.Second):
+	case <-time.After(WaitDelay + 15*time.Second):
 		t.Fatal("Repository.run outlived its deadline: WaitDelay is not bounding the wait")
 	}
 }
@@ -803,7 +807,7 @@ func TestPlainEnvDropsTheVariablesThatWriteToStderr(t *testing.T) {
 	t.Setenv("GIT_TRACE2_PERF", "1")
 	t.Setenv("GIT_CURL_VERBOSE", "1")
 	t.Setenv("GIT_AUTHOR_NAME", "keep me")
-	env := plainEnv()
+	env := PlainEnv()
 	for _, entry := range env {
 		assert.NotContains(t, entry, "GIT_TRACE", "trace output would be read as git failing to look")
 		assert.NotContains(t, entry, "GIT_CURL_VERBOSE")

@@ -1,14 +1,11 @@
 // Reading the store (config.md section 6), the query methods the reviews
-// command needs. Every method here answers from store.db; the trees are
-// touched only by ReadContent, and only for a file a caller already has a
-// path for.
+// command needs. Every method here answers from store.db.
 package store
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/bobcob7/loam-refinery/internal/store/sqlc"
@@ -183,13 +180,6 @@ func (s *Store) Known(ctx context.Context, repo string) (bool, error) {
 		return false, fmt.Errorf("checking repository %q: %w", repo, err)
 	}
 	return known, nil
-}
-
-// ReadContent reads the file at path, as returned by ReviewPath,
-// RejectedPath, or a Review's or FailedRun's Path. It exists so a caller
-// asking for --content never has to reconstruct or trust a path itself.
-func (s *Store) ReadContent(path string) ([]byte, error) {
-	return os.ReadFile(path)
 }
 
 // sqlLimit translates a caller's --limit=0 ("unlimited") into the value

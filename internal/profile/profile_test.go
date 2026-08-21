@@ -107,8 +107,8 @@ func TestReader_Load_PathTraversalRejectedAsBadName(t *testing.T) {
 // TestReader_Load_IdentityNotCaseFold pins refinery-emv.7's acceptance
 // criterion directly: on a case-insensitive filesystem, resolving
 // "readme.md" by name would let the kernel fold it onto README.md even
-// though "README" is not a valid profile name. Load must refuse it the same
-// way List does, rather than opening the file the index hides.
+// though "README" is not a valid profile name. Load must refuse it rather
+// than opening the file the identity check hides.
 func TestReader_Load_IdentityNotCaseFold(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -118,40 +118,6 @@ func TestReader_Load_IdentityNotCaseFold(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok)
 	assert.Zero(t, p)
-}
-
-// TestReader_List_Load_Agree is refinery-emv.7's second acceptance
-// criterion: List and Load must agree over every entry in a directory, not
-// just the entries whose case already matches. It also covers an
-// uppercase-stem file that IS well-formed frontmatter (UPPER.md): List
-// excludes it because "UPPER" fails validName, and Load must exclude it too
-// when asked for its lowercased form, even though a case-insensitive
-// filesystem would happily open it under that name.
-func TestReader_List_Load_Agree(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	writeProfile(t, dir, "alpha.md", validFrontMatter("A")+"Body A.\n")
-	writeProfile(t, dir, "README.md", "# Not a profile\n")
-	writeProfile(t, dir, "UPPER.md", validFrontMatter("U")+"Body U.\n")
-	r := New(dir)
-	profiles, err := r.List()
-	require.NoError(t, err)
-	listed := make(map[string]bool, len(profiles))
-	for _, p := range profiles {
-		listed[p.Name] = true
-	}
-	entries, err := os.ReadDir(dir)
-	require.NoError(t, err)
-	for _, entry := range entries {
-		stem, ok := strings.CutSuffix(entry.Name(), ".md")
-		if !ok {
-			continue
-		}
-		lower := strings.ToLower(stem)
-		_, loadOK, loadErr := r.Load(lower)
-		require.NoError(t, loadErr)
-		assert.Equal(t, listed[lower], loadOK, "List and Load disagree on %q", lower)
-	}
 }
 
 func TestReader_Load_FrontMatterErrors(t *testing.T) {
@@ -289,98 +255,4 @@ func TestReader_Load_WhitespaceOnlyFrontMatterLineIsBlank(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "ok", p.Description)
-}
-
-func TestReader_List(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	writeProfile(t, dir, "zebra.md", validFrontMatter("Z")+"Body Z.\n")
-	writeProfile(t, dir, "alpha.md", validFrontMatter("A")+"Body A.\n")
-	writeProfile(t, dir, "README.md", "# Not a profile\n")
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("ignore me"), 0o600))
-	require.NoError(t, os.Mkdir(filepath.Join(dir, "subdir.md"), 0o700))
-	r := New(dir)
-	profiles, err := r.List()
-	require.NoError(t, err)
-	require.Len(t, profiles, 2)
-	assert.Equal(t, "alpha", profiles[0].Name)
-	assert.Equal(t, "zebra", profiles[1].Name)
-}
-
-// TestReader_List_MissingDirectory pins refinery-emv.9: a missing directory
-// must yield a non-nil empty slice, not nil, so a JSON caller renders "[]"
-// rather than "null" (docs/cli.md §2.1.5). assert.Empty alone is satisfied
-// by both nil and []Profile{}, so this checks NotNil directly.
-func TestReader_List_MissingDirectory(t *testing.T) {
-	t.Parallel()
-	dir := filepath.Join(t.TempDir(), "does-not-exist")
-	r := New(dir)
-	profiles, err := r.List()
-	require.NoError(t, err)
-	assert.NotNil(t, profiles)
-	assert.Equal(t, []Profile{}, profiles)
-}
-
-// TestReader_List_AbortsOnMalformedProfile is refinery-emv.10c: a directory
-// holding one good profile and one malformed profile with a valid stem
-// must fail the whole listing rather than silently returning only the good
-// one - the fail-loud policy docs/cli.md §2.1.2 relies on.
-func TestReader_List_AbortsOnMalformedProfile(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	writeProfile(t, dir, "good.md", validFrontMatter("A valid profile")+"Body text.\n")
-	writeProfile(t, dir, "bad.md", "---\ndescription: ok\n---\n")
-	r := New(dir)
-	profiles, err := r.List()
-	require.Error(t, err)
-	assert.Nil(t, profiles)
-}
-
-// TestReader_List_JoinsAllMalformedProfileErrors is refinery-emv.12: two
-// broken profiles in one directory must both be named in the single error
-// List returns, so an operator does not fix one and rerun to discover the
-// other.
-func TestReader_List_JoinsAllMalformedProfileErrors(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	writeProfile(t, dir, "bad-one.md", "---\ndescription: ok\n---\n")
-	writeProfile(t, dir, "bad-two.md", "no frontmatter here\n")
-	r := New(dir)
-	profiles, err := r.List()
-	require.Error(t, err)
-	assert.Nil(t, profiles)
-	assert.ErrorContains(t, err, "bad-one")
-	assert.ErrorContains(t, err, "bad-two")
-}
-
-func TestReader_List_PathIsRegularFile(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	filePath := filepath.Join(dir, "profiles-as-file")
-	require.NoError(t, os.WriteFile(filePath, []byte("not a directory"), 0o600))
-	r := New(filePath)
-	_, err := r.List()
-	require.Error(t, err)
-}
-
-// TestReader_List_RealSeedProfiles pins this package against the eight real
-// profiles this repository ships under profiles/ (docs/cli.md §2.1.1),
-// naming them explicitly rather than asserting a count: a count alone
-// passes just as well if go.md is renamed to golang.md, since the total
-// stays eight (refinery-emv.10e). README.md - an uppercase stem, not a
-// valid name - must be excluded rather than erroring the whole listing.
-// Per-profile Body/Description/rune-limit checks are not repeated here:
-// List returning a Profile at all already means parse produced one, and
-// parse guarantees those by construction.
-func TestReader_List_RealSeedProfiles(t *testing.T) {
-	t.Parallel()
-	r := New(filepath.Join("..", "..", "profiles"))
-	profiles, err := r.List()
-	require.NoError(t, err)
-	want := []string{"architecture", "claims", "compatibility", "efficiency", "go", "security", "tests", "typescript"}
-	got := make([]string, len(profiles))
-	for i, p := range profiles {
-		got[i] = p.Name
-	}
-	assert.Equal(t, want, got)
 }

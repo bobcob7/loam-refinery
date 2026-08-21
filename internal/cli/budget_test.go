@@ -533,7 +533,7 @@ func (a *realReviewsAdapter) ListRepos(ctx context.Context) ([]store.RepoCount, 
 }
 
 func (a *realReviewsAdapter) ReadContent(path string) ([]byte, error) {
-	return a.st.ReadContent(path)
+	return os.ReadFile(path)
 }
 
 func (a *realReviewsAdapter) DistinctDigests(ctx context.Context, repo, ref string) ([]store.DigestRow, error) {
