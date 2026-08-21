@@ -8,6 +8,13 @@
 // templates/index.gohtml.
 package render
 
+import (
+	"strconv"
+	"strings"
+
+	"github.com/bobcob7/loam-refinery/internal/collect"
+)
+
 // htmlEnvelopeView is the envelope strip's own view model (§7.1): ref,
 // repo, store.enabled, head_check, and the total/unreadable counts —
 // every field CollectReviewsEnvelope and its Result already carry (§2),
@@ -28,6 +35,40 @@ type htmlEnvelopeView struct {
 	HeadCheckHasDiverged bool
 	Total                int
 	Unreadable           int
+	// Submissions is the submissions-index view model (§7.2), one entry
+	// per collect.Submission in Result's own order — never re-sorted,
+	// never filtered. Empty (never nil) when the ref has no
+	// submissions, which is exactly what templates/index.gohtml checks
+	// to render §12's "no submissions found for this ref" empty state
+	// instead of a grid with nothing in it.
+	Submissions []htmlSubmissionView
+}
+
+// htmlSubmissionView is one submission's own row in the submissions index
+// (§7.2): ordinal, profile, verdict, assessment, and severity, the same
+// five fields the index's fixed CSS-grid columns render, plus the
+// qualified id of the first finding this submission filed — the link
+// templates/index.gohtml wires through fragmentHref (html_href.go) so a
+// reader who wants to see why a row reads the way it does can jump
+// straight into the findings section, the same "where do I go next"
+// question the submissions index exists to answer first. Profile and
+// Assessment are already resolved to their placeholder text ("(none)")
+// here, not left as "" / nil, so the template never has to reason about
+// an absent value's zero shape — the same reasoning
+// buildHTMLEnvelope's own IsHead/Diverged flattening already applies.
+type htmlSubmissionView struct {
+	Ordinal    int
+	Profile    string
+	Verdict    string
+	Assessment string
+	Severity   string
+	// FindingID is the qualified id of the first comment (in Result's
+	// own Comments order) belonging to this submission, "" when the
+	// submission filed none. templates/index.gohtml only renders a
+	// link when this is non-empty — a submission with no comments has
+	// nothing to link to (§12: "there is nothing to expand for a
+	// submission that filed nothing").
+	FindingID string
 }
 
 // buildHTMLEnvelope reads envelope's own fields into htmlEnvelopeView,
@@ -53,5 +94,77 @@ func buildHTMLEnvelope(envelope CollectReviewsEnvelope) htmlEnvelopeView {
 		view.HeadCheckHasDiverged = true
 		view.HeadCheckDiverged = len(envelope.HeadCheck.Diverged)
 	}
+	view.Submissions = buildHTMLSubmissions(envelope.Result.Submissions, envelope.Result.Comments)
 	return view
+}
+
+// buildHTMLSubmissions converts every collect.Submission into its own
+// htmlSubmissionView, in Result.Submissions' own order — never a second
+// sort, never a map (§10). Always non-nil, even when submissions is
+// empty, so templates/index.gohtml's own "no submissions" check reads
+// len(.Submissions) == 0 rather than a nil-vs-empty distinction that
+// carries no meaning here.
+func buildHTMLSubmissions(submissions []collect.Submission, comments []collect.Comment) []htmlSubmissionView {
+	views := make([]htmlSubmissionView, 0, len(submissions))
+	for _, s := range submissions {
+		views = append(views, htmlSubmissionView{
+			Ordinal:    s.Ordinal,
+			Profile:    submissionProfileText(s.Profile),
+			Verdict:    s.Verdict,
+			Assessment: submissionAssessmentText(s.Assessment),
+			Severity:   formatSeverity(s.Severity),
+			FindingID:  firstFindingID(s, comments),
+		})
+	}
+	return views
+}
+
+// submissionProfileText renders a submission's Profile, or the "(none)"
+// placeholder markdown.go's own writeMarkdownSubmissions already uses
+// for an unprofiled submission (§12) — never a blank cell, which would
+// read as a rendering gap rather than a genuine "claimed no profile".
+func submissionProfileText(profile string) string {
+	if profile == "" {
+		return "(none)"
+	}
+	return profile
+}
+
+// submissionAssessmentText renders a submission's Assessment. nil — the
+// reviewer never set the field — renders the literal "(none)", the
+// identical placeholder markdown.go already uses for the same absent
+// case (§12), never one of the four real grade words standing in for
+// silence: collapsing absence to a default level here would undo what
+// the assessment feature's own JSON layer went to a whole bead's worth
+// of trouble to keep distinguishable.
+func submissionAssessmentText(assessment *string) string {
+	if assessment == nil {
+		return "(none)"
+	}
+	return *assessment
+}
+
+// firstFindingID returns the qualified id of the first comment, in
+// Result.Comments' own order, that belongs to submission s — "" when s
+// filed none. The qualifier a comment's id carries follows
+// combined-reviews.md §6.1's own rule exactly: s's Profile when s is
+// current for that profile (SupersededBy nil and Profile set),
+// otherwise "#" plus s's Ordinal. Matching on that qualifier's prefix,
+// rather than ranging s.Document's own comment ids or s.QualifiedIDs
+// (a map, whose iteration order is not deterministic and whose doc
+// comment already says it is carried for head_check, not for
+// rendering), keeps this a pure, order-preserving function of the two
+// slices §10 already requires this renderer to only ever range.
+func firstFindingID(s collect.Submission, comments []collect.Comment) string {
+	qualifier := "#" + strconv.Itoa(s.Ordinal)
+	if s.Profile != "" && s.SupersededBy == nil {
+		qualifier = s.Profile
+	}
+	prefix := qualifier + ":"
+	for _, c := range comments {
+		if strings.HasPrefix(c.ID, prefix) {
+			return c.ID
+		}
+	}
+	return ""
 }
