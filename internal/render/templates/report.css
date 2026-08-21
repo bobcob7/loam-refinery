@@ -1,0 +1,22 @@
+{{- /* internal/render/templates/report.css — the report's own
+stylesheet (§7), except bead .4's .c-* token palette, which lives in
+code.css so the two beads never edit the same file (docs/features/
+html-report.md's file-ownership map). Wrapped in {{define "style"}} —
+zero {{ }} actions inside it — rather than embedded as a Go string
+constant, so report.gohtml's {{template "style"}} call reads this
+file's bytes with no template action, and no html/template
+escaper-bypass type, ever standing between them (§5.1's "never derived
+from a template action" property, applied here to CSS the identical
+way §5.1 applies it to the script). html/template still recognizes
+<style> as a CSS context and treats this define's output as already
+inside it — nothing here is caller-authored, so nothing needs
+html/template's own CSS-context escaping.
+
+§5.4's mandatory rule — "[hidden] { display: none !important }", ahead
+of any rule that might otherwise style a <details> — belongs here,
+first, once bead .5 starts filling this in.
+
+Bead .5 owns this file's content. Left as an empty define here so
+templates/report.gohtml's {{template "style"}} call resolves without
+bead .5 having to touch that file too. */ -}}
+{{define "style"}}{{end}}

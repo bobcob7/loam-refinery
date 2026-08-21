@@ -1,0 +1,18 @@
+{{- /* internal/render/templates/envelope.gohtml — the envelope strip
+(§7.1): ref, repo, store.enabled, head_check, total, unreadable, laid
+out as one full-width flexbox strip, never collapsed. Bead .1 seeds the
+minimal text every field needs so the page is structurally complete;
+bead .3 owns turning this into the real flexbox strip layout (badges,
+wrapping at narrow viewports) and the "no submissions found for this
+ref" empty state (§12). Dot is htmlEnvelopeView
+(internal/render/html_view_envelope.go). */ -}}
+{{define "envelope"}}
+<div id="envelope">
+<span>collect-reviews: {{.Ref}}</span>
+<span>repo: {{.RepoName}} (known: {{.RepoKnown}})</span>
+<span>store.enabled: {{.StoreEnabled}}</span>
+<span>head_check: source={{.HeadCheckSource}}{{if .HeadCheckHasIsHead}} is_head={{.HeadCheckIsHead}}{{end}}{{if .HeadCheckHasDiverged}} diverged={{.HeadCheckDiverged}}{{end}}</span>
+<span>total: {{.Total}}</span>
+<span>unreadable: {{.Unreadable}}</span>
+</div>
+{{end}}

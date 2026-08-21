@@ -1,0 +1,8 @@
+{{- /* internal/render/templates/index.gohtml — the submissions index
+(§7.2): one row per submission, ordinal/profile/verdict/assessment/
+severity in fixed CSS-grid columns, never collapsed. Bead .3 owns this
+file's content, and the submission half of
+internal/render/html_view_envelope.go it reads from — left as an empty
+define here so templates/report.gohtml's {{template "index"}} call
+resolves without bead .3 having to touch that file too. */ -}}
+{{define "index"}}{{end}}

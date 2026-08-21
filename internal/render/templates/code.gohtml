@@ -1,0 +1,9 @@
+{{- /* internal/render/templates/code.gohtml — one colorized code
+excerpt (§6): a <pre> block whose tokens each get a <span class="c-*">
+from html_highlight.go's chroma-token loop, or no span at all for a
+token type outside the six named categories (§6.2). overflow-x: auto
+on the block itself keeps a long line from widening the page (§7.5).
+Bead .4 owns this file's content. Left as an empty define here so a
+future {{template "code"}} call resolves without bead .4 having to
+create the file first. */ -}}
+{{define "code"}}{{end}}

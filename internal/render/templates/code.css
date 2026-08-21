@@ -1,0 +1,15 @@
+{{- /* internal/render/templates/code.css — the six syntax-highlighting
+token classes and their CSS custom properties (§6.2): .c-kw, .c-str,
+.c-cm, .c-nm, .c-num, .c-pn, each keyed off a --c-* custom property so a
+prefers-color-scheme: dark media query can redefine the six names
+without touching html_highlight.go's class mapping. Kept in its own
+file, separate from report.css, so bead .4 (this file) and bead .5
+(report.css, everything else) never edit the same file (docs/features/
+html-report.md's file-ownership map). Wrapped in {{define "codeStyle"}}
+for the identical reason report.css is wrapped in {{define "style"}} —
+see that file's own comment.
+
+Bead .4 owns this file's content. Left as an empty define here so
+templates/report.gohtml's {{template "codeStyle"}} call resolves
+without bead .4 having to touch that file too. */ -}}
+{{define "codeStyle"}}{{end}}

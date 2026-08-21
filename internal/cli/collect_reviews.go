@@ -22,7 +22,7 @@ import (
 // this package checks identity instead of re-deriving validity.
 var errDigestMismatch = errors.New("stored content does not match its digest")
 
-const collectReviewsUsage = `usage: loam-refinery collect-reviews --ref=SHA [--repo=NAME] [--format=json|markdown]
+const collectReviewsUsage = `usage: loam-refinery collect-reviews --ref=SHA [--repo=NAME] [--format=json|markdown|html]
 `
 
 // collectReviews answers docs/features/combined-reviews.md §2: every stored
@@ -34,7 +34,7 @@ func (a *App) collectReviews(ctx context.Context, args []string) int {
 	set := a.flagSet("collect-reviews", collectReviewsUsage)
 	refFlag := set.String("ref", "", "which commit; the full 40-char SHA (required)")
 	repoFlag := set.String("repo", "", "which repository's reviews")
-	formatFlag := set.String("format", "json", "json or markdown")
+	formatFlag := set.String("format", "json", "json, markdown, or html")
 	if err := set.Parse(args); err != nil {
 		return usageOrHelp(err)
 	}
@@ -63,13 +63,14 @@ func (a *App) collectReviews(ctx context.Context, args []string) int {
 }
 
 // checkCollectReviewsFormat is collect-reviews's own --format validator
-// (docs/features/combined-reviews.md §2): json or markdown, nothing else.
+// (docs/features/combined-reviews.md §2, docs/features/html-report.md
+// §2.3): json, markdown, or html, nothing else.
 func checkCollectReviewsFormat(value string) error {
 	switch value {
-	case "json", "markdown":
+	case "json", "markdown", "html":
 		return nil
 	default:
-		return fmt.Errorf("--format: must be json or markdown, got %q", value)
+		return fmt.Errorf("--format: must be json, markdown, or html, got %q", value)
 	}
 }
 
@@ -129,21 +130,29 @@ func (a *App) collectReviewsRun(ctx context.Context, repo, ref, format string) i
 	return ExitValid
 }
 
-// renderCollectReviews picks the formatter format names (§2, §8.3): json
-// goes through a.renderer, the one interface every other command's output
-// also goes through; markdown goes through its own, separate formatter
-// (§8.3.1's "internal/render gains a second formatter beside the JSON
-// one") constructed here rather than threaded through the renderer
-// interface, since collect-reviews --format markdown is the only command
-// that ever needs it — the interface's own doc comment is explicit that
-// two renderers behind one interface is exactly the shape it exists to
-// rule out everywhere else. Both formatters take the identical envelope;
-// neither computes anything the other does not already have.
+// renderCollectReviews picks the formatter format names (§2, §8.3 of
+// docs/features/combined-reviews.md; §2.3 of docs/features/html-report.md):
+// json goes through a.renderer, the one interface every other command's
+// output also goes through; markdown and html each go through their own,
+// separate formatter (§8.3.1's "internal/render gains a second formatter
+// beside the JSON one", extended a third time by html-report.md §2.3)
+// constructed here rather than threaded through the renderer interface,
+// since collect-reviews is the only command that ever needs either — the
+// interface's own doc comment is explicit that two renderers behind one
+// interface is exactly the shape it exists to rule out everywhere else,
+// and adding an HTML method (or a format parameter) would reopen that
+// shape for a command that has already demonstrated it does not need to.
+// All three formatters take the identical envelope; none computes
+// anything the others do not already have.
 func (a *App) renderCollectReviews(format string, envelope render.CollectReviewsEnvelope) error {
-	if format == "markdown" {
+	switch format {
+	case "markdown":
 		return render.NewMarkdown().CollectReviews(a.stdout, envelope)
+	case "html":
+		return render.NewHTML().CollectReviews(a.stdout, envelope)
+	default:
+		return a.renderer.CollectReviews(a.stdout, envelope)
 	}
-	return a.renderer.CollectReviews(a.stdout, envelope)
 }
 
 // toCollectDigests adapts internal/store's DigestRow shape to

@@ -1,0 +1,10 @@
+{{- /* internal/render/templates/toolbar.gohtml — the filter toolbar
+(§5.3, §5.4): priority/category/lens chips, the visible-versus-total
+count, the "filter active" banner, and the one-action reset. Hidden by
+default (report.css's ".toolbar { display: none }"), shown only once
+report.js's first statement adds the "js" class to <html> — it has
+nothing to enhance without the script that drives it (§5.2). Bead .6
+owns this file's content. Left as an empty define here so
+templates/report.gohtml's {{template "toolbar"}} call resolves without
+bead .6 having to touch that file too. */ -}}
+{{define "toolbar"}}{{end}}

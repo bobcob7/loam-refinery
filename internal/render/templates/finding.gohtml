@@ -1,0 +1,17 @@
+{{- /* internal/render/templates/finding.gohtml — one finding (§7.3):
+a <details> element whose id attribute is the qualified id, verbatim,
+no substitution, in either qualifier form (§8.1). Bead .1 seeds the
+minimal <details>/id/body shape a structurally complete page needs;
+bead .9 owns turning this into the real summary derivation (first
+sentence of body, truncated at a word boundary to a 140-rune cap),
+the priority-≥-7 open/closed default, the category/priority badges,
+the data-* filter attributes (§5.1, §5.4), the anchors row, the code
+excerpt ({{template "code"}}, bead .4's), and the suggestions
+({{template "suggestion"}}, bead .9's own). Dot is htmlFindingView
+(internal/render/html_view_finding.go). */ -}}
+{{define "finding"}}
+<details class="finding" id="{{.ID}}">
+<summary>{{.ID}}</summary>
+<p>{{.Body}}</p>
+</details>
+{{end}}
