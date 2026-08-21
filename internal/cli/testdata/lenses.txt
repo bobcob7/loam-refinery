@@ -298,6 +298,23 @@
 {
   "entries": [
     {
+      "name": "profile",
+      "namespace": "field",
+      "title": "Reviewer profile",
+      "body": "The name of the reviewer profile (cli.md §2.1.1) this review was written under, if any — the same NAME passed to `prime --profile=NAME`. Optional: omitted when the reviewer ran unprimed. Caller-authored and unverifiable, like id.",
+      "example": "\"backend\"",
+      "related": [
+        "id",
+        "ref"
+      ],
+      "provider": "schema"
+    }
+  ]
+}
+
+{
+  "entries": [
+    {
       "name": "ref",
       "namespace": "field",
       "title": "Reviewed commit",

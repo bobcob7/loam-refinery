@@ -9,14 +9,20 @@ feature reads from and nothing else, and [../review-document.md](../review-docum
 which specifies the format this feature's output deliberately does not
 conform to ([§8](#8-the-output-is-not-a-review-document)).
 
-This document has been revised twice since its first draft. The first
+This document has been revised three times since its first draft. The first
 revision responded to three independent reviews that found a misquote, an
 inverted store-mechanics claim, a real qualified-id collision, and an
-incomplete amendments section. This revision responds to four direct user
-decisions that narrow scope in one place (no migration plan), tighten it in
-two (no disable flags, verification required to submit), and widen it in one
-(markdown as a day-one output format for `collect-reviews`). Some of what
-follows deletes work the previous revision did; that is noted where it
+incomplete amendments section. The second revision responded to four direct
+user decisions that narrowed scope in one place (no migration plan),
+tightened it in two (no disable flags, verification required to submit),
+and widened it in one (markdown as a day-one output format for
+`collect-reviews`). This revision tightens the verification decision
+further, in response to a fifth: uncommitted work is not reviewable at all —
+a diverged anchor is now caught by a precondition, checked once immediately
+after parse rather than folded into the general verification failure, and
+reported at its own exit code (3) rather than sharing `verification-required`'s
+(1) — see [§3.4](#34-verification-is-required-to-submit). Some of what
+follows deletes work an earlier revision did; that is noted where it
 happens rather than quietly dropped.
 
 ## 1. What this adds
@@ -181,10 +187,16 @@ about the act of checking a document. Concretely, and by way of the
 representative set rather than an exhaustive one — the full audit belongs to
 the edit bead, not this one:
 
-- [../cli.md §2](../cli.md#2-commands)'s usage synopsis renames, and shrinks
-  at the same time as [§3.3](#33-no-disable-no-warn-only) and
-  [§3.4](#34-verification-is-required-to-submit) remove three of its four
-  flags — see [§11.8](#118-climd-2-23-and-the-flag-table).
+- [../cli.md §2](../cli.md#2-commands)'s usage synopsis renames, and
+  shrinks twice over. [§3.3](#33-no-disable-no-warn-only) and
+  [§3.4](#34-verification-is-required-to-submit) remove three of its
+  flags outright — `--require-verification`, `--warn-only=…`,
+  `--disable=…` — see [§11.8](#118-climd-2-23-and-the-flag-table). A
+  later, unrelated user decision removes a fourth, `--format json`: a
+  command with exactly one legal output format has nothing for the flag
+  to choose, and `collect-reviews` is the only command in this ladder
+  that does ([../cli.md §5.1](../cli.md#51-one-format)). `--strict` is
+  what survives.
 - The `### 2.3` heading itself, `` `validate` ``, becomes `` `submit-review` ``.
   Unlike the mechanical renames in this list, its **body** needs substantive
   edits, not just a name swap: today it says verification runs "if a source
@@ -193,15 +205,16 @@ the edit bead, not this one:
   source is no longer a tolerated gap, it is a failing submission. This is
   the one heading in the synopsis where the edit bead is rewriting
   paragraphs, not substituting a word.
-- [../cli.md §3](../cli.md#3-flags)'s flag table loses three rows outright —
-  `--warn-only`, `--require-verification`, `--disable` do not survive as
-  `submit-review` flags under any name, because
+- [../cli.md §3](../cli.md#3-flags)'s flag table loses four rows outright,
+  not three — `--warn-only`, `--require-verification`, `--disable` do not
+  survive as `submit-review` flags under any name, because
   [§3.3](#33-no-disable-no-warn-only) and
-  [§3.4](#34-verification-is-required-to-submit) remove what they did. The
-  shared `--format json ... describe validate reviews` row renames its
-  `validate` to `submit-review` like everything else. `--strict`'s row is
-  the one genuinely open item here — [§13](#13-open-questions) — so its fate
-  is not decided by this document.
+  [§3.4](#34-verification-is-required-to-submit) remove what they did; the
+  shared `--format json ... describe validate reviews` row is not renamed,
+  it is deleted too, because `--format` exists where there is a format to
+  choose and `submit-review`, `describe`, and `reviews` each have exactly
+  one. `--strict`'s row is the one genuinely open item here —
+  [§13](#13-open-questions) — so its fate is not decided by this document.
 - [../cli.md §4](../cli.md#4-exit-codes)'s narrative prose does not name
   `validate` at all — it says "the review," "the invocation," "the tool" —
   so nothing there moves on the name. Its content is affected by
@@ -324,33 +337,58 @@ sit side by side in `collect-reviews`'s output with nothing distinguishing
 them beyond a field a caller has to know to look for.
 
 **Decision.** Any anchor `submit-review` cannot confirm fails the
-submission, exit 1, unconditionally. This is the load-bearing property
-`collect-reviews` needs to be trustworthy at all: everything in the store
-was verified at the moment it was stored, full stop, and a caller reading a
-combined output never has to ask "was this one actually checked" the way it
-would have had to under the previous, optional design.
+submission, unconditionally — exit 3 when the cause is a working tree that
+was never committed, exit 1 for every other cause verification can name.
+This is the load-bearing property `collect-reviews` needs to be trustworthy
+at all: everything in the store was verified at the moment it was stored,
+full stop, and a caller reading a combined output never has to ask "was
+this one actually checked" the way it would have had to under the previous,
+optional design. The split between the two exit codes is new in this
+revision and is argued in full in
+[§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing); it changes
+*when* and *how loudly* an unconfirmable anchor fails the run, never
+*whether* it does.
 
 #### 3.4.2 The check and the policy are not the same thing
 
 `anchor-worktree-diverged` ([../cli.md §2.3.1](../cli.md#231-verifying-anchors))
-is unchanged by this decision, and it is worth being exact about why,
-because conflating the two would undo a distinction that section just
-finished establishing. The **check** is still monotonic: it can only
+is unchanged by any of this, and it is worth being exact about why, because
+conflating the check with what happens to its result would undo a
+distinction worth keeping. The **check** is still monotonic: it can only
 withhold a verification, never grant one, and firing it never counts an
 anchor as *wrong*, only as *unconfirmed*. That property is untouched — this
 document is not proposing that a diverged anchor becomes evidence the
 comment is incorrect, which would be a different and unjustified claim.
 
-What changed is the **policy** wrapped around the check's result. Previously,
-an unconfirmed anchor was tolerated by default and only became fatal under
-`--require-verification`; now every unconfirmed anchor is fatal, always, with
-no flag to ask for anything softer. The check still only withholds; the
-submission, as of this decision, treats a withheld verification the same way
-it always treated a wrong one — a document not fit to store — even though
-those remain two different findings about the world. Keeping this seam
-visible in the prose matters more here than anywhere else in this document:
-it is the difference between "the check got stricter" (false) and "the tool
-got stricter about what it accepts from the check" (true).
+What changed, twice now, is the **policy** wrapped around the check's
+result. The first change made an unconfirmed anchor fatal at all — no
+longer tolerated by default and demotable only under
+`--require-verification`, now fatal unconditionally, the same for every
+verification check. Keeping this seam visible in the prose matters: it is
+the difference between "the check got stricter" (false) and "the tool got
+stricter about what it accepts from the check" (true).
+
+**The second change, this revision's, pulls `anchor-worktree-diverged`'s
+policy further out of line with the other three verification-required
+causes.** Instead of being folded into `verification-required` alongside a
+missing repository or an unreadable file, it is checked *first*, as a
+precondition on the whole run, before structural checks, before advisories,
+before any other anchor's verification — one diagnostic, not one per
+anchor; exit 3, not exit 1. The check still only withholds; what a withheld
+verification now costs a submission depends on *which* check withheld it,
+and that split is deliberate — argued in
+[§3.4.3](#343-the-uncommitted-work-consequence) below.
+
+The reason the other three causes — no repository, an unreachable one, a
+file git could not read — stay on the *ordinary* `verification-required`
+path rather than joining the precondition: none of them can be checked from
+the document alone, immediately after parse, the way divergence can.
+Whether a repository exists, whether it can be asked, and whether a given
+file is readable are all questions the ordinary verification pass already
+has to answer to check anything else; divergence is the one verification
+question answerable before any of that work starts, from `ref` and the
+anchor list alone — which is exactly what makes it eligible to gate
+everything else.
 
 #### 3.4.3 The uncommitted-work consequence
 
@@ -359,27 +397,65 @@ is [§4.2](#42-head-and-diverging-working-trees)'s own subject: a review of
 uncommitted work. `anchor-worktree-diverged` fires whenever `ref` is `HEAD`
 and an anchored file's working-tree copy no longer matches the blob at
 `ref` — which is exactly the ordinary state of a checkout somebody is
-actively editing. Under the previous policy, that fired, was reported, and
-the submission still stored, unverified anchor and all. Under this one, it
-fails the submission outright.
+actively editing. Under the very first design, that fired, was reported,
+and the submission still stored, unverified anchor and all. Under the
+previous revision, it fired and failed the submission, but only after the
+ordinary flow — parse, structural checks, per-anchor verification
+collecting every diverged anchor into a list — reached the point of
+noticing. **This revision makes it a precondition instead: checked once,
+immediately after parse, before anything else runs at all.**
 
-**A review of a dirty working tree therefore cannot be submitted.** This is
-a real constraint on any orchestrator that wants a reviewer to look at
-in-progress, uncommitted changes, and stating it plainly is better than
-letting it be discovered as a surprising wall of exit-1 failures. The
-workflow it forces: commit what was reviewed — even to a throwaway branch —
-or use `git stash create`, which builds a real commit object out of the
-working tree and the index without touching either, giving the reviewer a
-genuine, resolvable SHA to anchor against instead of `HEAD` plus a promise
-that nothing will move. Either way, `submit-review` now requires the
-reviewed state to be a commit, not a moment.
+The reason is bluntly practical. A reviewer whose whole premise was
+wrong — the state it read was never committed — does not benefit from being
+told so once per anchor, wrapped in whatever structural or advisory
+findings the rest of the document happened to also produce. Twelve anchor
+failures teach the same one-sentence lesson twelve times, badly, and
+correcting a structural nit in a document that cannot be submitted at all
+is wasted work on both sides. `submit-review` therefore reports the
+precondition's failure as **one diagnostic**, naming
+`anchor-worktree-diverged` once for the whole document, and stops — nothing
+else about the document is checked. **A review of a dirty working tree
+cannot be submitted, and the tool says so before spending any further
+effort finding out what else is wrong with it.**
+
+This is a real constraint on any orchestrator that wants a reviewer to look
+at in-progress, uncommitted changes, and stating it plainly is better than
+letting it be discovered as a surprising wall of failures. The workflow it
+forces: commit what was reviewed — even to a throwaway branch — or use
+`git stash create`, which builds a real commit object out of the working
+tree and the index without touching either, giving the reviewer a genuine,
+resolvable SHA to anchor against instead of `HEAD` plus a promise that
+nothing will move. Either way, `submit-review` now requires the reviewed
+state to be a commit, not a moment.
+
+**Exit 3, not exit 1.** [../cli.md §4](../cli.md#4-exit-codes) reserves a
+new band, 3–9, for exactly this class of problem: the review is not wrong
+and the invocation is not wrong, but something about the reviewed *state*
+is, and no amount of revising the document fixes it. Only `git commit` or a
+different, resolvable `ref` does, and a subagent reviewing on an
+orchestrator's instruction typically has authority over neither — which is
+why the failure escalates rather than asking the reviewer to retry. Design
+principle 4, "errors route to their own explanation"
+([../cli.md §1](../cli.md#1-overview)), is why the lens matters more here
+than almost anywhere else in this format: `describe --lens=anchor-worktree-diverged`
+has to state both remedies — commit, or `git stash create` — and say
+explicitly that this is not a check to retry against, because resubmitting
+the identical document against the identical dirty tree cannot succeed, and
+a reviewer that treats exit 3 like exit 1 loops until something outside the
+review changes.
 
 #### 3.4.4 The unreachable-ref consequence
 
-The same policy shift has a second consequence [§3.4.3](#343-the-uncommitted-work-consequence)
-does not cover, worth tracing because it was the other legitimate use
-`--warn-only` served. `ref-unknown` fires when the document's `ref` does
-not resolve in the repository at all — a shallow clone that never fetched
+The same unconditional-verification shift has a second consequence
+[§3.4.3](#343-the-uncommitted-work-consequence) does not cover — a
+different failure, staying on the *ordinary* `verification-required` path
+at exit 1 rather than joining the precondition, because
+[§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing)'s reason for
+pulling divergence out does not apply to it: whether a repository can be
+asked is not answerable from the document alone the way divergence is.
+Worth tracing anyway, because it was the other legitimate use `--warn-only`
+served. `ref-unknown` fires when the document's `ref` does not resolve in
+the repository at all — a shallow clone that never fetched
 the reviewed commit, or a branch deleted and garbage-collected since.
 [../cli.md §2.3.1](../cli.md#231-verifying-anchors) previously named this
 explicitly as the case `--warn-only=ref-unknown` existed for: "a repository
@@ -407,17 +483,25 @@ this policy applies to it, the same carve-out the old
 
 #### 3.4.5 What `verification-required` now means
 
-No new check name is introduced. `verification-required` already existed as
-the name `--require-verification` produced when any anchor claim went
-unchecked — "no repository, an unreachable one, a single file git could not
-read, or an anchor into a file that has diverged"
-([../cli.md §2.3.1](../cli.md#231-verifying-anchors)). Its trigger condition
-is unchanged; what disappears is the flag that used to gate whether it ran
-at all. `verification-required` simply always runs now, the way every other
-verification check always ran — no repurposing, per
-[../review-document.md §11.5](../review-document.md#115-name-stability)'s
-own rule that a check that outlives a piece of its context is removed or
-left alone, never quietly redefined.
+No new check name is introduced for the three causes that remain.
+`verification-required` already existed as the name `--require-verification`
+produced when any anchor claim went unchecked — originally "no repository,
+an unreachable one, a single file git could not read, or an anchor into a
+file that has diverged"
+([../cli.md §2.3.1](../cli.md#231-verifying-anchors)). **This revision
+narrows that list by one.** Divergence moved to its own precondition
+([§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing),
+[§3.4.3](#343-the-uncommitted-work-consequence)), with its own exit code;
+`verification-required`'s trigger is now the remaining three — no
+repository, an unreachable one, a single file git could not read — and it
+still always runs, the way every other verification check always ran. This
+is not the repurposing
+[../review-document.md §11.5](../review-document.md#115-name-stability)
+warns against: the check's name, its meaning, and its exit code (1) are
+untouched for the three causes that still trigger it. What moved is which
+causes are *its* to report at all — `anchor-worktree-diverged` never shared
+a check name with `verification-required`, only a consequence, and this
+revision is what stops it sharing that too.
 
 ## 4. Ref as the join key
 
@@ -527,10 +611,16 @@ confidence rather than manufacturing it.
 
 #### 4.3.1 The `head_check` shape
 
-Modeled directly on `verification.unverified`
-([../cli.md §5.2](../cli.md#52-the-result-object)), because it is the same
-kind of fact reported at a second call site, and that section already
-specifies every case this one needs to answer.
+Modeled on the shape `verification.unverified` used to have on
+`submit-review`'s own output, before [§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing)
+turned that per-anchor outcome into a run-level precondition and removed
+the field from that command's result object entirely
+([../cli.md §5.2](../cli.md#52-the-result-object) says so directly now).
+The shape is not gone, only moved: it is the same kind of fact — a check
+name, a comment, a reason — reported at a *second* call site that still
+needs exactly this granularity, because `collect-reviews` is asking a
+question `submit-review`'s precondition never has to: not "is this anchor
+committed," but "has an anchor that was already verified drifted since.
 
 `head_check` is a top-level object, **always present**, on the same
 "never silently pass, never silently omit" posture `verification` already
@@ -555,15 +645,16 @@ Each entry in `diverged`:
 ```
 
 `name` is always `anchor-worktree-diverged` — carried anyway, the same way
-`verification.unverified[].name` is, so a consumer never has to special-case
-a field that happens to be constant today. `comment` is the **qualified**
-id ([§6.1](#61-the-qualified-id)), not the origin id: `verification.unverified[].comment`
-is scoped to one submitted document and can use the plain id safely, but
-`head_check.diverged` spans every surviving submission, so it has to use the
-same identifier the rest of the combined output does. `file` is the
-anchored path directly, not a JSON Pointer: `verification.unverified[].path`
-points into the one document `submit-review` is checking, and there is no
-single document here for a pointer to point into.
+a per-anchor entry always named it when this shape lived on `submit-review`,
+so a consumer never has to special-case a field that happens to be constant
+today. `comment` is the **qualified** id ([§6.1](#61-the-qualified-id)), not
+the origin id: a per-anchor entry on one submitted document could use the
+plain id safely, because it never had to disambiguate between submissions,
+but `head_check.diverged` spans every surviving submission, so it has to
+use the same identifier the rest of the combined output does. `file` is the
+anchored path directly, not a JSON Pointer: a pointer only ever made sense
+into the one document `submit-review` was checking, and there is no single
+document here for a pointer to point into.
 
 **A diverged anchor does not remove its comment from `comments`.** The
 comment appears in full — every other field, every other anchor — with this
@@ -1559,13 +1650,19 @@ the JSON form:
   ([§8.1](#81-shape) removed `origin_id` and `digest` from this list; `id`
   already carries the origin id as a substring) — on top of a comment's own
   content, smaller than the previous revision's four-field estimate.
-- **Per diverged anchor.** `head_check.diverged` is a per-anchor list of
-  exactly the shape `verification.unverified` already is, and
-  [../cli.md §6.1](../cli.md#61-budgets) has already measured that
-  identical check at "about 50 tokens per anchor... the shape is the same
-  as a diagnostic." `head_check`'s cost is fixed only when nothing has
-  diverged; the moment more than one anchor has, it scales the same way
-  `verification.unverified` already does.
+- **Per diverged anchor.** `head_check.diverged` is a per-anchor list in
+  exactly the shape `verification.unverified` used to have on
+  `submit-review`'s own output, before [§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing)
+  moved that outcome to a precondition and took the field with it
+  ([§4.3.1](#431-the-head_check-shape)). The per-entry cost does not move
+  with it: [../cli.md §6.1](../cli.md#61-budgets)'s standing ceiling for one
+  diagnostic-shaped entry — a check name, a comment, and a reason, 60
+  tokens — is the same shape `head_check.diverged` still uses, so it is
+  still the right number to reason from even though the row that first
+  measured divergence specifically, against a passing `submit-review` run,
+  no longer exists.
+  `head_check`'s cost is fixed only when nothing has diverged; the moment
+  more than one anchor has, it scales the same way that shape always did.
 
 The Markdown form is unbudgeted outright rather than priced with a shape,
 for a reason `--content`-style unbudgeted rows do not have to argue but this
@@ -1731,7 +1828,7 @@ Beyond the mechanical renames [§3.1](#31-what-changes-the-name) lists,
 three passages change **meaning**, not just spelling, and belong here rather
 than in that inventory:
 
-- [../cli.md §2.3](../cli.md#23-validate)'s opening sentence, "Runs the
+- [../cli.md §2.3](../cli.md#23-submit-review)'s opening sentence, "Runs the
   structural checks, then verification **if a source is supplied**, then
   the advisories," describes verification as conditional. **Amended**: under
   [§3.4](#34-verification-is-required-to-submit), a missing or unreachable

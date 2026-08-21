@@ -18,6 +18,7 @@
         "id",
         "line",
         "priority",
+        "profile",
         "pros",
         "ref",
         "scope",

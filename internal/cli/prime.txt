@@ -5,18 +5,19 @@ body, anchors, and competing suggestions.
 The loop:
 
 1. Write the review.
-2. loam-refinery validate review.json   (- or no path reads stdin)
-3. Exit 0 — done. Exit 2 — fix the invocation, not the review. Exit 101 —
-   the tool itself failed; stop and report, do not retry.
-4. Exit 1 — each diagnostic names a check, listed in "lenses". Run
-   loam-refinery describe --lens=a,b,c on the ones you do not understand,
-   fix, validate again.
-5. Unsure about a field? Same command, --lens=<field>. Never guess at an
-   enum or a scale.
+2. loam-refinery submit-review review.json   (- or no path reads stdin)
+3. Exit 0 done. Exit 1: each diagnostic names a check, listed in
+   "lenses" — run loam-refinery describe --lens=a,b,c, fix, retry.
+4. Exit 2 fix the invocation. Exit 3: the reviewed state is not a
+   commit — commit it, or "git stash create" and submit that SHA.
+   Exit 101: the tool failed. Only exit 1 retries; the rest stop
+   and report.
+5. Unsure about a field? Same command, --lens=<field>. Never guess at
+   an enum or a scale.
 
 loam-refinery describe          the document shape
 loam-refinery describe --list   every name it can explain
 loam-refinery schema            JSON Schema, for machines
 
-Advisories report review quality and never fail the run; structural errors
-and anchors that point nowhere do.
+Advisories report review quality and never fail the run; structural and
+anchor errors do.

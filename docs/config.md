@@ -9,7 +9,7 @@ Companion to [cli.md](cli.md), which specifies the commands, and
 
 Until now `loam-refinery` kept nothing. A run read a document, said whether it
 was usable, and exited; the same document validated twice produced the same
-answer twice and no trace either time. That is still the whole of `validate`'s
+answer twice and no trace either time. That is still the whole of `submit-review`'s
 contract, and the reason the tool needs no setup.
 
 What it cost was memory. A review that passed is a conclusion about a commit,
@@ -25,7 +25,7 @@ This document specifies the writing down:
 - **The store** — files holding what was submitted, passing reviews and
   rejected inputs alike, and a database holding a row per run
   ([§4](#4-the-store)).
-- **Storing**, which `validate` does on every run that reads a document
+- **Storing**, which `submit-review` does on every run that reads a document
   ([§5](#5-storing-a-review)).
 - **`loam-refinery reviews`**, which gets them back out
   ([§6](#6-reading-the-store)).
@@ -35,8 +35,13 @@ this addition from turning the tool into something else:
 
 - **No network.** The store is a directory on the machine that wrote it. It is
   not synced, served, or fetched, and nothing here opens a socket.
-- **No aggregation.** Reviews are stored side by side, not merged, ranked, or
-  reconciled. Merging is still [cli.md §8](cli.md#8-future-considerations).
+- **No aggregation, in the store.** Reviews are stored side by side, not
+  merged, ranked, or reconciled — that part is unchanged. **Amended,
+  narrowly:** a second command now reads several of them back as one
+  attributed view for a single ref, without the store itself ever fusing,
+  ranking, or reconciling anything — see
+  [§1.1](#11-what-this-changes-about-the-design-principles) and
+  [docs/features/combined-reviews.md](features/combined-reviews.md).
 - **No writes inside the repository.** The store lives under the user's home
   directory. `loam-refinery` remains read-only about any checkout it is pointed
   at.
@@ -51,9 +56,9 @@ config file. Both are amended here rather than quietly contradicted:
 | --- | --- |
 | Offline, no network | **Unchanged.** A directory read is not a fetch, and reading `remote.origin.url` is a config lookup, not a connection. |
 | Read-only about the repository | **Unchanged.** Nothing is written under the checkout. |
-| No config file *required* | **Amended.** Nothing has to be configured, but the first `validate` with anything to keep creates the config file and the store rather than requiring either ([§2.2](#22-first-use-creates-what-it-needs)). |
+| No config file *required* | **Amended.** Nothing has to be configured, but the first `submit-review` with anything to keep creates the config file and the store rather than requiring either ([§2.2](#22-first-use-creates-what-it-needs)). |
 | Storing across runs is out of scope | **Amended.** Storing is in scope, on by default, and never changes whether a document is valid. |
-| Aggregating across runs is out of scope | **Unchanged.** |
+| Aggregating across runs is out of scope | **Amended, narrowly.** `loam-refinery collect-reviews` combines the reviews stored for one ref into one attributed output — see [docs/features/combined-reviews.md](features/combined-reviews.md). Findings are combined, never fused across profiles, ranked, or reduced to one verdict; a later submission under the same claimed profile is marked current relative to an earlier one, without deleting the earlier one's findings. Aggregation across *refs* is unchanged and still out of scope. |
 
 Two load-bearing rules survive all of it. Configuration may not change whether a
 document is valid ([§3.1](#31-what-configuration-may-not-do)), and storing may
@@ -147,7 +152,7 @@ rewriting the file.
 ### 2.2 First use creates what it needs
 
 Because storing is on by default ([§5](#5-storing-a-review)), a first run has to
-work on a machine that has never seen this tool. It does: the first `validate`
+work on a machine that has never seen this tool. It does: the first `submit-review`
 with anything to keep creates the config directory, writes a `config.json`
 holding the defaults, and creates the store — and if it cannot, the command
 fails ([§5.1](#51-when-storing-fails)).
@@ -166,7 +171,7 @@ Three things bound it:
   something to keep ([§5](#5-storing-a-review)), so an agent that has never
   produced a valid review still leaves a record of its attempts, which is
   exactly where that record is most wanted.
-- **It is `validate` only.** Reading never creates anything.
+- **It is `submit-review` only.** Reading never creates anything.
   `loam-refinery reviews` on a machine with no store reports an empty one and
   exits 0 without leaving a `~/.local/share/loam-refinery/` behind to mark the
   visit, and `describe` and `schema` never consult either path at all. Bare
@@ -250,10 +255,13 @@ band exists for.
 
 ### 3.1 What configuration may not do
 
-**No key may change whether a document is valid.** `strict`, `disable`,
-`warn_only`, and `require_verification` are flags and only flags. They are named
-explicitly in the rejected-key message rather than being reported as unknown, so
-the caller learns where they went.
+**No key may change whether a document is valid.** `strict` is a flag and only
+a flag. It is named explicitly in the rejected-key message rather than being
+reported as unknown, so the caller learns where it went. A key named
+`disable`, `warn_only`, or `require_verification` is simply unknown — those
+are not flags a caller mistook for config keys, they are names this tool used
+to accept and no longer does anywhere
+([docs/features/combined-reviews.md §3.3](features/combined-reviews.md#33-no-disable-no-warn-only)).
 
 The reason is the one this format is built around. A document's validity is a
 property of the document, and the moment a file in someone's home directory can
@@ -269,8 +277,8 @@ to pass.
 
 **Reviewer profiles sit in the same directory and inherit the same rule.** A
 profile is prose appended to `prime` ([cli.md §2.1.1](cli.md#211-reviewer-profiles));
-nothing in one is read by `validate`, and no part of one may ever reach
-`--strict`, `--disable`, `--warn-only`, or `--require-verification`. A profile
+nothing in one is read by `submit-review`, and no part of one may ever reach
+`--strict`. A profile
 changes what a reviewer is told to look for, which is the operator's business.
 It may not change what the tool accepts, which is everyone's.
 
@@ -348,7 +356,7 @@ keyspace, so a directory that happens to be called `github.com` can never shadow
 a real one, and it makes a listing say plainly which names are backed by a
 remote and which are a guess about a directory.
 
-**With no repository at all, the name is `no-repo`.** `validate` does not need a
+**With no repository at all, the name is `no-repo`.** `submit-review` does not need a
 checkout — it reads a document from a path or from stdin, and
 [cli.md §2.3.1](cli.md#231-verifying-anchors) calls running outside a repository
 ordinary rather than exceptional. A CI step validating a review artifact, an
@@ -371,7 +379,7 @@ answer for a fork that should file under upstream's name, a repository whose
 remote is not called `origin`, two unrelated checkouts that normalize to the
 same thing, and an unrooted directory that deserves better than the shared
 bucket. It is explicit, per-machine, and the only place a human is asked to make
-this judgment — which matters more than it looks, because `validate` has no
+this judgment — which matters more than it looks, because `submit-review` has no
 store flags, so this file is the *only* way to correct a name.
 
 **The root commit is not used**, though it is the only truly intrinsic answer.
@@ -417,7 +425,7 @@ produced a store with a hole in it.
 **A review file is the document, byte for byte.** Not re-serialized, not
 re-indented, not decorated with a field of the tool's own. What was validated is
 what is on disk; `sha256sum` on it reproduces the digest that names it; and
-`loam-refinery validate` on it passes unchanged, because it is still exactly a
+`loam-refinery submit-review` on it passes unchanged, because it is still exactly a
 review document.
 
 That guarantee is scoped to the reviews tree. The rejected tree, described in
@@ -474,7 +482,7 @@ Three differences from a review file:
   all. The extension records what the caller submitted it as, which is also
   precisely what a person opening the file wants to see.
 - **It is not a review document**, and nothing pretends otherwise. Feeding one
-  back to `validate` reproduces the failure that put it there, which is the
+  back to `submit-review` reproduces the failure that put it there, which is the
   useful behaviour.
 
 Exit 1 is the whole of it. An exit 2 run mistyped a flag and usually never read
@@ -484,7 +492,7 @@ one.
 **An input over 1 MiB is truncated to its first 1 MiB, not dropped.** The
 reviews tree is bounded by documents that passed a schema; the rejected tree is
 bounded by nothing at all, and a caller that pipes a log file or a tarball at
-`validate` should not silently fill a home directory with it. A legitimate
+`submit-review` should not silently fill a home directory with it. A legitimate
 review is far under the cap — the format caps a body at 4,000 characters and a
 summary at 1,500 — so the limit only ever catches something that was never going
 to validate.
@@ -496,7 +504,7 @@ one and not the other is what justifies capping either at all — a legitimate
 review never approaches the cap, and an unbounded rejected tree is the one the
 store cannot afford to keep whole.
 
-The cap bounds only the copy this section writes. `validate` still reads and
+The cap bounds only the copy this section writes. `submit-review` still reads and
 parses the entire submitted input before any of this runs; truncating what
 reaches the parser would change what gets validated, which is a worse defect
 than a large file on disk, not a smaller one.
@@ -677,9 +685,9 @@ size **and** startup time, not the first instead of the second. An earlier
 draft of this section claimed the opposite, measured against a scratch
 `main` with a blank import that never opened a database. Measured instead
 against the real binary — `aedb291`, the last commit before the store was
-wired into `validate`, against this branch's `HEAD` — the binary grew from
+wired into `submit-review`, against this branch's `HEAD` — the binary grew from
 5,754,098 to 12,285,026 bytes, **+6.2 MiB, +114 percent**. A clean
-`validate`'s median startup, 50 runs after a five-run warmup, went from
+`submit-review`'s median startup, 50 runs after a five-run warmup, went from
 22.5ms to 38.2ms — **+15.7ms, +70 percent** — from paging in a binary that
 more than doubled and from opening, migrating, and writing to a real SQLite
 file on every call, not from linking alone.
@@ -738,11 +746,11 @@ be tested against a database written by the previous version.
 
 The database is opened in **WAL mode** with a **busy timeout**. WAL lets readers
 run while a writer commits, so a `reviews` query never blocks behind a
-`validate`, and the busy timeout makes two concurrent writers wait rather than
+`submit-review`, and the busy timeout makes two concurrent writers wait rather than
 fail.
 
 Serializing writers is acceptable here in a way it would not be in a
-long-running service: a `validate` holds the write transaction for the time it
+long-running service: a `submit-review` holds the write transaction for the time it
 takes to insert one row, having already done its parsing, verification, and file
 write outside it. Agents run these commands in loops, but each command is brief,
 and brief is what makes a lock cheap.
@@ -859,11 +867,18 @@ renegotiate.
 ## 5. Storing a review
 
 ```
-loam-refinery validate [path]
+loam-refinery submit-review [path]
 ```
 
-No flag. Every review that validates clean is stored, and every input that does
-not is stored too.
+`path` names the review document to read — from stdin when omitted or `-`,
+per [cli.md §2.3](cli.md#23-submit-review) — never a repository. The
+repository a run stores against is a separate question, always inferred
+from the working directory ([§4.2](#42-repository-identity)) rather than
+named on the command line at all.
+
+There is no flag here, and no `--format` either ([cli.md §5.1](cli.md#51-one-format)
+is why `submit-review` has none). Every review that validates clean is
+stored, and every input that does not is stored too.
 
 **Exit 0 writes a review; exit 1 writes a rejected input.** They go in separate
 trees ([§4.4](#44-the-stored-files)) and are never mixed, because a store whose
@@ -879,10 +894,10 @@ truncated to its first 1 MiB ([§4.4.1](#441-rejected-inputs)).
 fact about the prompt driving it rather than about any one review. A directory
 of successes cannot be asked it.
 
-**None of it appears in `validate` output.** The result object describes the
+**None of it appears in `submit-review` output.** The result object describes the
 review, and where a copy of it landed is not a fact about the review — a caller
 that wants to know asks `loam-refinery reviews`, which is the command for
-questions about the store. Keeping it out is also what holds a clean `validate`
+questions about the store. Keeping it out is also what holds a clean `submit-review`
 at its original 80-token ceiling ([cli.md §6.1](cli.md#61-budgets)), on the one
 path every loop pays.
 
@@ -893,7 +908,7 @@ recorded nothing about the attempts — which withholds the record exactly where
 it is most wanted, since an agent that never succeeds is the one worth
 inspecting. The tradeoff it was buying is now paid for openly: a repository of
 nothing but failing reviews does leave a directory behind, and on a machine
-where `validate` cannot write, an exit-1 run fails with 101 the same as an
+where `submit-review` cannot write, an exit-1 run fails with 101 the same as an
 exit-0 one would ([§5.1](#51-when-storing-fails)).
 
 The only runs that create nothing are the ones with nothing to create it for: an
@@ -912,7 +927,7 @@ reasoning already made verification run by default with no flag
 ([cli.md §2.3.1](cli.md#231-verifying-anchors)): a tool whose value depends on
 being asked will not be asked.
 
-The cost is that `validate` writes outside the repository on essentially every
+The cost is that `submit-review` writes outside the repository on essentially every
 run, and on a machine where it cannot, the command fails
 ([§5.1](#51-when-storing-fails)). [§5.2](#52-turning-it-off) is how an
 environment that cannot accept that says so.
@@ -953,7 +968,7 @@ which the database refers to something that is not on disk.
 
 ### 5.2 Turning it off
 
-An environment where `validate` must not write — a read-only container, a CI
+An environment where `submit-review` must not write — a read-only container, a CI
 sandbox, a machine with no writable `$HOME` — has two answers, and both are
 arranged **before** the run rather than during it:
 
@@ -962,6 +977,17 @@ arranged **before** the run rather than during it:
    container that is willing to store but not into `$HOME`.
 2. **Ship a config file** containing `{"version":"1","store":{"enabled":false}}`.
    Storing is off, and nothing is created or recorded.
+
+**Amended, by addition rather than contradiction:** the second option costs an
+operator something new once
+[`loam-refinery collect-reviews`](features/combined-reviews.md) exists. A
+machine with `store.enabled: false` gets no output from `collect-reviews`
+whatsoever — not "no reviews yet," but nothing, ever, for that machine — and
+`collect-reviews` reports `store.enabled` on its own envelope precisely so a
+caller in that position can tell "off" from "nobody has reviewed this yet."
+An operator who needs both — a read-only image *and* `collect-reviews`
+reading something back — has to use the first option instead,
+`LOAM_REFINERY_HOME` pointed at somewhere writable.
 
 The second one has a bootstrapping edge worth stating plainly, because it is the
 sharpest consequence of removing the flag. The key that disables storing lives
@@ -976,7 +1002,7 @@ variable above is why it is rarely the one you need.
 
 ```
 loam-refinery reviews [--repo=NAME] [--ref=SHA] [--limit=N] [--content]
-                      [--failed] [--list] [--format json]
+                      [--failed] [--list]
 ```
 
 A fifth content command, and the first one that reads something the tool wrote.
@@ -1175,7 +1201,7 @@ answers**, and the result says which:
 `known: false` is the whole point of the distinction. A mistyped repository name
 returning a bare empty list is indistinguishable from a repository whose reviews
 were never stored, and a caller cannot tell that it asked the wrong question —
-the same failure `skipped` and `verification` exist to prevent on the `validate`
+the same failure `skipped` and `verification` exist to prevent on the `submit-review`
 side. `--list` is the follow-up the caller makes when `known` is false.
 
 ### 6.3 Missing and foreign files
