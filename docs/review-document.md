@@ -38,6 +38,10 @@ review of one change.
 **Verdict** — the review's overall disposition. One of `approve`,
 `request_changes`, `comment`.
 
+**Assessment** — the review's quality grade: how good the work is, independent
+of whether it should land. One of `strong`, `sound`, `mixed`, `weak`.
+Optional. See [§3](#3-root-object).
+
 **Comment** — one finding. Carries a reviewer-authored ID, a priority, a
 category, a body, zero or more anchors, and zero or more suggestions.
 
@@ -63,10 +67,11 @@ non-fatal. See [§11.3](#113-advisory-checks--soft).
 | --- | --- | --- | --- |
 | `version` | string | yes | Format version. Always `"1"`. Rejected if anything else. |
 | `verdict` | enum | yes | `approve`, `request_changes`, `comment` |
-| `summary` | string | yes | 1–3 sentence overall assessment. 30–1500 chars. |
+| `summary` | string | yes | 1–3 sentence overview of the change as a whole. 30–1500 chars. |
 | `ref` | string | yes | Commit SHA the whole review was performed against, 40 lowercase hex. See [§5.1](#51-refs). |
 | `comments` | array | yes | Comment objects. May be empty only when `verdict` is `approve`; otherwise at least one. Enforced by the schema — see below. |
 | `profile` | string | no | The reviewer profile ([cli.md §2.1.1](cli.md#211-reviewer-profiles)) this review was written under, if any — the same `NAME` as `prime --profile=NAME`. Caller-authored and unverifiable, like `id`. Shape constrained by `profile-format` ([§11.1](#111-structural-checks--hard)); honesty is not. Read by `loam-refinery collect-reviews` ([features/combined-reviews.md](features/combined-reviews.md)) for attribution. |
+| `assessment` | enum | no | Quality grade for the review as a whole: `strong`, `sound`, `mixed`, or `weak`. Independent of `verdict` — the gate and the grade are separate axes. Optional, the same way `profile` is: a review that omits it is complete. See below. |
 
 **`profile`'s rollout constraint.** `additionalProperties: false` means an
 old binary's copy of this schema rejects any document naming a property it
@@ -83,6 +88,36 @@ actually is. This is not unique to `profile` — every future field this
 format adds carries the identical exposure, since weakening
 `additionalProperties: false` would give up the unknown-field protection
 this section exists for.
+
+**`assessment`'s four levels.** `assessment` carries quality — how good the
+work is. `verdict` carries the gate — whether the change should land. The two
+are deliberately orthogonal, and `assessment` is optional for the same reason
+`profile` is: a review that omits it is complete, the same way an unprimed
+review has no `profile` to report. A reviewer with no view on quality should
+leave the field out rather than pick the middle value to fill it.
+
+Four words with no further definition are four synonyms for "fine" — an
+uncalibrated scale from an LLM reviewer clusters on whichever one reads
+safest, and a reader gets no more signal than `verdict` already gave. Each
+level below is anchored to a test a reviewer applies to its own findings,
+without needing to know what any other reviewer said:
+
+| Value | Anchor | Test |
+| --- | --- | --- |
+| `strong` | Better than it had to be. | Name one specific thing in the change that exceeds what the change needed — a case handled that would have been reasonable to skip, a test nothing required, a piece of the design worth pointing at elsewhere as an example. No nameable instance, no `strong`. |
+| `sound` | Does the job, nothing of note. | The default. Any comments filed sit in the optional band ([§8](#8-priority), priority 1–3), and nothing about the change was distinctive enough, in either direction, to be worth a reader's specific attention. |
+| `mixed` | Works, with reservations worth reading. | At least one reservation that does not survive being compressed into `summary` — something a reader who saw only the verdict would have to open a comment to learn. If the reservation fits in one sentence, it is probably not `mixed`. |
+| `weak` | Significant concerns, blocking or not. | At least one finding serious enough that the reviewer would raise it regardless of this review's own verdict — a concern that is true of the code itself, not contingent on whether this particular review is the one blocking the merge. |
+
+Orthogonal means literally that: neither axis constrains the other, and the
+combinations that look contradictory at a glance are exactly what the field
+exists to make expressible. `weak` paired with `comment` is coherent — serious
+concerns, filed by a reviewer whose lens does not cover whether the change
+merges, is precisely what `comment` is for. `mixed` paired with `approve` is
+equally coherent — real reservations, and the reviewer's judgment is that they
+are not reasons to hold the change. A tool, or a reader, that treated a low
+`assessment` as an implicit `request_changes` would be making the reviewer's
+gate decision for it on an axis the reviewer was never asked to gate.
 
 **`comments` may be empty only for `approve`.** The schema expresses this
 conditionally rather than leaving it to prose:
@@ -616,6 +651,26 @@ verdict is a judgment about whether the change should land, the priorities are
 judgments about individual findings, and reconciling them is the reviewer's job.
 A tool that second-guessed it would be overriding the one call the reviewer was
 actually asked to make.
+
+`assessment` is not held to that same hands-off standard, and the difference is
+principled rather than convenient. `verdict` is a decision — should this change
+land — and the reviewer is the only party with standing to make it, so nothing
+checks it against anything else in the document. `assessment` and `priority`
+are not decisions; both are descriptions of the same findings, one summarizing
+and one itemized, and when two descriptions of the same thing disagree, at
+least one of them is wrong about the review's own contents. Saying so is not
+overriding a judgment call — there is no call being second-guessed, only an
+internal inconsistency being pointed out. So a soft advisory compares
+`assessment` against the priorities the reviewer itself filed, in both
+directions: a `strong` review that also files a finding the reviewer rated
+serious, or a `weak` review backed by nothing above the optional band, is a
+document telling two stories about the same change. This relationship stops at
+`priority` — it still says nothing about `verdict`, and never will, which is
+what keeps `weak` paired with `comment` and `mixed` paired with `approve`
+expressible rather than flagged. And it stays advisory, the same standing as
+every other check in this section: reported, non-fatal, changing no exit code.
+The reviewer's grade is not overruled even when it disagrees with its own
+findings — it is just no longer the only voice in the room.
 
 | Advisory | Signal |
 | --- | --- |
