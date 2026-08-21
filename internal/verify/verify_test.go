@@ -171,24 +171,30 @@ func treeEntryFor(path string) []byte {
 // answering builds a git that resolves the ref and finds every path as a blob,
 // then lets a test override exactly one of the four calls.
 func answering(override func(kind string, args []string) ([]byte, error, bool)) *gitRunnerMock {
-	return &gitRunnerMock{runFunc: func(_ context.Context, args ...string) ([]byte, error) {
-		kind := gitCall(args)
-		if override != nil {
-			if out, err, handled := override(kind, args); handled {
-				return out, err
+	return &gitRunnerMock{
+		runFunc: func(_ context.Context, args ...string) ([]byte, error) {
+			kind := gitCall(args)
+			if override != nil {
+				if out, err, handled := override(kind, args); handled {
+					return out, err
+				}
 			}
-		}
-		switch kind {
-		case "exists":
-			return nil, nil
-		case "type":
-			return []byte("commit\n"), nil
-		case "ls-tree":
-			return treeEntryFor(args[len(args)-1]), nil
-		default:
-			return []byte("one\ntwo\nthree\nfour\n"), nil
-		}
-	}}
+			switch kind {
+			case "exists":
+				return nil, nil
+			case "type":
+				return []byte("commit\n"), nil
+			case "ls-tree":
+				return treeEntryFor(args[len(args)-1]), nil
+			default:
+				return []byte("one\ntwo\nthree\nfour\n"), nil
+			}
+		},
+		// No working-tree copy by default: a mocked git never has a real
+		// checkout behind it, so a missing file stays a plain hallucination
+		// unless a test opts into refinery-qu7's other case explicitly.
+		worktreeExistsFunc: func(string) (bool, error) { return false, nil },
+	}
 }
 
 func TestFileLookupsAreCachedPerRefAndPath(t *testing.T) {

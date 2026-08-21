@@ -57,9 +57,15 @@ func (v *Validator) Validate(ctx context.Context, source []byte, options Options
 	verified, skipped, verification := v.verify(ctx, doc, options)
 	if diagnostic, ok := worktreeDivergedDiagnostic(verification); ok {
 		return &review.Result{
-			Strict:       options.Strict,
-			Comments:     len(doc.Comments),
-			Verification: review.Verification{Source: verification.Source, Anchors: verification.Anchors},
+			Strict:   options.Strict,
+			Comments: len(doc.Comments),
+			// Verified is carried through, not dropped to zero: verify's own
+			// pass still counts every anchor it confirmed before the
+			// precondition's diagnostic is built (docs/cli.md §2.3.1), and
+			// reporting it here is what keeps anchors: N, verified: 0
+			// unambiguous — 0 now means "none of the N verified", never
+			// "some did, but this response discards that".
+			Verification: review.Verification{Source: verification.Source, Anchors: verification.Anchors, Verified: verification.Verified},
 			Diagnostics:  []review.Diagnostic{diagnostic},
 			Precondition: true,
 		}, nil

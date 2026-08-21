@@ -301,6 +301,26 @@ func TestWorktreeDivergedReportsOneDiagnosticForSeveralAnchors(t *testing.T) {
 	assert.Contains(t, result.Diagnostics[0].Message, "a.go", "the first diverged anchor names the diagnostic")
 }
 
+// The precondition's Verified count must be the number verify's own pass
+// actually confirmed, not zeroed out along with the rest of that pass's
+// findings: docs/cli.md §2.3.1's precondition discards diagnostics and
+// skips, but anchors: N, verified: 0 is ambiguous between "none of the N
+// verified" and "some did, and this response throws that away" — carrying
+// the real count through removes the second reading (refinery-695).
+func TestWorktreeDivergedCarriesThroughItsVerifiedCount(t *testing.T) {
+	t.Parallel()
+	diverged := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return nil, nil, review.Verification{Source: "repo", Anchors: 3, Verified: 2, Unverified: []review.Unverified{
+			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/2", Message: "c.go differs from 4f2c1a9 in the working tree"},
+		}}
+	}}
+	result, err := validator(passing(), quiet(), finder(diverged)).Validate(t.Context(), []byte(anchored), Options{})
+	require.NoError(t, err)
+	require.True(t, result.Precondition)
+	assert.Equal(t, 3, result.Verification.Anchors)
+	assert.Equal(t, 2, result.Verification.Verified, "the two anchors verify's own pass confirmed before the diverged one must still be counted")
+}
+
 // Mutation guard: the precondition must key off Source == "repo", the same
 // signal that guarantees it never fires for a ref other than HEAD
 // (internal/verify/verify.go only populates Unverified when isHEAD is

@@ -535,7 +535,7 @@
       "name": "anchor-file-missing",
       "namespace": "check",
       "title": "Anchored file missing",
-      "body": "Fires when an anchor's path does not exist at the document ref, or names a\ndirectory rather than a file. The diagnostic names the ref it looked\nin, so the claim can be checked by hand:\n\n  git ls-tree -r --name-only 4f2c1a9 | grep client\n\nThe usual causes are a path invented from memory, a path relative to a\nsubdirectory rather than the repository root, and a file that exists in the\nworking tree but not at the reviewed commit. Anchors are repository-relative\nfrom the root, always — internal/fetch/client.go, never fetch/client.go because\nthat is where you happened to be standing.\n\nAn anchor pointing at nothing makes its comment unactionable, which is why this\nis an error rather than an advisory. A comment with no location at all is\nlegitimate: file it with an empty anchors list.",
+      "body": "Fires when an anchor's path does not exist at the document ref, or names a\ndirectory rather than a file:\n\n  git ls-tree -r --name-only 4f2c1a9 | grep client\n\nTwo causes read identically but are not the same mistake. A path invented\nfrom memory exists nowhere. One that exists on disk but was never committed\n— an ordinary new file in an unmerged change — is absent from ref for a\ndifferent reason, and the message says so: commit it, or anchor the ref\nactually reviewed. No such note means no working-tree copy either. Either\nway this stays an error, unconditionally: review an uncommitted document by\ncommitting it first, not by demoting the check.\n\nA third, unrelated cause: a path relative to a subdirectory rather than the\nrepository root — internal/fetch/client.go, never fetch/client.go, because\nthat is where you happened to be standing.\n\nAn anchor pointing at nothing makes its comment unactionable, which is why this\nis an error rather than an advisory. A comment with no location at all is\nlegitimate: file it with an empty anchors list.",
       "related": [
         "file",
         "anchors",
@@ -812,6 +812,26 @@
 {
   "entries": [
     {
+      "name": "collect-reviews",
+      "namespace": "topic",
+      "title": "Combining stored reviews",
+      "body": "`collect-reviews --ref=SHA` combines every stored submission for one ref\ninto one object: `ref`, `repo`, `store`, `head_check`, `total`,\n`submissions`, `comments` — seven fields, none a review-document field,\nbecause this is not one.\n\nTwo submissions can share an `id`. Each comment's id is qualified to stay\nunique: `profile:origin_id` when its submission is current for that\nprofile, `#ordinal:origin_id` otherwise — no profile claimed, or\nsuperseded. `ordinal` is positional and shifts on the next submission;\ntreat a `#N:id` form as good for one call only.\n\nResubmitting under the same profile supersedes (`topic:store`): the\nearlier submission gets `superseded_by`, naming the superseding ordinal.\nNothing is ever dropped — filter out anything carrying `superseded_by` for\ncurrent opinions only.\n\n`--format markdown` renders the same data for a human, or a PR comment;\n`--format json` is the default. Neither validates as a review document.",
+      "related": [
+        "store",
+        "id"
+      ],
+      "aliases": [
+        "collecting",
+        "combined-reviews"
+      ],
+      "provider": "topics"
+    }
+  ]
+}
+
+{
+  "entries": [
+    {
       "name": "effort-vs-scope",
       "namespace": "topic",
       "title": "Effort and blast radius",
@@ -858,7 +878,7 @@
       "name": "store",
       "namespace": "topic",
       "title": "The review store",
-      "body": "Every `submit-review` that reads a document writes it down: a clean review\nas a review, a failing input as a rejected input, in separate trees, never\nmixed, so the store can answer \"what was concluded about this commit\"\nwithout a failure polluting it. Exit 3 is the exception: verification finds\nthe precondition itself and stops the rest of validation there, so it\nrecords a row and writes no file.\n\nStoring needs no flag and produces no output: it is simply what `submit-review`\nalways does. The result object never mentions it — asking where a copy\nlanded is `loam-refinery reviews`'s job, not `submit-review`'s.\n\n`store.enabled: false` in the config file is the only way to turn storing\noff. There is no per-run flag.\n\nIf the store cannot be created or written — a read-only home, a full disk,\nan unreachable `store.path` — the command exits 101: the machine is at\nfault, not the review or the invocation. Stop and report it; revising the\nreview won't help.\n\n`loam-refinery reviews` reads it back: which reviews were stored for a\nrepository and commit, and, with `--failed`, which runs stored none.",
+      "body": "Every `submit-review` that reads a document writes it down: a clean review\nas a review, a failing input as a rejected input, in separate trees, never\nmixed, so the store answers \"what was concluded about this commit\" without\na failure polluting it. Exit 3 is the exception: it records a row and\nwrites no file.\n\nStoring needs no flag: it is simply what `submit-review` always does.\n`store.enabled: false` in the config file is the only way to turn it off.\nThe result object never mentions where a copy landed — that is\n`loam-refinery reviews`'s job.\n\nResubmitting under the same profile supersedes rather than replaces: it\nadds a new row. `collect-reviews` marks the earlier one `superseded_by` and\nrequalifies its ids from `profile:id` to `#N:id`, so an id from an earlier\ncollect can stop resolving.\n\nA store that cannot be created or written — read-only home, full disk,\nunreachable `store.path` — exits 101: the machine is at fault, not the\nreview. Stop and report it.\n\n`loam-refinery reviews` reads it back: which reviews were stored for a\nrepository and commit, and, with `--failed`, which runs stored none.",
       "related": [
         "exit-codes"
       ],

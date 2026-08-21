@@ -73,6 +73,26 @@ func TestVerifyKeepsAPathAbsentAtRefAsFileMissingRegardlessOfTheWorkingTree(t *t
 	require.Len(t, diagnostics, 1)
 	assert.Equal(t, "anchor-file-missing", diagnostics[0].Name)
 	assert.Empty(t, verification.Unverified, "a file the working tree happens to hold is not a divergence of a file at ref")
+	// refinery-qu7: still an error, still anchor-file-missing — severity and
+	// exit code are untouched — but the message names the likelier cause
+	// when the working tree actually holds the file, rather than reading
+	// identically to a path that exists nowhere at all.
+	assert.Contains(t, diagnostics[0].Message, "never committed",
+		"a path present on disk but absent at ref gets a different story from a hallucinated one")
+}
+
+// The other half of refinery-qu7's distinction: a path that exists nowhere
+// — not at ref, not on disk — must not pick up the "never committed"
+// remedy, since committing it is not the fix for a path that was invented.
+func TestVerifyDoesNotSuggestCommittingAPathThatExistsNowhere(t *testing.T) {
+	t.Parallel()
+	repository, sha := divergeRepo(t, "tracked\n")
+	doc := document(t, sha, []map[string]any{{"file": "invented.go", "line": 1}})
+	diagnostics, _, _ := New(repository, logger()).Verify(t.Context(), doc)
+	require.Len(t, diagnostics, 1)
+	assert.Equal(t, "anchor-file-missing", diagnostics[0].Name)
+	assert.NotContains(t, diagnostics[0].Message, "never committed",
+		"a hallucinated path is not a path to commit")
 }
 
 // A working-tree copy that no longer exists says nothing about what the
@@ -137,27 +157,32 @@ func twoCommitRepo(t *testing.T) (repository *Repository, firstSHA, secondSHA st
 // repository. blob, when non-nil, overrides exactly one of the four
 // per-anchor calls the same way answering's override does.
 func headMatching(headSHA string, blob func(kind string, args []string) ([]byte, error, bool)) *gitRunnerMock {
-	return &gitRunnerMock{runFunc: func(_ context.Context, args ...string) ([]byte, error) {
-		if len(args) == 2 && args[0] == "rev-parse" && args[1] == "HEAD" {
-			return []byte(headSHA + "\n"), nil
-		}
-		kind := gitCall(args)
-		if blob != nil {
-			if out, err, handled := blob(kind, args); handled {
-				return out, err
+	return &gitRunnerMock{
+		runFunc: func(_ context.Context, args ...string) ([]byte, error) {
+			if len(args) == 2 && args[0] == "rev-parse" && args[1] == "HEAD" {
+				return []byte(headSHA + "\n"), nil
 			}
-		}
-		switch kind {
-		case "exists":
-			return nil, nil
-		case "type":
-			return []byte("commit\n"), nil
-		case "ls-tree":
-			return treeEntryFor(args[len(args)-1]), nil
-		default:
-			return []byte("one\ntwo\nthree\nfour\n"), nil
-		}
-	}}
+			kind := gitCall(args)
+			if blob != nil {
+				if out, err, handled := blob(kind, args); handled {
+					return out, err
+				}
+			}
+			switch kind {
+			case "exists":
+				return nil, nil
+			case "type":
+				return []byte("commit\n"), nil
+			case "ls-tree":
+				return treeEntryFor(args[len(args)-1]), nil
+			default:
+				return []byte("one\ntwo\nthree\nfour\n"), nil
+			}
+		},
+		// See answering's identical default in verify_test.go: no
+		// working-tree copy unless a test opts in.
+		worktreeExistsFunc: func(string) (bool, error) { return false, nil },
+	}
 }
 
 // Mutation guard: dropping the ref-is-HEAD condition would compare any ref

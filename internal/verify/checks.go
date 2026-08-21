@@ -59,15 +59,20 @@ loam-refinery never touches the network itself.`,
 			Summary: "the anchored path does not exist at the document ref",
 			Title:   "Anchored file missing",
 			Body: `Fires when an anchor's path does not exist at the document ref, or names a
-directory rather than a file. The diagnostic names the ref it looked
-in, so the claim can be checked by hand:
+directory rather than a file:
 
   git ls-tree -r --name-only 4f2c1a9 | grep client
 
-The usual causes are a path invented from memory, a path relative to a
-subdirectory rather than the repository root, and a file that exists in the
-working tree but not at the reviewed commit. Anchors are repository-relative
-from the root, always — internal/fetch/client.go, never fetch/client.go because
+Two causes read identically but are not the same mistake. A path invented
+from memory exists nowhere. One that exists on disk but was never committed
+— an ordinary new file in an unmerged change — is absent from ref for a
+different reason, and the message says so: commit it, or anchor the ref
+actually reviewed. No such note means no working-tree copy either. Either
+way this stays an error, unconditionally: review an uncommitted document by
+committing it first, not by demoting the check.
+
+A third, unrelated cause: a path relative to a subdirectory rather than the
+repository root — internal/fetch/client.go, never fetch/client.go, because
 that is where you happened to be standing.
 
 An anchor pointing at nothing makes its comment unactionable, which is why this

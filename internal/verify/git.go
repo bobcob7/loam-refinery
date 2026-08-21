@@ -255,3 +255,22 @@ func (r *Repository) worktreeDiverged(ctx context.Context, ref, path string) (bo
 	}
 	return strings.TrimSpace(string(blob)) != strings.TrimSpace(string(worktree)), nil
 }
+
+// worktreeExists reports whether path has a working-tree copy at all,
+// independent of any ref. It answers a narrower question than
+// worktreeDiverged: not whether the copy differs from what a ref names, only
+// whether the file is on disk — which is what separates a path that was
+// never committed from one that was never real, when an anchor points
+// somewhere no ref has ever heard of (refinery-qu7). It never touches git:
+// an untracked file has no object to compare against, so the filesystem is
+// the only source that can answer this.
+func (r *Repository) worktreeExists(path string) (bool, error) {
+	_, err := os.Lstat(filepath.Join(r.root, filepath.FromSlash(path)))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("statting working-tree copy of %s: %w", path, err)
+	}
+	return true, nil
+}

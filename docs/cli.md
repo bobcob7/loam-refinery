@@ -1224,8 +1224,10 @@ registered.
 accident.** `topic:store`, `topic:tiers`, and `topic:verification` exist to
 carry a small number of load-bearing facts that do not belong on any one
 check's own lens, and each has already been trimmed of boilerplate once to
-fit those facts under the ceiling — one of the three currently measures
-exactly 350. A future edit to any of them that goes red is not, by itself,
+fit those facts under the ceiling — `topic:store` and `topic:verification`
+currently measure exactly 350 apiece, `topic:tiers` 348. `topic:store`
+crossed into that trim when it picked up the resubmission-supersedes fact
+below. A future edit to any of them that goes red is not, by itself,
 evidence that 350 is wrong: the response is to trim prose elsewhere in the
 same entry first, the same trade the entry has already made once, and treat
 the ceiling as the hard boundary it is stated to be above rather than a
@@ -1253,6 +1255,22 @@ tokens the addition cost and why. Reaching for a terser shape instead is
 worth doing only once raising the ceiling has happened more than once for
 the same reason — a pattern, not a single addition — since restructuring the
 index is a larger change than any one field justifies on its own.
+
+**`topic:collect-reviews` measured its own row before it was added, per the
+policy above, and fit.** `describe --list` stood at 372 of 380 with no entry
+for the one command with a seven-field envelope, a qualified-id grammar, a
+supersession model, and a second output format — a genuine gap against
+design principles 2 and 4, not a falsification of either, since nothing was
+there to render or route to. Adding the row measured 378 of 380: two tokens
+of headroom left, not zero, and no ceiling was raised to make it fit. The
+entry itself landed at 321 of the 350 per-entry ceiling, trimmed once on the
+same pass topic:store, topic:tiers, and topic:verification already made,
+to leave room under both budgets rather than either — this is exactly the
+"second thing tried" the ceiling-raising sentence above defers to, done
+before it was needed rather than after. The two tokens of headroom left on
+`describe --list` are smaller than either of the two additions
+[§8](#8-future-considerations) already anticipates, so the next one of
+those is the one likely to actually need the ceiling raised, not this one.
 
 ### 6.2 Why progressive disclosure
 

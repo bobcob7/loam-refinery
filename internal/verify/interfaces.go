@@ -12,4 +12,5 @@ import "context"
 type gitRunner interface {
 	run(ctx context.Context, args ...string) ([]byte, error)
 	worktreeDiverged(ctx context.Context, ref, path string) (bool, error)
+	worktreeExists(path string) (bool, error)
 }
