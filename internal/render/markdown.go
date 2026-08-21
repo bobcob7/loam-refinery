@@ -82,13 +82,19 @@ func writeMarkdownEnvelope(b *strings.Builder, envelope CollectReviewsEnvelope) 
 // (never an ATX heading — every "## " heading this renderer writes is a
 // qualified comment id, and nothing else, so Parity's own heading parse
 // (§8.3.3) never has to filter out a non-id heading). ordinal, profile,
-// verdict, and superseded_by are structurally-constrained (§8.3.2) and are
-// written as-is; summary is free-text prose and is escaped. The escaped
-// summary is indented with indentLines, not a literal "  " prefix, because
-// a summary can itself contain a newline: in CommonMark only the first
-// line of a list item's continuation content is anchored by the marker,
-// so a second line without its own copy of the indent falls out of the
-// bullet it explains (refinery-3u2).
+// verdict, severity, and superseded_by are structurally-constrained
+// (§8.3.2) and are written as-is; summary is free-text prose and is
+// escaped. The escaped summary is indented with indentLines, not a
+// literal "  " prefix, because a summary can itself contain a newline: in
+// CommonMark only the first line of a list item's continuation content is
+// anchored by the marker, so a second line without its own copy of the
+// indent falls out of the bullet it explains (refinery-3u2).
+//
+// severity renders on the head line, beside verdict, rather than folded
+// into the indented summary paragraph below it: the whole point
+// (refinery-dbk.2) is that a reader scanning several submissions sees
+// which lens is alarmed without opening a single comment, which only
+// holds if the number is on the line being scanned.
 func writeMarkdownSubmissions(b *strings.Builder, submissions []collect.Submission) {
 	b.WriteString("**Submissions**\n\n")
 	for _, s := range submissions {
@@ -96,12 +102,45 @@ func writeMarkdownSubmissions(b *strings.Builder, submissions []collect.Submissi
 		if profile == "" {
 			profile = "(none)"
 		}
-		fmt.Fprintf(b, "- **#%d** %s · %s", s.Ordinal, profile, s.Verdict)
+		fmt.Fprintf(b, "- **#%d** %s · %s · severity: %s", s.Ordinal, profile, s.Verdict, formatSeverity(s.Severity))
 		if s.SupersededBy != nil {
 			fmt.Fprintf(b, " · superseded_by=#%d", *s.SupersededBy)
 		}
 		b.WriteString("\n\n" + indentLines(escapeMarkdown(s.Summary), "  ") + "\n\n")
 	}
+}
+
+// severityBand names one of the four priority bands review-document.md
+// §8 defines, paired with the count formatSeverity reads off
+// collect.Severity for it.
+type severityBand struct {
+	label string
+	count int
+}
+
+// formatSeverity renders one submission's severity compactly: the highest
+// priority among its comments, then only the non-zero bands, so a reader
+// scanning several submissions sees which lens is alarmed at a glance
+// without every line carrying four mostly-zero counts. Max nil — the
+// submission filed no comments — renders "none", never "max=0", which
+// would read as a filed priority-zero finding instead of a genuine
+// absence (§8.1).
+func formatSeverity(sev collect.Severity) string {
+	if sev.Max == nil {
+		return "none"
+	}
+	parts := []string{fmt.Sprintf("max=%d", *sev.Max)}
+	for _, band := range []severityBand{
+		{"must-fix", sev.MustFix},
+		{"should-fix", sev.ShouldFix},
+		{"worth-fixing", sev.WorthFixing},
+		{"optional", sev.Optional},
+	} {
+		if band.count > 0 {
+			parts = append(parts, fmt.Sprintf("%s=%d", band.label, band.count))
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // writeMarkdownComment writes one comment's section: an "## <id>" heading,

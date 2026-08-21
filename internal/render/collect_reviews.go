@@ -85,11 +85,30 @@ type collectReviewsDivergedJSON struct {
 }
 
 type collectReviewsSubmissionJSON struct {
-	Ordinal      int    `json:"ordinal"`
-	Profile      string `json:"profile,omitempty"`
-	Verdict      string `json:"verdict"`
-	Summary      string `json:"summary"`
-	SupersededBy *int   `json:"superseded_by,omitempty"`
+	Ordinal      int                        `json:"ordinal"`
+	Profile      string                     `json:"profile,omitempty"`
+	Verdict      string                     `json:"verdict"`
+	Summary      string                     `json:"summary"`
+	Severity     collectReviewsSeverityJSON `json:"severity"`
+	SupersededBy *int                       `json:"superseded_by,omitempty"`
+}
+
+// collectReviewsSeverityJSON is one submission's severity shape (§8.1):
+// the highest priority among its own comments, plus a count in each of
+// the four bands review-document.md §8 defines. Max is *int, not int, and
+// carries the same omitempty treatment SupersededBy above gets, for the
+// identical reason: a submission with no comments — an approve carrying
+// none is the one case the schema permits — has no maximum, and a bare
+// 0 would silently claim it filed something at priority 0, a value the
+// schema itself rejects. The band counts are plain ints with no
+// omitempty: an empty band is a real fact about the submission, not a
+// missing one, so it always renders, even at 0.
+type collectReviewsSeverityJSON struct {
+	Max         *int `json:"max,omitempty"`
+	MustFix     int  `json:"must_fix"`
+	ShouldFix   int  `json:"should_fix"`
+	WorthFixing int  `json:"worth_fixing"`
+	Optional    int  `json:"optional"`
 }
 
 type collectReviewsCommentJSON struct {
@@ -148,10 +167,17 @@ func (j *JSON) CollectReviews(w io.Writer, envelope CollectReviewsEnvelope) erro
 	}
 	for _, s := range envelope.Result.Submissions {
 		payload.Submissions = append(payload.Submissions, collectReviewsSubmissionJSON{
-			Ordinal:      s.Ordinal,
-			Profile:      s.Profile,
-			Verdict:      s.Verdict,
-			Summary:      s.Summary,
+			Ordinal: s.Ordinal,
+			Profile: s.Profile,
+			Verdict: s.Verdict,
+			Summary: s.Summary,
+			Severity: collectReviewsSeverityJSON{
+				Max:         s.Severity.Max,
+				MustFix:     s.Severity.MustFix,
+				ShouldFix:   s.Severity.ShouldFix,
+				WorthFixing: s.Severity.WorthFixing,
+				Optional:    s.Severity.Optional,
+			},
 			SupersededBy: s.SupersededBy,
 		})
 	}
