@@ -3,6 +3,7 @@ module github.com/bobcob7/loam-refinery
 go 1.26.0
 
 require (
+	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/matryer/moq v0.7.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sqlc-dev/sqlc v1.31.1
@@ -20,6 +21,7 @@ require (
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/cubicdaiya/gonp v1.0.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect

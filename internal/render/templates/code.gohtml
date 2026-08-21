@@ -1,9 +1,23 @@
 {{- /* internal/render/templates/code.gohtml — one colorized code
-excerpt (§6): a <pre> block whose tokens each get a <span class="c-*">
-from html_highlight.go's chroma-token loop, or no span at all for a
-token type outside the six named categories (§6.2). overflow-x: auto
-on the block itself keeps a long line from widening the page (§7.5).
-Bead .4 owns this file's content. Left as an empty define here so a
-future {{template "code"}} call resolves without bead .4 having to
-create the file first. */ -}}
-{{define "code"}}{{end}}
+excerpt (§6): htmlCodeView.Spans() (html_highlight.go) already tokenized
+and merged the excerpt into htmlCodeSpans, so this template only ranges
+over them — a token whose class is "" (§6.2's plain-text fallback: Text,
+Whitespace, Background, Error, Other, and anything else outside the six
+named categories) writes its Value straight into the <pre> as escaped
+text with no wrapping <span> at all; every other token gets one
+<span class="c-*">. htmlCodeView.Label() (§6.3) is the file's own
+extension read off the owning anchor — never chroma's lexer name, which
+is never called here — and renders as a small tag ahead of the block
+only when non-empty; with no anchor to read one from, Label is "" and no
+label element renders at all. overflow-x: auto and white-space: pre on
+the <pre> itself (§7.5, code.css) keep a long line scrolling within its
+own block rather than widening the page. Nothing here touches Value
+through anything but ordinary {{ }} text-content escaping — the same
+contextual autoescaping every other field on this page already goes
+through (§4).
+
+Bead .4 owns this file's content. Dot is htmlCodeView
+(internal/render/html_view_finding.go). */ -}}
+{{define "code"}}
+{{if .Label}}<div class="code-lang">{{.Label}}</div>{{end}}<pre class="code-block"><code>{{range .Spans}}{{if .Class}}<span class="{{.Class}}">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}</code></pre>
+{{end}}
