@@ -84,9 +84,14 @@ func (a *App) collectReviewsRun(ctx context.Context, repo, ref, format string) i
 		a.fail(err)
 		return ExitTool
 	}
-	result, err := collect.Assemble(ctx, toCollectDigests(digests), &collectReader{store: a.reviewStore, repo: repo, ref: ref})
+	reader := &collectReader{store: a.reviewStore, repo: repo, ref: ref}
+	result, err := collect.Assemble(ctx, toCollectDigests(digests), reader)
 	if err != nil {
 		a.fail(err)
+		return ExitTool
+	}
+	if reader.pathErr != nil {
+		a.fail(fmt.Errorf("resolving stored review path: %w", reader.pathErr))
 		return ExitTool
 	}
 	source, isHead, diverged, err := a.collectHeadCheck(ctx, ref, result.Submissions)
@@ -151,18 +156,29 @@ func toCollectDigests(rows []store.DigestRow) []collect.DigestRow {
 type collectReader struct {
 	store     reviewStore
 	repo, ref string
+	// pathErr is the first error ReviewPath returned, if any. ReviewPath's
+	// only failure mode is a config load, the same tool-state failure
+	// Known, StoreEnabled, and DistinctDigests already exit ExitTool for
+	// elsewhere in this run, not a per-digest content problem — so it must
+	// not be folded into Assemble's Unreadable count, which would report a
+	// tool error as a lost review with no cause an operator could read.
+	// collectReviewsRun checks it once Assemble returns and fails the run
+	// with the real cause instead.
+	pathErr error
 }
 
-// ReadReview implements internal/collect's reader. Any error here — from
-// resolving the path or from reading it — is reported by Assemble as one
-// unreadable digest, skipped and counted rather than failing the whole run
-// (docs/features/combined-reviews.md §9): a missing or corrupted stored
-// file is exactly config.md §6.3's contract, and a config that could not be
-// read at all fails the same way reviews --content's own ReadContent
-// failures already do — counted, never silently dropped.
+// ReadReview implements internal/collect's reader. A ReadContent failure —
+// a missing or corrupted stored file — is exactly what Assemble's reader
+// contract expects: reported through the returned error, skipped and
+// counted against Result.Unreadable. A ReviewPath failure is not: it is
+// recorded on pathErr rather than left for Assemble to count, since
+// collectReviewsRun treats it as the tool failure it is.
 func (r *collectReader) ReadReview(ctx context.Context, digest string) ([]byte, error) {
 	path, err := r.store.ReviewPath(ctx, r.repo, r.ref, digest)
 	if err != nil {
+		if r.pathErr == nil {
+			r.pathErr = err
+		}
 		return nil, err
 	}
 	return r.store.ReadContent(path)

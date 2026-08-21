@@ -64,12 +64,10 @@ func (e *gitError) Unwrap() error { return e.err }
 // nothing. An empty result is a claim about git's silence, so anything that is
 // not a recognised git failure reports empty rather than guessing.
 func stderrOf(err error) string {
-	var failure *gitError
-	if errors.As(err, &failure) {
+	if failure, ok := errors.AsType[*gitError](err); ok {
 		return failure.stderr
 	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
+	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 		return strings.TrimSpace(string(exit.Stderr))
 	}
 	return ""
@@ -157,7 +155,7 @@ func plainEnv() []string {
 // plainEnv: silence carries the claim, and anything git calls an error or a
 // fatal withdraws it, whatever else may have reached stderr.
 func complained(stderr string) bool {
-	for _, line := range strings.Split(stderr, "\n") {
+	for line := range strings.SplitSeq(stderr, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "error:") || strings.HasPrefix(line, "fatal:") {
 			return true
@@ -170,8 +168,8 @@ func complained(stderr string) bool {
 // person, and this one is going into a machine-readable reason.
 func firstLine(text string) string {
 	text = strings.TrimSpace(text)
-	if i := strings.IndexByte(text, '\n'); i >= 0 {
-		return strings.TrimSpace(text[:i])
+	if before, _, found := strings.Cut(text, "\n"); found {
+		return strings.TrimSpace(before)
 	}
 	return text
 }

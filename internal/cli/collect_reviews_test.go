@@ -395,6 +395,31 @@ func TestCollectReviews_UnreadableFileIsCountedNotDropped(t *testing.T) {
 	require.Len(t, submissions, 1, "the one readable submission still appears")
 }
 
+// TestCollectReviews_ReviewPathFailureExitsToolNotUnreadable pins the
+// distinction between a genuinely unreadable file and ReviewPath's own
+// failure mode, a config load: the former is skip-and-counted (the test
+// above), the latter must fail the whole run at ExitTool with the real
+// cause on stderr, never surface as an inflated unreadable count. Mutation
+// this kills: folding a ReviewPath error back into Assemble's
+// skip-and-count path (as ReadContent's failures correctly are) would make
+// this pass with ExitValid and unreadable: 2 instead of ExitTool.
+func TestCollectReviews_ReviewPathFailureExitsToolNotUnreadable(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	setCollectReviewsStore(t, h.reviews, "some/repo", testRef, true, true,
+		[]string{"digest-a", "digest-b"},
+		map[string]string{"digest-a": submissionA, "digest-b": submissionB},
+	)
+	h.reviews.ReviewPathFunc = func(context.Context, string, string, string) (string, error) {
+		return "", errors.New("config.json: permission denied")
+	}
+	setHeadCheckStub(h.headChecker, "none", false, nil)
+	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + testRef, "--repo=some/repo"})
+	assert.Equal(t, ExitTool, code)
+	assert.Contains(t, h.stderr.String(), "permission denied")
+	assert.Empty(t, h.stdout.String(), "a tool failure writes no envelope")
+}
+
 // TestCollectReviews_DivergedKeyAbsentWhenNotHead is one of the four
 // JSON-shape assertions moved onto this bead from refinery-uyb.10:
 // head_check.diverged must be ABSENT from the encoded JSON — not null, not

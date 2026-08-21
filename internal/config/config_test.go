@@ -240,7 +240,6 @@ func TestLoadFile_TopLevelUnknownKey(t *testing.T) {
 func TestLoadFile_FlagOnlyKeysNameTheFlagNotUnknownKey(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"strict"} {
-		key := key
 		t.Run(key, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
@@ -262,7 +261,6 @@ func TestLoadFile_FlagOnlyKeysNameTheFlagNotUnknownKey(t *testing.T) {
 func TestLoadFile_RemovedFlagKeysAreUnknownNotFlags(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"disable", "warn_only", "require_verification"} {
-		key := key
 		t.Run(key, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
