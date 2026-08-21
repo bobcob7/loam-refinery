@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/bobcob7/loam-refinery/internal/collect"
 	"github.com/bobcob7/loam-refinery/internal/entry"
 	"github.com/bobcob7/loam-refinery/internal/review"
 	"github.com/stretchr/testify/assert"
@@ -98,6 +99,59 @@ func TestAnAuthoredValueCannotForgeOutput(t *testing.T) {
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &payload))
 	require.Len(t, payload.Diagnostics, 1)
 	assert.Equal(t, forged, payload.Diagnostics[0].Comment, "and decodes back to exactly what the author wrote")
+}
+
+// TestIndexAndSummaryCannotForgeOutput is Index and Summary's own version
+// of TestAnAuthoredValueCannotForgeOutput above. Unlike Result, Entries,
+// and Profiles, Index and Summary do not hand their whole payload to
+// json.Encoder — Write's own doc comment says they "hand-build that text
+// themselves", string concatenation for the structure and marshalCompact
+// per leaf value. That hand-built path is exactly the shape "the second
+// renderer" the comment above references once got wrong, and until this
+// test, nothing exercised it with a hostile value: every existing
+// Index/Summary test (TestEntriesAndIndex) is a byte golden that -update
+// silently rewrites, so a hand-built writer that stopped escaping would
+// bake the corruption into the golden rather than fail a test.
+//
+// Mutation this kills: any of writeIndexGroups's or Summary's string
+// concatenations bypassing marshalCompact for a namespace, name, or
+// summary value.
+func TestIndexAndSummaryCannotForgeOutput(t *testing.T) {
+	t.Parallel()
+	forged := `evil","index":[{"namespace":"forged`
+	groups := []entry.Group{{Namespace: entry.Namespace(forged), Names: []string{forged}}}
+	t.Run("Index", func(t *testing.T) {
+		t.Parallel()
+		stdout := &bytes.Buffer{}
+		require.NoError(t, NewJSON().Index(stdout, groups))
+		var payload struct {
+			Index []struct {
+				Namespace string   `json:"namespace"`
+				Names     []string `json:"names"`
+			} `json:"index"`
+		}
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &payload), "the hand-built structure must still be valid JSON")
+		require.Len(t, payload.Index, 1)
+		assert.Equal(t, forged, payload.Index[0].Namespace, "namespace decodes back to exactly what was authored")
+		require.Len(t, payload.Index[0].Names, 1)
+		assert.Equal(t, forged, payload.Index[0].Names[0], "a name decodes back to exactly what was authored")
+	})
+	t.Run("Summary", func(t *testing.T) {
+		t.Parallel()
+		stdout := &bytes.Buffer{}
+		require.NoError(t, NewJSON().Summary(stdout, forged, groups))
+		var payload struct {
+			Summary string `json:"summary"`
+			Index   []struct {
+				Namespace string   `json:"namespace"`
+				Names     []string `json:"names"`
+			} `json:"index"`
+		}
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &payload), "the hand-built structure must still be valid JSON")
+		assert.Equal(t, forged, payload.Summary, "summary decodes back to exactly what was authored")
+		require.Len(t, payload.Index, 1)
+		assert.Equal(t, forged, payload.Index[0].Namespace, "namespace decodes back to exactly what was authored")
+	})
 }
 
 func clean() *review.Result {
@@ -251,4 +305,59 @@ func TestStrictIsCarriedBesideValid(t *testing.T) {
 	assert.False(t, payload.Valid)
 	assert.Zero(t, payload.Counts.Errors)
 	assert.Equal(t, 1, payload.Counts.Advisories)
+}
+
+// TestJSONCollectReviews_SeverityMaxAbsentOmitsKey proves a submission
+// with no comments — an approve carrying none, review-document.md
+// section 3's one permitted comment-free case — renders its severity
+// object with no "max" key at all, the identical omitempty treatment
+// TestJSONCollectReviews_AssessmentAbsentOmitsKey (assessment_test.go)
+// already pins for assessment. Before this test, no fixture anywhere in
+// the tree gave a submission zero comments and then inspected its
+// rendered JSON severity shape, so collectReviewsSeverityJSON.Max losing
+// its "omitempty" struct tag survived.
+func TestJSONCollectReviews_SeverityMaxAbsentOmitsKey(t *testing.T) {
+	t.Parallel()
+	envelope := docs121Envelope()
+	envelope.Result = &collect.Result{
+		Submissions: []collect.Submission{{Ordinal: 1, Verdict: "approve", Summary: "s"}},
+	}
+	var out bytes.Buffer
+	require.NoError(t, NewJSON().CollectReviews(&out, envelope))
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
+	submissions, ok := decoded["submissions"].([]any)
+	require.True(t, ok)
+	require.Len(t, submissions, 1)
+	submission, ok := submissions[0].(map[string]any)
+	require.True(t, ok)
+	severity, ok := submission["severity"].(map[string]any)
+	require.True(t, ok)
+	_, present := severity["max"]
+	assert.False(t, present, "a comment-free submission's severity.max must omit the key entirely, never render null or 0")
+	assert.Equal(t, float64(0), severity["must_fix"], "band counts are never omitted, even at zero")
+}
+
+// TestJSONCollectReviews_SeverityMaxPresentIncludesValue is the
+// complement of the absent case above: a submission with at least one
+// comment renders its true maximum under the "max" key.
+func TestJSONCollectReviews_SeverityMaxPresentIncludesValue(t *testing.T) {
+	t.Parallel()
+	nine := 9
+	envelope := docs121Envelope()
+	envelope.Result = &collect.Result{
+		Submissions: []collect.Submission{{Ordinal: 1, Verdict: "request_changes", Summary: "s", Severity: collect.Severity{Max: &nine, MustFix: 1}}},
+	}
+	var out bytes.Buffer
+	require.NoError(t, NewJSON().CollectReviews(&out, envelope))
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
+	submissions, ok := decoded["submissions"].([]any)
+	require.True(t, ok)
+	require.Len(t, submissions, 1)
+	submission, ok := submissions[0].(map[string]any)
+	require.True(t, ok)
+	severity, ok := submission["severity"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(9), severity["max"])
 }

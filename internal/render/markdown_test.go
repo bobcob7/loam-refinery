@@ -19,6 +19,15 @@ import (
 // operator for a struct field initializer.
 var endLine121 = 94
 
+// backendMax121 and securityMax121 are the two submissions' severity.max
+// values docs/features/combined-reviews.md §12.1 shows — 9 for backend's
+// single must-fix comment, 3 for security's single optional one —
+// package-level vars for the same reason endLine121 is.
+var (
+	backendMax121  = 9
+	securityMax121 = 3
+)
+
 // docs121Result is docs/features/combined-reviews.md §12.1's worked example
 // — the same two profiles, one ref fixture internal/collect's own
 // TestAssemble_WorkedExample_TwoProfilesOneRef and
@@ -30,8 +39,8 @@ var endLine121 = 94
 func docs121Result() *collect.Result {
 	return &collect.Result{
 		Submissions: []collect.Submission{
-			{Ordinal: 1, Profile: "backend", Verdict: "request_changes", Summary: "The retry loop is sound, but the context deadline is not propagated to the downstream call."},
-			{Ordinal: 2, Profile: "security", Verdict: "comment", Summary: "One low-severity logging concern; nothing blocking."},
+			{Ordinal: 1, Profile: "backend", Verdict: "request_changes", Summary: "The retry loop is sound, but the context deadline is not propagated to the downstream call.", Severity: collect.Severity{Max: &backendMax121, MustFix: 1}},
+			{Ordinal: 2, Profile: "security", Verdict: "comment", Summary: "One low-severity logging concern; nothing blocking.", Severity: collect.Severity{Max: &securityMax121, Optional: 1}},
 		},
 		Comments: []collect.Comment{
 			{
@@ -887,4 +896,62 @@ func TestMarkdownAnchorFileNewlineNeverForgesAHeading(t *testing.T) {
 	rendered := out.String()
 	assert.Equal(t, []string{"backend:real-1"}, markdownHeadingIDs(rendered), "the only headings in the output are the tool's own comment ids")
 	assert.Contains(t, rendered, `\n\n## FORGED HEADING\n\nmore`, "the embedded newlines survive only as a visible, inert escape sequence inside the code span")
+}
+
+// TestFormatSeverity is formatSeverity's own unit test — before this test,
+// formatSeverity carried zero assertions anywhere in this tree. Each case
+// pins a property its doc comment claims: nil Max (no comments filed)
+// renders "none", never a numeric max; a real, filed Max of zero is a
+// distinct value from nil and must render "max=0", exactly the confusion
+// the *int field exists to prevent; a Max with every band at zero omits
+// every band rather than padding the string with "must-fix=0" and the
+// rest; and when more than one band is non-zero they render in a fixed
+// must-fix, should-fix, worth-fixing, optional order.
+//
+// Mutation this kills: inverting the `sev.Max == nil` check; widening or
+// dropping the `band.count > 0` guard so a zero band prints anyway;
+// reordering severityBand's four-entry slice.
+func TestFormatSeverity(t *testing.T) {
+	t.Parallel()
+	zero, five, nine := 0, 5, 9
+	for _, tt := range []struct {
+		name string
+		sev  collect.Severity
+		want string
+	}{
+		{name: "nil max renders none, never a numeric max", sev: collect.Severity{}, want: "none"},
+		{name: "a filed max of zero is distinct from nil", sev: collect.Severity{Max: &zero}, want: "max=0"},
+		{name: "max with every band at zero omits every band", sev: collect.Severity{Max: &five}, want: "max=5"},
+		{name: "one non-zero band", sev: collect.Severity{Max: &nine, MustFix: 1}, want: "max=9, must-fix=1"},
+		{
+			name: "every band non-zero renders must-fix, should-fix, worth-fixing, optional in that order",
+			sev:  collect.Severity{Max: &nine, MustFix: 1, ShouldFix: 2, WorthFixing: 3, Optional: 4},
+			want: "max=9, must-fix=1, should-fix=2, worth-fixing=3, optional=4",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, formatSeverity(tt.sev))
+		})
+	}
+}
+
+// TestMarkdownSubmissionRendersPopulatedSeverity is the integration half of
+// TestFormatSeverity: docs/features/combined-reviews.md §12.1's own
+// worked example, rendered end to end through CollectReviews, must show
+// "max=" for both submissions — backend's single must-fix comment and
+// security's single optional one — pinning the rendered string rather
+// than internal state, per this bead's own design note. Before
+// docs121Result carried a real Severity, every submission in this fixture
+// rendered "severity: none" and the string "max=" appeared in no test
+// output in this repo.
+func TestMarkdownSubmissionRendersPopulatedSeverity(t *testing.T) {
+	t.Parallel()
+	envelope := docs121Envelope()
+	var out bytes.Buffer
+	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
+	rendered := out.String()
+	assert.Contains(t, rendered, "· severity: max=9, must-fix=1", "backend's single priority-9 comment")
+	assert.Contains(t, rendered, "· severity: max=3, optional=1", "security's single priority-3 comment")
+	assert.NotContains(t, rendered, "severity: none", "§12.1's worked example has comments; neither submission is severity-free")
 }

@@ -81,13 +81,21 @@ func TestSeverityOf_MultiBandTracksMaxAndEachBand(t *testing.T) {
 // TestBandOf_Boundaries pins the four band boundaries this package reuses
 // from docs/review-document.md section 8 — the same scale
 // priority-flat and priority-category-convention (internal/advisory)
-// reason about — one priority at a time across the full 1-10 scale.
+// reason about — one priority at a time across the full 1-10 scale, plus
+// bandOf's own doc comment's promise about the low side of out-of-range:
+// a sub-1 priority, which the schema forbids but a lenient parse does
+// not exclude, still falls to Optional rather than being dropped
+// uncounted. TestSeverityOf_OutOfRangeButWellTypedPriorityStillCounts
+// already covers the high side (12); nothing covered the low side before
+// this — narrowing the default case to priority >= 1 survived.
 func TestBandOf_Boundaries(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		priority int
 		want     Severity
 	}{
+		{priority: -5, want: Severity{Optional: 1}},
+		{priority: 0, want: Severity{Optional: 1}},
 		{priority: 1, want: Severity{Optional: 1}},
 		{priority: 2, want: Severity{Optional: 1}},
 		{priority: 3, want: Severity{Optional: 1}},
