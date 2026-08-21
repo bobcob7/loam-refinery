@@ -127,6 +127,16 @@ type Submission struct {
 	Profile string
 	Verdict string
 	Summary string
+	// Assessment is the reviewer's quality grade (review-document.md
+	// §11.5), nil when the document never set the field. Unlike Verdict,
+	// which submissionOf reads unconditionally because every review has
+	// to carry one, Assessment is genuinely optional — omitting it is a
+	// real state, not the tool's absence of an opinion, and collapsing a
+	// nil here to "" or to some default level would silently invent a
+	// grade the reviewer declined to give. A *string, not a plain
+	// string, for the identical reason SupersededBy below is a pointer:
+	// nil is the only shape that cannot be confused with a real value.
+	Assessment *string
 	// SupersededBy names the Ordinal of the current submission for this
 	// submission's profile, nil when this submission is current (or
 	// unprofiled, which has no supersession axis at all).
@@ -276,10 +286,30 @@ func submissionOf(item parsed, ordinal int) Submission {
 		Profile:      item.profile,
 		Verdict:      item.doc.Verdict.Value,
 		Summary:      item.doc.Summary.Value,
+		Assessment:   assessmentOf(item.doc),
 		Document:     item.doc,
 		QualifiedIDs: map[string]string{},
 		Severity:     severityOf(item.doc),
 	}
+}
+
+// assessmentOf reads a document's own claimed assessment, nil when the
+// field was absent or not a string — the same absent-means-unset reading
+// claimedProfile gives Profile, but returned as a pointer rather than
+// collapsed to "": unlike Profile, Assessment has no natural empty value
+// to fall back to, and this package has to be able to tell "the document
+// set assessment to some value" apart from "the document never set it"
+// all the way through rendering (section 8.1). A well-typed but
+// out-of-enum string still comes through here — this function only
+// answers "did the document set the field", the same structural
+// question claimedProfile answers for Profile; enum membership is a
+// schema-validation concern this package does not re-check.
+func assessmentOf(doc *review.Document) *string {
+	if doc.Assessment.Present && doc.Assessment.OK {
+		value := doc.Assessment.Value
+		return &value
+	}
+	return nil
 }
 
 // severityOf computes one submission's Severity from its document's own

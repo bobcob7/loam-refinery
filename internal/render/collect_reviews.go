@@ -84,11 +84,21 @@ type collectReviewsDivergedJSON struct {
 	Message string `json:"message"`
 }
 
+// collectReviewsSubmissionJSON's Assessment is *string, not string, and
+// carries omitempty, the same treatment SupersededBy and Severity.Max
+// get, for a related but distinct reason: those two are absent because
+// they are computed and nothing was there to compute from, while
+// Assessment is absent because the reviewer who wrote the document chose
+// not to grade the work. Either way, nil is the one shape that cannot be
+// misread as a value — a bare "" would collide with no real assessment
+// level, but omitting the key entirely is the only rendering that can
+// never be mistaken for "the reviewer graded this at some level" (§8.1).
 type collectReviewsSubmissionJSON struct {
 	Ordinal      int                        `json:"ordinal"`
 	Profile      string                     `json:"profile,omitempty"`
 	Verdict      string                     `json:"verdict"`
 	Summary      string                     `json:"summary"`
+	Assessment   *string                    `json:"assessment,omitempty"`
 	Severity     collectReviewsSeverityJSON `json:"severity"`
 	SupersededBy *int                       `json:"superseded_by,omitempty"`
 }
@@ -167,10 +177,11 @@ func (j *JSON) CollectReviews(w io.Writer, envelope CollectReviewsEnvelope) erro
 	}
 	for _, s := range envelope.Result.Submissions {
 		payload.Submissions = append(payload.Submissions, collectReviewsSubmissionJSON{
-			Ordinal: s.Ordinal,
-			Profile: s.Profile,
-			Verdict: s.Verdict,
-			Summary: s.Summary,
+			Ordinal:    s.Ordinal,
+			Profile:    s.Profile,
+			Verdict:    s.Verdict,
+			Summary:    s.Summary,
+			Assessment: s.Assessment,
 			Severity: collectReviewsSeverityJSON{
 				Max:         s.Severity.Max,
 				MustFix:     s.Severity.MustFix,

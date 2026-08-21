@@ -82,19 +82,29 @@ func writeMarkdownEnvelope(b *strings.Builder, envelope CollectReviewsEnvelope) 
 // (never an ATX heading — every "## " heading this renderer writes is a
 // qualified comment id, and nothing else, so Parity's own heading parse
 // (§8.3.3) never has to filter out a non-id heading). ordinal, profile,
-// verdict, severity, and superseded_by are structurally-constrained
-// (§8.3.2) and are written as-is; summary is free-text prose and is
-// escaped. The escaped summary is indented with indentLines, not a
-// literal "  " prefix, because a summary can itself contain a newline: in
-// CommonMark only the first line of a list item's continuation content is
-// anchored by the marker, so a second line without its own copy of the
-// indent falls out of the bullet it explains (refinery-3u2).
+// verdict, assessment, severity, and superseded_by are
+// structurally-constrained (§8.3.2) and are written as-is; summary is
+// free-text prose and is escaped. The escaped summary is indented with
+// indentLines, not a literal "  " prefix, because a summary can itself
+// contain a newline: in CommonMark only the first line of a list item's
+// continuation content is anchored by the marker, so a second line
+// without its own copy of the indent falls out of the bullet it explains
+// (refinery-3u2).
 //
-// severity renders on the head line, beside verdict, rather than folded
-// into the indented summary paragraph below it: the whole point
-// (refinery-dbk.2) is that a reader scanning several submissions sees
-// which lens is alarmed without opening a single comment, which only
-// holds if the number is on the line being scanned.
+// severity and assessment render on the head line, beside verdict,
+// rather than folded into the indented summary paragraph below it: the
+// whole point (refinery-dbk.2, refinery-dbk.8) is that a reader scanning
+// several submissions sees the gate, the grade, and the severity shape
+// together without opening a single comment, which only holds if all
+// three sit on the line being scanned.
+//
+// assessment renders as "(none)" — the same placeholder profile already
+// uses for "this submission claimed none" — when the document never set
+// the field, never as one of the four grade words: strong, sound, mixed,
+// and weak are all real levels a reviewer can give, so none of them can
+// double as the absent marker without a reader mistaking silence for a
+// grade (refinery-dbk.8, the acceptance criterion this line exists to
+// satisfy).
 func writeMarkdownSubmissions(b *strings.Builder, submissions []collect.Submission) {
 	b.WriteString("**Submissions**\n\n")
 	for _, s := range submissions {
@@ -102,7 +112,11 @@ func writeMarkdownSubmissions(b *strings.Builder, submissions []collect.Submissi
 		if profile == "" {
 			profile = "(none)"
 		}
-		fmt.Fprintf(b, "- **#%d** %s · %s · severity: %s", s.Ordinal, profile, s.Verdict, formatSeverity(s.Severity))
+		assessment := "(none)"
+		if s.Assessment != nil {
+			assessment = *s.Assessment
+		}
+		fmt.Fprintf(b, "- **#%d** %s · %s · assessment: %s · severity: %s", s.Ordinal, profile, s.Verdict, assessment, formatSeverity(s.Severity))
 		if s.SupersededBy != nil {
 			fmt.Fprintf(b, " · superseded_by=#%d", *s.SupersededBy)
 		}
@@ -313,8 +327,8 @@ func longestBacktickRun(s string) int {
 // ordered-list marker) are escaped only there. This is the treatment every
 // free-text prose field gets: body, summary, suggestion summary, pros, and
 // cons. Structurally-constrained fields (id, profile, ordinal, verdict,
-// category, effort, scope) never pass through this function; their
-// grammars already exclude every character it would touch.
+// assessment, category, effort, scope) never pass through this function;
+// their grammars already exclude every character it would touch.
 func escapeMarkdown(s string) string {
 	lines := strings.Split(s, "\n")
 	for i, line := range lines {
