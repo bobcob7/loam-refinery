@@ -11,7 +11,7 @@ import (
 	"github.com/bobcob7/loam-refinery/internal/validate"
 )
 
-//go:generate moq -out moq_test.go . documentValidator renderer entryRegistry documentStore reviewStore profileSource
+//go:generate moq -out moq_test.go . documentValidator renderer entryRegistry documentStore reviewStore profileSource headChecker
 
 // documentValidator runs every check tier over one document.
 type documentValidator interface {
@@ -129,4 +129,46 @@ type profileSource interface {
 	// resolved or read - the tool's own state, routed to ExitTool - and
 	// broken is not populated alongside one.
 	List() (profiles []profile.Profile, broken []string, err error)
+}
+
+// DivergedAnchor is one entry in collect-reviews's head_check.diverged
+// (docs/features/combined-reviews.md §4.3.1): one anchor a stored review
+// verified once, at submission, that a headChecker's recheck at collection
+// time found has since drifted from ref in the working tree. Comment is the
+// qualified id (§6.1), never the origin id the underlying verification pass
+// itself reports. File is the anchored path directly, never the JSON
+// Pointer verify.Verifier's own Unverified type carries: a pointer only
+// ever made sense into the one document submit-review was checking, and
+// there is no single document here for one to point into.
+type DivergedAnchor struct {
+	Name    string
+	Comment string
+	File    string
+	Message string
+}
+
+// headChecker answers docs/features/combined-reviews.md §4.3's head_check
+// question for one parsed submission: has an anchor already confirmed at
+// submission time drifted from ref in the working tree since. It is the one
+// place this package asks anything about git at all, and per §4.3.2's
+// routes 2+3, it must not pull internal/verify into this package to do it -
+// the concrete implementation lives in cmd/loam-refinery, which is already
+// free to import internal/verify the way its reviewsAdapter does for
+// verify.Discover.
+type headChecker interface {
+	// CheckDivergence re-runs anchor-worktree-diverged against every anchor
+	// doc carries, fresh, and reports whether ref names HEAD along with
+	// which anchors have drifted since submission. qualifiedIDs maps doc's
+	// own origin comment ids to the qualified id the combined output
+	// assigned them - only the collect-assemble bead's code knows that
+	// mapping, so it is supplied rather than re-derived here.
+	//
+	// source is "repo", "none", or "unavailable", the same three values
+	// verification.source uses. isHead is meaningful only when
+	// source == "repo". diverged is non-nil - an empty slice when nothing
+	// has drifted - only when isHead is also true, and nil otherwise: the
+	// check does not apply to a non-HEAD ref, or outside a repository, so
+	// there is nothing to report, and a caller must be able to tell that
+	// apart from "checked, found nothing" (§4.3.1).
+	CheckDivergence(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (source string, isHead bool, diverged []DivergedAnchor, err error)
 }

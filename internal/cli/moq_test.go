@@ -981,3 +981,87 @@ func (mock *profileSourceMock) LoadCalls() []struct {
 	mock.lockLoad.RUnlock()
 	return calls
 }
+
+// Ensure, that headCheckerMock does implement headChecker.
+// If this is not the case, regenerate this file with moq.
+var _ headChecker = &headCheckerMock{}
+
+// headCheckerMock is a mock implementation of headChecker.
+//
+//	func TestSomethingThatUsesheadChecker(t *testing.T) {
+//
+//		// make and configure a mocked headChecker
+//		mockedheadChecker := &headCheckerMock{
+//			CheckDivergenceFunc: func(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (string, bool, []DivergedAnchor, error) {
+//				panic("mock out the CheckDivergence method")
+//			},
+//		}
+//
+//		// use mockedheadChecker in code that requires headChecker
+//		// and then make assertions.
+//
+//	}
+type headCheckerMock struct {
+	// CheckDivergenceFunc mocks the CheckDivergence method.
+	CheckDivergenceFunc func(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (string, bool, []DivergedAnchor, error)
+
+	// calls tracks calls to the methods.
+	calls struct {
+		// CheckDivergence holds details about calls to the CheckDivergence method.
+		CheckDivergence []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Dir is the dir argument value.
+			Dir string
+			// Doc is the doc argument value.
+			Doc *review.Document
+			// QualifiedIDs is the qualifiedIDs argument value.
+			QualifiedIDs map[string]string
+		}
+	}
+	lockCheckDivergence sync.RWMutex
+}
+
+// CheckDivergence calls CheckDivergenceFunc.
+func (mock *headCheckerMock) CheckDivergence(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (string, bool, []DivergedAnchor, error) {
+	if mock.CheckDivergenceFunc == nil {
+		panic("headCheckerMock.CheckDivergenceFunc: method is nil but headChecker.CheckDivergence was just called")
+	}
+	callInfo := struct {
+		Ctx          context.Context
+		Dir          string
+		Doc          *review.Document
+		QualifiedIDs map[string]string
+	}{
+		Ctx:          ctx,
+		Dir:          dir,
+		Doc:          doc,
+		QualifiedIDs: qualifiedIDs,
+	}
+	mock.lockCheckDivergence.Lock()
+	mock.calls.CheckDivergence = append(mock.calls.CheckDivergence, callInfo)
+	mock.lockCheckDivergence.Unlock()
+	return mock.CheckDivergenceFunc(ctx, dir, doc, qualifiedIDs)
+}
+
+// CheckDivergenceCalls gets all the calls that were made to CheckDivergence.
+// Check the length with:
+//
+//	len(mockedheadChecker.CheckDivergenceCalls())
+func (mock *headCheckerMock) CheckDivergenceCalls() []struct {
+	Ctx          context.Context
+	Dir          string
+	Doc          *review.Document
+	QualifiedIDs map[string]string
+} {
+	var calls []struct {
+		Ctx          context.Context
+		Dir          string
+		Doc          *review.Document
+		QualifiedIDs map[string]string
+	}
+	mock.lockCheckDivergence.RLock()
+	calls = mock.calls.CheckDivergence
+	mock.lockCheckDivergence.RUnlock()
+	return calls
+}

@@ -282,3 +282,30 @@ func TestHEADIsResolvedOncePerRunNotPerAnchor(t *testing.T) {
 	}
 	assert.Equal(t, 1, headCalls, "HEAD is resolved once per run, not once per anchor")
 }
+
+// RefIsHEAD is exported for docs/features/combined-reviews.md §4.3.1's
+// head_check, which needs the same "is ref HEAD" answer Verify computes
+// internally but cannot recover from an empty Verification.Unverified alone.
+// These pin it directly, against a real repository, rather than only through
+// Verify's own behavior.
+func TestRefIsHEAD_TrueForTheCheckedOutCommit(t *testing.T) {
+	t.Parallel()
+	repository, _, secondSHA := twoCommitRepo(t)
+	assert.True(t, New(repository, logger()).RefIsHEAD(t.Context(), secondSHA))
+}
+
+func TestRefIsHEAD_FalseForAnOlderCommit(t *testing.T) {
+	t.Parallel()
+	repository, firstSHA, _ := twoCommitRepo(t)
+	assert.False(t, New(repository, logger()).RefIsHEAD(t.Context(), firstSHA))
+}
+
+// Mutation guard: an unresolvable HEAD must read as "not HEAD", never as an
+// error and never as a match — the same fallback Verify itself relies on.
+func TestRefIsHEAD_FalseWhenHEADCannotBeResolved(t *testing.T) {
+	t.Parallel()
+	git := &gitRunnerMock{runFunc: func(context.Context, ...string) ([]byte, error) {
+		return nil, gitFailure
+	}}
+	assert.False(t, New(git, logger()).RefIsHEAD(t.Context(), absentSHA))
+}
