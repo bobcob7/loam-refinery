@@ -13,10 +13,10 @@ disabled or demoted: an anchor claim that goes unconfirmed fails the run.
 
 Advisory checks ask "is this a good review?" — a thin body, a suggestion with no
 stated cost, every comment at priority 9. Always run, never fatal outright.
---strict promotes them to errors for the exit code; there is no flag to
-silence one.
+--strict promotes them to errors; there is no flag to silence one.
 
 Exit 0 is valid, exit 1 means revise the review, exit 2 means fix the
-invocation. Only document-unparseable gates the rest; otherwise one run
-reports everything findable, and checks that cannot run are listed as
-skipped, not passed.
+invocation, exit 3 means the reviewed state is not a commit — commit it, or
+run `git stash create` and submit that SHA — and exit 101 means the tool
+failed: stop and report the machine. Only document-unparseable gates the
+rest; every other run reports everything findable, skipped checks included.

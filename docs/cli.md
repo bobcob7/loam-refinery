@@ -562,7 +562,7 @@ is not one this tool spends further work reading.
     {
       "severity": "error",
       "name": "anchor-worktree-diverged",
-      "message": "internal/fetch/client.go differs from ref in the working tree; the reviewed state is not a commit. Commit what was reviewed, or run \"git stash create\" and resubmit against that SHA — do not retry against this ref."
+      "message": "internal/fetch/client.go differs from 4f2c1a9 in the working tree; the reviewed state is not a commit. Commit what was reviewed, or run \"git stash create\" and resubmit against that SHA — do not retry against this ref."
     }
   ],
   "lenses": ["anchor-worktree-diverged"]
@@ -757,6 +757,9 @@ only set the store flags.
 --content                 include each stored file, not just rows    reviews
 --failed                  list runs that stored no review            reviews
 --list                    print the repositories in the store        reviews
+--ref=SHA                 which commit; required, no default         collect-reviews
+--repo=NAME               which repository's reviews                 collect-reviews
+--format json|markdown    output format; markdown is unique here     collect-reviews
 --annotated               emit the schema with descriptions intact   schema
 ```
 
@@ -1029,7 +1032,7 @@ nothing measures is a limit that erodes.
 | `schema --annotated` | 5,000 | Rare; codegen only |
 | `submit-review`, clean | 80 | Every attempt |
 | `submit-review`, clean, no repository | 140 | Common for a document with no anchors to verify; an anchored document run outside a repository now fails instead of landing here — see [§2.3.1](#231-verifying-anchors) |
-| `submit-review`, uncommitted work (exit 3) | *not yet measured* | Fails immediately with exactly one diagnostic, flat regardless of how many anchors diverged — the precondition [§2.3.1](#231-verifying-anchors) specifies, replacing the old per-anchor row this ceiling used to carry |
+| `submit-review`, uncommitted work (exit 3) | 153, flat | Fails immediately with exactly one diagnostic, flat regardless of how many anchors diverged — measured equal at one diverged anchor and at ten, replacing the old per-anchor row this ceiling used to carry |
 | `submit-review`, per diagnostic | 60 | Every failed attempt |
 | `reviews` | 60 + 150 per row | Rare; only where a store is used |
 | `reviews --failed` | 60 + 120 per row | Rare; diagnosing a reviewing agent |
@@ -1068,11 +1071,14 @@ diverged anchors: [§2.3.1](#231-verifying-anchors)'s precondition reports
 the whole thing once, in one diagnostic, the moment the reviewed state
 turns out not to be a commit — before structural checks, before advisories,
 before any other anchor is even examined. That is the uncommitted-work row
-above, and it is marked unmeasured on purpose rather than carrying forward
-the old per-anchor figure: the old row measured `verification.unverified`
-entries accumulating inside an otherwise-passing run, a shape that can no
-longer occur, and reusing its number for a structurally different response
-would be exactly the kind of number this section warns against inventing.
+above, measured at 153 — flat whether one anchor diverged or ten, which is
+the whole point: the precondition reports once for the document rather than
+once per anchor, so the cost cannot grow with how many anchors turned out to
+be wrong about the same thing. It does not carry forward the old per-anchor
+figure: the old row measured `verification.unverified` entries accumulating
+inside an otherwise-passing run, a shape that can no longer occur, and
+reusing its number for a structurally different response would have been
+exactly the kind of number this section warns against inventing.
 
 A profile's body is unbudgeted, like `reviews --content` and for the same
 reason: it is content the caller wrote, and a ceiling on it would be this tool

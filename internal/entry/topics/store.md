@@ -2,24 +2,24 @@ title: The review store
 aliases: storing
 related: exit-codes
 ---
-Every `submit-review` that reads a document writes it down. A clean review is
-stored as a review; an input that fails is stored as a rejected input — in
-separate trees, never mixed, so the store can answer "what was concluded
-about this commit" without a failure ever polluting it.
+Every `submit-review` that reads a document writes it down: a clean review
+as a review, a failing input as a rejected input, in separate trees, never
+mixed, so the store can answer "what was concluded about this commit"
+without a failure polluting it. Exit 3 is the exception: the precondition it
+fails on runs before validation starts, so it records a row and writes no
+file.
 
 Storing needs no flag and produces no output: it is simply what `submit-review`
-does, on every run with something to keep. The result object never mentions
-it — asking where a copy landed is `loam-refinery reviews`'s job, not
-`submit-review`'s.
+does, on every run. The result object never mentions it — asking where a
+copy landed is `loam-refinery reviews`'s job, not `submit-review`'s.
 
 `store.enabled: false` in the config file is the only way to turn storing
 off. There is no per-run flag.
 
-If the store cannot be created or written — a read-only home, a full disk, an
-unreachable `store.path` — the command exits 101, not 1 or 2. That code means
-the machine is at fault, not the review or the invocation: revising the
-review will not fix it, and neither will re-checking flags. Stop and report
-the machine.
+If the store cannot be created or written — a read-only home, a full disk,
+an unreachable `store.path` — the command exits 101: the machine is at
+fault, not the review or the invocation. Stop and report it; revising the
+review or re-checking flags won't help.
 
 `loam-refinery reviews` reads the store back: which reviews were stored for a
 repository and commit, and, with `--failed`, which runs stored none.
