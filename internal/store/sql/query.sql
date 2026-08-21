@@ -30,6 +30,19 @@ WHERE repo = sqlc.arg(repo)
   AND exit_code = 0
   AND (sqlc.narg(ref) IS NULL OR ref = sqlc.narg(ref));
 
+-- name: ListDistinctDigests :many
+-- Distinct digests among passing runs for one repo and ref, each paired
+-- with the earliest at among the rows that share it (combined-reviews.md
+-- section 5.3.1). Reads the index config.md section 4.5.1 already builds
+-- for repo+ref (runs_repo_ref) and digest (runs_digest). Ordered oldest
+-- first.
+SELECT digest, CAST(min(at) AS TEXT) AS at FROM runs
+WHERE repo = sqlc.arg(repo)
+  AND ref = sqlc.arg(ref)
+  AND exit_code = 0
+GROUP BY digest
+ORDER BY at ASC;
+
 -- name: ListFailedRuns :many
 -- The other half of the log: runs that stored no review (--failed).
 SELECT * FROM runs
