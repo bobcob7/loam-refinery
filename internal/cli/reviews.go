@@ -6,9 +6,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"time"
 
+	"github.com/bobcob7/loam-refinery/internal/render"
 	"github.com/bobcob7/loam-refinery/internal/store"
 )
 
@@ -271,23 +271,13 @@ func (a *App) reviewsList(ctx context.Context) int {
 	return a.writeReviews(out)
 }
 
-// writeReviews writes one of the reviews envelope shapes to stdout.
+// writeReviews writes one of the reviews envelope shapes to stdout, in
+// internal/render's JSON conventions - the same encoder every other
+// command's output goes through.
 func (a *App) writeReviews(payload any) int {
-	if err := writeReviewsJSON(a.stdout, payload); err != nil {
+	if err := render.Write(a.stdout, payload); err != nil {
 		a.fail(err)
 		return ExitUsage
 	}
 	return ExitValid
-}
-
-// writeReviewsJSON matches internal/render's JSON conventions: two-space
-// indent, and HTML escaping off so a path or a digest is never rewritten.
-func writeReviewsJSON(w io.Writer, payload any) error {
-	encoder := json.NewEncoder(w)
-	encoder.SetIndent("", "  ")
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(payload); err != nil {
-		return fmt.Errorf("encoding json output: %w", err)
-	}
-	return nil
 }

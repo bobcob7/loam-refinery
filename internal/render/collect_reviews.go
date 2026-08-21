@@ -167,7 +167,7 @@ func (j *JSON) CollectReviews(w io.Writer, envelope CollectReviewsEnvelope) erro
 			Suggestions: collectReviewsSuggestions(c.Suggestions),
 		})
 	}
-	return write(w, payload)
+	return Write(w, payload)
 }
 
 func collectReviewsAnchors(anchors []collect.Anchor) []collectReviewsAnchorJSON {

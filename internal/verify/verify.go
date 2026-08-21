@@ -170,7 +170,7 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 		return review.Diagnostic{
 			Severity: review.SeverityError,
 			Name:     "anchor-file-missing",
-			Comment:  commentID(comment),
+			Comment:  comment.DiagnosticID(),
 			Path:     anchor.Path + "/file",
 			Message:  fmt.Sprintf("%s does not exist at %s", file, short(ref)),
 		}, refuted
@@ -179,7 +179,7 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 		return review.Diagnostic{
 			Severity: review.SeverityError,
 			Name:     "anchor-file-missing",
-			Comment:  commentID(comment),
+			Comment:  comment.DiagnosticID(),
 			Path:     anchor.Path + "/file",
 			Message:  fmt.Sprintf("%s is a directory at %s, not a file", file, short(ref)),
 		}, refuted
@@ -200,7 +200,7 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 		if differs {
 			return review.Diagnostic{
 				Name:    "anchor-worktree-diverged",
-				Comment: commentID(comment),
+				Comment: comment.DiagnosticID(),
 				Path:    anchor.Path,
 				Message: fmt.Sprintf("%s differs from %s in the working tree", file, short(ref)),
 			}, diverged
@@ -216,7 +216,7 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 		return review.Diagnostic{
 			Severity: review.SeverityError,
 			Name:     "anchor-line-out-of-range",
-			Comment:  commentID(comment),
+			Comment:  comment.DiagnosticID(),
 			Path:     anchor.Path + "/" + candidate.name,
 			Message: fmt.Sprintf("%s %d is out of range in a %d-line file at %s",
 				candidate.name, candidate.field.Value, state.lines, short(ref)),
@@ -394,13 +394,6 @@ func SkipAll(reason string) []review.Skipped {
 		skipped = append(skipped, review.Skipped{Name: name, Reason: reason})
 	}
 	return skipped
-}
-
-func commentID(comment review.Comment) string {
-	if comment.ID.OK {
-		return comment.ID.Value
-	}
-	return ""
 }
 
 func short(ref string) string {

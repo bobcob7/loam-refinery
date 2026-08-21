@@ -103,7 +103,7 @@ func (c *Checker) anchorRangeOrdered(doc *review.Document) []review.Diagnostic {
 				diagnostics = append(diagnostics, review.Diagnostic{
 					Severity: review.SeverityError,
 					Name:     "anchor-range-ordered",
-					Comment:  commentID(comment),
+					Comment:  comment.DiagnosticID(),
 					Path:     anchor.Path + "/end_line",
 					Message:  fmt.Sprintf("end_line %d without line", anchor.EndLine.Value),
 				})
@@ -111,7 +111,7 @@ func (c *Checker) anchorRangeOrdered(doc *review.Document) []review.Diagnostic {
 				diagnostics = append(diagnostics, review.Diagnostic{
 					Severity: review.SeverityError,
 					Name:     "anchor-range-ordered",
-					Comment:  commentID(comment),
+					Comment:  comment.DiagnosticID(),
 					Path:     anchor.Path + "/end_line",
 					Message:  fmt.Sprintf("end_line %d is before line %d", anchor.EndLine.Value, anchor.Line.Value),
 				})
@@ -135,7 +135,7 @@ func (c *Checker) anchorPathSafe(doc *review.Document) []review.Diagnostic {
 			diagnostics = append(diagnostics, review.Diagnostic{
 				Severity: review.SeverityError,
 				Name:     "anchor-path-safe",
-				Comment:  commentID(comment),
+				Comment:  comment.DiagnosticID(),
 				Path:     anchor.Path + "/file",
 				Message:  fmt.Sprintf("file %q %s", anchor.File.Value, reason),
 			})
@@ -201,13 +201,6 @@ func (c *Checker) profileFormat(doc *review.Document) []review.Diagnostic {
 		Path:     "/profile",
 		Message:  fmt.Sprintf("profile %q does not match ^[a-z0-9]+(-[a-z0-9]+)*$", doc.Profile.Value),
 	}}
-}
-
-func commentID(comment review.Comment) string {
-	if comment.ID.OK {
-		return comment.ID.Value
-	}
-	return ""
 }
 
 // ValidSHA reports whether a ref is a full lowercase commit SHA.

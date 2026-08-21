@@ -119,7 +119,7 @@ func (j *JSON) Result(w io.Writer, result *review.Result) error {
 			Message:  diagnostic.Message,
 		})
 	}
-	return write(w, payload)
+	return Write(w, payload)
 }
 
 type jsonEntry struct {
@@ -150,7 +150,7 @@ func (j *JSON) Entries(w io.Writer, entries []entry.Entry) error {
 			Provider:  e.Provider,
 		})
 	}
-	return write(w, payload)
+	return Write(w, payload)
 }
 
 // jsonGroup is one namespace of the index. The index is a list rather than an
@@ -172,7 +172,7 @@ func groupIndex(groups []entry.Group) []jsonGroup {
 
 // Index writes the lens index, no bodies.
 func (j *JSON) Index(w io.Writer, groups []entry.Group) error {
-	return write(w, struct {
+	return Write(w, struct {
 		Index []jsonGroup `json:"index"`
 	}{Index: groupIndex(groups)})
 }
@@ -180,7 +180,7 @@ func (j *JSON) Index(w io.Writer, groups []entry.Group) error {
 // Summary writes the document-shape prose and the lens index together, which
 // is what describe with no arguments has to say.
 func (j *JSON) Summary(w io.Writer, text string, groups []entry.Group) error {
-	return write(w, struct {
+	return Write(w, struct {
 		Summary string      `json:"summary"`
 		Index   []jsonGroup `json:"index"`
 	}{Summary: text, Index: groupIndex(groups)})
@@ -204,10 +204,18 @@ func (j *JSON) Profiles(w io.Writer, profiles []profile.Profile) error {
 	for _, p := range profiles {
 		payload.Profiles = append(payload.Profiles, jsonProfile{Name: p.Name, Description: p.Description})
 	}
-	return write(w, payload)
+	return Write(w, payload)
 }
 
-func write(w io.Writer, payload any) error {
+// Write encodes payload to w with this package's JSON conventions:
+// two-space indent, and HTML escaping off so a path or a digest is never
+// rewritten. Every renderer method in this package calls it, and it is
+// exported so a caller outside this package that must emit JSON in the
+// same shape - internal/cli's reviews command, whose payload types are not
+// review.Result, entry.Entry, or any other type this package already
+// knows - calls it instead of keeping a second copy of the same encoder
+// configuration.
+func Write(w io.Writer, payload any) error {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	// The document shape and every lens body are prose meant to be read. HTML

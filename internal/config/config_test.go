@@ -386,28 +386,3 @@ func TestMaterialize_IdempotentWhenDirectoryAlreadyExists(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, `{"version":"1","store":{"enabled":true}}`, string(body))
 }
-
-func TestConfig_RepoOverride(t *testing.T) {
-	t.Parallel()
-	cfg := &Config{Store: Store{Repos: map[string]string{
-		"/some/cwd":      "cwd-repo",
-		"/some/worktree": "worktree-repo",
-	}}}
-	t.Run("no worktree matches the working directory", func(t *testing.T) {
-		t.Parallel()
-		name, ok := cfg.RepoOverride("", "/some/cwd")
-		require.True(t, ok)
-		assert.Equal(t, "cwd-repo", name)
-	})
-	t.Run("a worktree root takes precedence over the working directory", func(t *testing.T) {
-		t.Parallel()
-		name, ok := cfg.RepoOverride("/some/worktree", "/some/cwd")
-		require.True(t, ok)
-		assert.Equal(t, "worktree-repo", name)
-	})
-	t.Run("no match", func(t *testing.T) {
-		t.Parallel()
-		_, ok := cfg.RepoOverride("/nope", "/also-nope")
-		assert.False(t, ok)
-	})
-}

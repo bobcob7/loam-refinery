@@ -65,7 +65,7 @@ func diagnostic(name string, comment review.Comment, path, message string) revie
 	return review.Diagnostic{
 		Severity: review.SeverityAdvisory,
 		Name:     name,
-		Comment:  commentID(comment),
+		Comment:  comment.DiagnosticID(),
 		Path:     path,
 		Message:  message,
 	}
@@ -73,13 +73,6 @@ func diagnostic(name string, comment review.Comment, path, message string) revie
 
 func documentDiagnostic(name, path, message string) review.Diagnostic {
 	return review.Diagnostic{Severity: review.SeverityAdvisory, Name: name, Path: path, Message: message}
-}
-
-func commentID(comment review.Comment) string {
-	if comment.ID.OK {
-		return comment.ID.Value
-	}
-	return ""
 }
 
 // normalize collapses whitespace so a check measures prose, not formatting.

@@ -22,11 +22,75 @@ import (
 
 const configDoc = "../../docs/config.md"
 
-// docJSONBlock returns the occurrence-th fenced ```json block after anchor
-// in the document at path, as raw bytes — reading the documentation fresh
-// each run rather than copying its example into a Go literal, so an edited
-// example changes what this test expects without anyone touching this
-// file.
+// backtickRun returns the number of leading backtick characters in s.
+func backtickRun(s string) int {
+	n := 0
+	for _, r := range s {
+		if r != '`' {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+// docSectionEnd returns the offset, within text, of the next heading line
+// (any level) that follows the heading line found at anchorPos — the end
+// of the section anchorPos's own heading opened. A line inside a fenced
+// code block is never read as a heading, even when it starts with "#".
+// Bounding a search to [anchorPos, docSectionEnd(...)) is what stops a
+// deleted block from silently rolling into the next section's own fenced
+// block and comparing against the wrong thing, the same way
+// internal/cli/docs_shape_test.go's docSectionEnd does.
+func docSectionEnd(text string, anchorPos int) int {
+	lines := strings.SplitAfter(text[anchorPos:], "\n")
+	pos := anchorPos
+	fenceLen := 0
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		run := backtickRun(trimmed)
+		switch {
+		case fenceLen == 0 && run >= 3:
+			fenceLen = run
+		case fenceLen > 0 && run >= fenceLen && run == len(trimmed):
+			fenceLen = 0
+		case fenceLen == 0 && i > 0 && strings.HasPrefix(trimmed, "#"):
+			return pos
+		}
+		pos += len(line)
+	}
+	return len(text)
+}
+
+// findFenceClose scans lines starting at offset from in text for the first
+// line whose trimmed content is entirely backticks, at least closeLen of
+// them — CommonMark's actual fence-closing rule, matched by line shape
+// rather than by the first bare "```" substring anywhere in the content.
+// Returns the offset where the closing line begins (the block's own end)
+// and the offset just past its trailing newline (where a subsequent search
+// should resume), or (-1, -1) if no such line exists.
+func findFenceClose(text string, from, closeLen int) (blockEnd, nextPos int) {
+	lines := strings.SplitAfter(text[from:], "\n")
+	pos := from
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && len(trimmed) >= closeLen && strings.Trim(trimmed, "`") == "" {
+			return pos, pos + len(line)
+		}
+		pos += len(line)
+	}
+	return -1, -1
+}
+
+// docJSONBlock returns the occurrence-th fenced ```json block after anchor,
+// and before the next heading, in the document at path, as raw bytes —
+// reading the documentation fresh each run rather than copying its example
+// into a Go literal, so an edited example changes what this test expects
+// without anyone touching this file. The search is bounded to anchor's own
+// section (docSectionEnd) and closes each fence by line shape
+// (findFenceClose), matching internal/cli/docs_shape_test.go's
+// docFencedBlock: an edited example must not be silently answered by a
+// later section's own block.
 func docJSONBlock(t *testing.T, path, anchor string, occurrence int) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -34,16 +98,23 @@ func docJSONBlock(t *testing.T, path, anchor string, occurrence int) []byte {
 	text := string(data)
 	at := strings.Index(text, anchor)
 	require.GreaterOrEqualf(t, at, 0, "anchor %q not found in %s", anchor, path)
-	rest := text[at:]
+	rest := text[at:docSectionEnd(text, at)]
+	const fence = "```json"
+	closeLen := backtickRun(fence)
 	pos := 0
 	for n := 1; ; n++ {
-		open := strings.Index(rest[pos:], "```json")
-		require.GreaterOrEqualf(t, open, 0, "json block #%d after %q not found in %s", occurrence, anchor, path)
-		start := pos + open + len("```json")
-		closeAt := strings.Index(rest[start:], "```")
-		require.GreaterOrEqualf(t, closeAt, 0, "unterminated json block after %q in %s", anchor, path)
-		block := strings.TrimSpace(rest[start : start+closeAt])
-		pos = start + closeAt + len("```")
+		open := strings.Index(rest[pos:], fence)
+		require.GreaterOrEqualf(t, open, 0, "json block #%d after %q not found before the next heading in %s", occurrence, anchor, path)
+		openLineEnd := pos + open + len(fence)
+		if nl := strings.IndexByte(rest[openLineEnd:], '\n'); nl >= 0 {
+			openLineEnd += nl + 1
+		} else {
+			openLineEnd = len(rest)
+		}
+		blockEnd, nextPos := findFenceClose(rest, openLineEnd, closeLen)
+		require.GreaterOrEqualf(t, blockEnd, 0, "unterminated json block after %q in %s", anchor, path)
+		block := strings.TrimSpace(rest[openLineEnd:blockEnd])
+		pos = nextPos
 		if n == occurrence {
 			return []byte(block)
 		}

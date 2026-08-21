@@ -12,7 +12,7 @@ import (
 	"github.com/bobcob7/loam-refinery/internal/validate"
 )
 
-//go:generate moq -out moq_test.go . documentValidator renderer entryRegistry documentStore reviewStore profileSource headChecker HeadCheck
+//go:generate moq -out moq_test.go . documentValidator documentStore reviewStore profileSource headChecker HeadCheck
 
 // documentValidator runs every check tier over one document.
 type documentValidator interface {

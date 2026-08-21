@@ -62,6 +62,18 @@ type Comment struct {
 	SuggestionsArray bool
 }
 
+// DiagnosticID names c the way a diagnostic identifies the comment it is
+// about: c's own id when it parsed, or the empty string when it did not.
+// That empty string is not an absence to special-case at each call site -
+// it is the contract itself, so every diagnostic that names a comment
+// names it the same way regardless of which package raised it.
+func (c Comment) DiagnosticID() string {
+	if c.ID.OK {
+		return c.ID.Value
+	}
+	return ""
+}
+
 // Anchor is one location a comment applies to. It carries no ref of its own: a
 // review is of one change at one revision, and that revision is the document's.
 type Anchor struct {
