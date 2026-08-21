@@ -499,12 +499,16 @@ Input must be a single JSON object. Multiple documents, JSON Lines, and arrays
 fail `document-unparseable` and exit 1: the input is a document to repair, not
 an invocation to fix.
 
-A run also keeps a copy of what it read — the document under `reviews/` when it
-exits 0, the submitted input under `rejected/` when it exits 1. There is no flag
-for it and no mention of it in the output: storing is what `submit-review` does,
-turned off only for a whole machine in the config file. It never changes the
-*verdict*, but a store that cannot be written fails the command with exit 101 —
-see [config.md §5](config.md#5-storing-a-review).
+A run also records itself in the store, and keeps a copy of what it read when
+there is one to keep — the document under `reviews/` on exit 0, the submitted
+input under `rejected/` on exit 1, no file at all on exit 3, since the
+precondition that produces it fires before a document is examined. Every run
+still records a row, exit 3 included; [config.md §5](config.md#5-storing-a-review)
+is the full rule for which run writes what and why, and this section does not
+restate it. There is no flag for storing and no mention of it in the output: it
+is on by default, turned off only for a whole machine in the config file. It
+never changes the *verdict*, but a store that cannot be written fails the
+command with exit 101 — see [config.md §5.1](config.md#51-when-storing-fails).
 
 #### 2.3.1 Verifying anchors
 
@@ -789,7 +793,7 @@ whether a document is valid may be set from configuration, which is why
 | 0 | Structurally valid, with every anchor verified — or with no anchors at all. Advisories may be present. | Nobody's |
 | 1 | Structurally invalid, unparseable, a verification failure — an anchor the object database could not confirm, or a repository that could not confirm one at all — or advisories present under `--strict`. | The review |
 | 2 | Usage error: unknown flag or command, an unknown or malformed profile name, an unreadable input path, a malformed `--repo` or `--ref`, `--list` combined with another `reviews` flag or with `--profile`. | The invocation |
-| 3 | Precondition failure: the reviewed state is not a commit — `ref` names the repository's `HEAD` and at least one anchored file's working-tree copy has since diverged from it ([§2.3.1](#231-verifying-anchors)). | Whoever launched the reviewer |
+| 3 | Precondition failure: the reviewed state is not a commit — `ref` names the repository's `HEAD` and at least one anchored file's working-tree copy has since diverged from it ([§2.3.1](#231-verifying-anchors)). The run still records a row, with no file — [config.md §5](config.md#5-storing-a-review). | Whoever launched the reviewer |
 | 101 | Tool error: the tool's own state could not be read or written — an unparseable config file, a store that could not be created, a store directory that could not be read, a profile that exists but could not be read or parsed. | The machine |
 
 Four questions, four answers, and an agent must be able to tell them apart

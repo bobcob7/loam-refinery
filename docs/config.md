@@ -510,8 +510,14 @@ reaches the parser would change what gets validated, which is a worse defect
 than a large file on disk, not a smaller one.
 
 Truncation is what keeps every exit-1 row showing a `path` now
-([§6.1](#61-output)): there is no longer a case where a run is recorded and its
-file is not, so an oversized input needs no visible omission to signal it.
+([§6.1](#61-output)): before it, an oversized input left a row with no file to
+point at; now that case does not arise for exit 1, so an oversized input needs
+no visible omission to signal it. **Amended:** a row with no file has since
+gained a second, unrelated cause — exit 3 records a run and writes nothing at
+all, deliberately, because the precondition that produces it fires before a
+document is examined ([§4.5.1](#451-what-it-holds), [§5](#5-storing-a-review))
+— but that is a different run entirely, not a case this section's truncation
+rule needs to cover.
 
 **The digest still names the full input, not the truncated bytes.** It is
 computed before truncation, so the filename identifies what was actually
@@ -535,8 +541,12 @@ nobody sets correctly and a fifth key in a four-key file.
 One SQLite file at `<store>/store.db`, holding a row per **run** — not per
 stored review. An exit-0 run has a row pointing at a file under `reviews/`; an
 exit-1 run has a row pointing at a file under `rejected/`, truncated or not
-([§4.4.1](#441-rejected-inputs)); only a run that wrote nothing at all — exit
-101 — has a row with no file.
+([§4.4.1](#441-rejected-inputs)). **Amended:** two exit codes, not one, have a
+row with no file — exit 3, because the precondition that produces it fires
+before a document is examined, so there is nothing to point at yet; and exit
+101, because the store itself is what failed. The two land on the same shape
+for different reasons: one never had a file to keep, the other could not keep
+one it tried to write ([§5](#5-storing-a-review)).
 
 That difference is the second reason the database exists. A store of passing
 reviews answers "what was concluded about this commit". A log of runs also
@@ -595,12 +605,13 @@ cannot be re-recorded. Everything here is recoverable except history, and this
 is the one column whose absence is only felt in hindsight.
 
 **There is no `stored` or `path` column.** `exit_code` says which tree a run's
-file is in and the rest of the row says where in it:
+file is in, or that it is in none, and the rest of the row says where in it:
 
 | `exit_code` | File |
 | --- | --- |
 | 0 | `<store>/reviews/<repo>/<ref>/<digest>.json` |
 | 1 | `<store>/rejected/<repo>/<digest>.json` |
+| 3 | none — the precondition fired before a document was examined |
 | 101 | none — the store is what failed |
 
 Both are computed on read, which is always right; a stored path would go stale
@@ -878,21 +889,41 @@ named on the command line at all.
 
 There is no flag here, and no `--format` either ([cli.md §5.1](cli.md#51-one-format)
 is why `submit-review` has none). Every review that validates clean is
-stored, and every input that does not is stored too.
+stored, and every input that reaches validation and fails it is stored too.
+An exit-3 run reaches neither — the precondition it fails on runs before
+validation starts — and is covered on its own terms below.
 
-**Exit 0 writes a review; exit 1 writes a rejected input.** They go in separate
-trees ([§4.4](#44-the-stored-files)) and are never mixed, because a store whose
-reviews include the failures stops being the answer to "what was concluded about
-this commit". Keeping both is what lets the store answer that question and
-"what did this agent actually emit" without either one contaminating the other.
-The one exception is size: a rejected input over 1 MiB is recorded and kept,
-truncated to its first 1 MiB ([§4.4.1](#441-rejected-inputs)).
+**Exit 0 writes a review; exit 1 writes a rejected input; exit 3 writes
+neither.** Exit 0 and exit 1 go in separate trees ([§4.4](#44-the-stored-files))
+and are never mixed, because a store whose reviews include the failures stops
+being the answer to "what was concluded about this commit". Keeping both is
+what lets the store answer that question and "what did this agent actually
+emit" without either one contaminating the other. The one exception is size: a
+rejected input over 1 MiB is recorded and kept, truncated to its first 1 MiB
+([§4.4.1](#441-rejected-inputs)).
 
-**Every run records a row**, including the ones that wrote no file
-([§4.5](#45-the-database)). That is the second question a store can answer: not
-"what was concluded" but "what does this agent keep getting wrong", which is a
-fact about the prompt driving it rather than about any one review. A directory
-of successes cannot be asked it.
+Exit 3 does not join either tree, and the reason is stricter than a missing
+file. At exit 3 the document has not been validated at all — the precondition
+fires before structural checks even run ([cli.md §2.3](cli.md#23-submit-review))
+— so filing it under `rejected/` would assert something the run never
+checked. [§4.4](#44-the-stored-files) keeps the two trees separate precisely
+so each answers its own question, and a `rejected/` tree holding documents
+nobody examined stops answering "what did this agent emit that did not hold
+up." Nothing is lost by leaving it out: the diagnostic value this section
+argues for below survives without the file, because the row alone already
+says what needs saying.
+
+**Every run records a row**, including the ones that wrote no file — exit 3
+and exit 101 alike ([§4.5](#45-the-database)). That is the second question a
+store can answer: not "what was concluded" but "what does this agent keep
+getting wrong", which is a fact about the prompt driving it rather than about
+any one review. A directory of successes cannot be asked it. An agent that
+repeatedly submits uncommitted work is exactly that kind of problem — a prompt
+problem, not a review problem — and the row carries it without a file's help.
+`exit_code` is what keeps the row honest about which problem it is:
+`reviews --failed` can tell "the review did not hold up" (exit 1) from "the
+premise was never valid" (exit 3) apart, which are different diagnoses and
+should not collapse into one count ([§6.1](#61-output)).
 
 **None of it appears in `submit-review` output.** The result object describes the
 review, and where a copy of it landed is not a fact about the review — a caller
@@ -907,12 +938,19 @@ that for passing reviews, so a machine that had never produced a valid one
 recorded nothing about the attempts — which withholds the record exactly where
 it is most wanted, since an agent that never succeeds is the one worth
 inspecting. The tradeoff it was buying is now paid for openly: a repository of
-nothing but failing reviews does leave a directory behind, and on a machine
-where `submit-review` cannot write, an exit-1 run fails with 101 the same as an
-exit-0 one would ([§5.1](#51-when-storing-fails)).
+nothing but failing runs does leave a directory behind, and on a machine where
+`submit-review` cannot write, an exit-1 run fails with 101 the same as an
+exit-0 or exit-3 one would ([§5.1](#51-when-storing-fails)) — the row is
+"something to keep" even on a run that wrote no file.
 
-The only runs that create nothing are the ones with nothing to create it for: an
+**Amended:** creating nothing and creating a row with no file are not the same
+outcome, and only the first is silence. Some runs create nothing at all — no
+row and no file — because there was nothing to create either one for: an
 exit 2 that never read a document, and a machine with `store.enabled: false`.
+Exit 3 is not a third member of that list; it creates a row, just no file,
+which is the whole reason the database ([§4.5](#45-the-database)) exists
+alongside the trees — a run that kept no document can still tell the store
+something about the agent that submitted one.
 
 **There is no per-run opt-out.** `store.enabled: false` in the config file turns
 storing off for a machine, and that is the whole of it — a decision made once,
@@ -1097,7 +1135,13 @@ with the same row shape:
 commit to name, and a null would invite a consumer to render it. `path` is
 always present on an exit-1 row: every rejected input is kept, truncated to
 its first 1 MiB when it was larger ([§4.4.1](#441-rejected-inputs)), so there
-is no case left where the row has a run but no file to point at.
+is no case left, *for exit 1*, where the row has a run but no file to point at.
+
+**Amended:** that no-case-left claim does not extend to exit 3, and it never
+claimed to. An exit-3 row omits `path` for a reason that has nothing to do
+with size — there is no file at all, because the precondition it failed on
+fires before the document is examined ([§5](#5-storing-a-review)). An example
+is below, once the shapes this row is compared against have been shown.
 
 The row shown above is not the whole answer — it is wrapped exactly like the
 default index: `repo`, `total`, then the array, named `failed` in place of
@@ -1116,13 +1160,24 @@ row, on the assumption that a reader would carry the wrapper over from the
 default form. It is worth stating outright: nothing about `--failed` changes
 the shape *around* the rows, only what is in them.
 
-It answers when, against which commit, how much — and `path` is the submitted
-input, truncated to its first 1 MiB when it was larger
+It answers when, against which commit, how much — and, for an exit-1 row,
+`path` is the submitted input, truncated to its first 1 MiB when it was larger
 ([§4.4.1](#441-rejected-inputs)), which is the answer to the question the
 counts cannot reach. It does not answer *which check* fired,
 because the row does not record one ([§4.5.1](#451-what-it-holds)); reading the
 file is what replaces that, and it is a better answer than a list of names for
 anyone asking why an agent keeps failing.
+
+An exit-3 row has no file to read, and needs none: the precondition already
+names what happened — the reviewed state was not a commit
+([cli.md §4](cli.md#4-exit-codes)) — and there is nothing a stored copy of the
+input would add that the row does not already say. `reviews --failed` needs no
+code of its own to reach this: the read side already treats an absent `path`
+as absent, not broken. Its path lookup is guarded behind `exit_code == 1`
+today with exactly this case in mind, `path` is omitted rather than printed
+empty, and `--content` already skips a row whose `path` is empty. An exit-3
+row is that case, not a new one — the shape below, once shown, has nothing
+`--content` would find to open.
 
 `--content` works here too, and returns the input verbatim rather than a
 document — including for the inputs that are not JSON at all, which are
@@ -1183,6 +1238,27 @@ than with `--limit`, which is why its budget is per repository rather than flat
 ([cli.md §6.1](cli.md#61-budgets)). A flat ceiling on something that scales is
 the failure that section already solves for `describe --lens` by budgeting per
 entry.
+
+**The `--failed` row promised above, for an exit-3 run:**
+
+```json
+{
+  "at": "2026-08-19T15:03:12Z",
+  "ref": "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f",
+  "exit_code": 3,
+  "counts": {}
+}
+```
+
+No `path`, for the reason already given, and `counts` is empty rather than
+absent: the precondition fires before any check that would populate it runs,
+so every counter is NULL, and NULL counters are omitted the same way a nil
+counter is omitted from a passing row's `counts`
+([§4.5.1](#451-what-it-holds)). `exit_code` is the field doing the work here:
+1 and 3 both belong on `--failed` because neither wrote a review, but they are
+different diagnoses — a review that did not hold up, against a run whose
+premise was never valid — and a caller reading `exit_code` can tell them apart
+without a second flag to ask for one or the other.
 
 ### 6.2 Empty answers
 
