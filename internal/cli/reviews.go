@@ -40,14 +40,17 @@ type countsJSON struct {
 // reviewRow is one row of the default index (docs/config.md §6.1). Every
 // passing run has a ref, a digest, a verdict, and a computed path, so none
 // of those fields is ever omitted; Review is added only under --content.
+// Assessment is optional, like the field it came from (docs/config.md
+// §4.5.1) — omitted, not printed empty, on a run that never carried one.
 type reviewRow struct {
-	At      string          `json:"at"`
-	Ref     string          `json:"ref"`
-	Digest  string          `json:"digest"`
-	Verdict string          `json:"verdict"`
-	Counts  countsJSON      `json:"counts"`
-	Path    string          `json:"path"`
-	Review  json.RawMessage `json:"review,omitempty"`
+	At         string          `json:"at"`
+	Ref        string          `json:"ref"`
+	Digest     string          `json:"digest"`
+	Verdict    string          `json:"verdict"`
+	Assessment string          `json:"assessment,omitempty"`
+	Counts     countsJSON      `json:"counts"`
+	Path       string          `json:"path"`
+	Review     json.RawMessage `json:"review,omitempty"`
 }
 
 // failedRow is one row of --failed. Ref is omitted when the run has none;
@@ -182,12 +185,13 @@ func (a *App) reviewsDefault(ctx context.Context, repo, ref string, limit int, k
 	opened := false
 	for _, r := range rows {
 		row := reviewRow{
-			At:      r.At.UTC().Format(time.RFC3339),
-			Ref:     r.Ref,
-			Digest:  r.Digest,
-			Verdict: r.Verdict,
-			Counts:  countsJSON(r.Counts),
-			Path:    r.Path,
+			At:         r.At.UTC().Format(time.RFC3339),
+			Ref:        r.Ref,
+			Digest:     r.Digest,
+			Verdict:    r.Verdict,
+			Assessment: r.Assessment,
+			Counts:     countsJSON(r.Counts),
+			Path:       r.Path,
 		}
 		if content {
 			opened = true

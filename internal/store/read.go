@@ -27,14 +27,17 @@ type Counts struct {
 }
 
 // Review is one row from the reviews half of the log: a run that stored a
-// passing review.
+// passing review. Assessment is "" when the row has none — optional, like
+// the field it came from (config.md section 4.5.1), not every passing run
+// carries one the way every passing run carries a Verdict.
 type Review struct {
-	At      time.Time
-	Ref     string
-	Digest  string
-	Verdict string
-	Counts  Counts
-	Path    string
+	At         time.Time
+	Ref        string
+	Digest     string
+	Verdict    string
+	Assessment string
+	Counts     Counts
+	Path       string
 }
 
 // FailedRun is one row from the other half: a run that stored no review.
@@ -90,12 +93,13 @@ func (s *Store) ListReviews(ctx context.Context, repo, ref string, limit int) ([
 		}
 		digest := row.Digest
 		reviews = append(reviews, Review{
-			At:      at,
-			Ref:     row.Ref.String,
-			Digest:  digest,
-			Verdict: row.Verdict.String,
-			Counts:  countsOf(row),
-			Path:    s.ReviewPath(repo, row.Ref.String, digest),
+			At:         at,
+			Ref:        row.Ref.String,
+			Digest:     digest,
+			Verdict:    row.Verdict.String,
+			Assessment: row.Assessment.String,
+			Counts:     countsOf(row),
+			Path:       s.ReviewPath(repo, row.Ref.String, digest),
 		})
 	}
 	return reviews, int(total), nil

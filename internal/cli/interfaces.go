@@ -20,9 +20,9 @@ type documentValidator interface {
 }
 
 // StoreInput is what submit-review has learned about one run by the time storing
-// happens (docs/config.md §5). Ref and Verdict are read straight off the
-// submitted document, unvalidated — a documentStore applies whatever rules
-// keep them safe to record, the same way it applies docs/config.md §4.8 to
+// happens (docs/config.md §5). Ref, Verdict, and Assessment are read straight
+// off the submitted document, unvalidated — a documentStore applies whatever
+// rules keep them safe to record, the same way it applies docs/config.md §4.8 to
 // the repository name.
 type StoreInput struct {
 	// Dir is where repository identity is resolved from (docs/config.md
@@ -40,10 +40,11 @@ type StoreInput struct {
 	// to keep in either tree — a documentStore still records a row, with
 	// no file (docs/config.md §5).
 	Precondition bool
-	// Ref and Verdict come from the document as submitted; both are "" when
-	// the field was absent or not a string.
-	Ref     string
-	Verdict string
+	// Ref, Verdict, and Assessment come from the document as submitted; each
+	// is "" when the field was absent or not a string.
+	Ref        string
+	Verdict    string
+	Assessment string
 	// Comments, Errors, Advisories, and Skipped are the run's counts,
 	// always known by the time storing happens.
 	Comments   int

@@ -23,11 +23,26 @@ import (
 //go:embed sql/schema.sql
 var schema string
 
+//go:embed sql/migrations/0002_assessment.sql
+var migration0002 string
+
+// migrations maps a schema version to the SQL that advances a database
+// already at that version to the next one. migrate walks this from a
+// database's current PRAGMA user_version up to schemaVersion, one step at a
+// time — the "explicit migration alongside the schema.sql change that
+// produced it" schemaVersion's own comment asks for, kept here rather than
+// folded into schema.sql because schema.sql is what a brand-new database
+// gets applied whole (version 0), while a database already at a prior
+// version needs exactly the delta, not the whole shape replayed.
+var migrations = map[int]string{
+	1: migration0002, // 1 -> 2: adds the assessment column (config.md §4.5.2).
+}
+
 // schemaVersion is the PRAGMA user_version stamped on a database created by
 // the schema this binary embeds. Bump it, and ship an explicit migration
 // alongside the schema.sql change that produced it, whenever the shape of
 // runs changes (config.md §4.5.4).
-const schemaVersion = 1
+const schemaVersion = 2
 
 // busyTimeoutMillis is the milliseconds a writer waits for a lock before
 // giving up (config.md §4.6). It doubles as the budget convertToWAL retries
@@ -212,8 +227,9 @@ func Exists(root string) (bool, error) {
 }
 
 // migrate applies the embedded schema to a database that does not yet have
-// one, and records the revision it left the file at. A database already at
-// schemaVersion is left untouched; one ahead of it is a downgrade this
+// one, or the pending steps in migrations to one that has an earlier
+// version, and records the revision it left the file at. A database already
+// at schemaVersion is left untouched; one ahead of it is a downgrade this
 // binary cannot open.
 //
 // The version check and the schema application happen inside the same
@@ -237,11 +253,23 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	if version == schemaVersion {
 		return tx.Commit()
 	}
-	if version != 0 {
+	if version > schemaVersion {
 		return fmt.Errorf("database is at schema version %d, this binary knows %d", version, schemaVersion)
 	}
-	if _, err := tx.ExecContext(ctx, schema); err != nil {
-		return fmt.Errorf("applying schema: %w", err)
+	if version == 0 {
+		if _, err := tx.ExecContext(ctx, schema); err != nil {
+			return fmt.Errorf("applying schema: %w", err)
+		}
+	} else {
+		for v := version; v < schemaVersion; v++ {
+			stmt, ok := migrations[v]
+			if !ok {
+				return fmt.Errorf("no migration from schema version %d to %d", v, v+1)
+			}
+			if _, err := tx.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("migrating database from schema version %d: %w", v, err)
+			}
+		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 		return fmt.Errorf("setting schema version: %w", err)

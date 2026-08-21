@@ -16,6 +16,7 @@ type Run struct {
 	Digest        string
 	ExitCode      int64
 	Verdict       sql.NullString
+	Assessment    sql.NullString
 	NumComments   sql.NullInt64
 	NumErrors     sql.NullInt64
 	NumAdvisories sql.NullInt64

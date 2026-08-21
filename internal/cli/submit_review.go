@@ -94,6 +94,9 @@ func (a *App) storeInput(source []byte, result *review.Result) StoreInput {
 	if doc.Verdict.OK {
 		in.Verdict = doc.Verdict.Value
 	}
+	if doc.Assessment.OK {
+		in.Assessment = doc.Assessment.Value
+	}
 	return in
 }
 

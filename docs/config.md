@@ -567,6 +567,7 @@ CREATE TABLE runs (
   digest         TEXT    NOT NULL,  -- sha256 of the submitted bytes
   exit_code      INTEGER NOT NULL,
   verdict        TEXT             CHECK (verdict IN ('approve', 'request_changes', 'comment')),
+  assessment     TEXT             CHECK (assessment IN ('strong', 'sound', 'mixed', 'weak')),
   num_comments   INTEGER,
   num_errors     INTEGER,
   num_advisories INTEGER,
@@ -579,6 +580,15 @@ CREATE INDEX runs_repo_ref ON runs(repo, ref);
 CREATE INDEX runs_repo_at  ON runs(repo, at DESC);
 CREATE INDEX runs_digest   ON runs(digest);
 ```
+
+**`assessment` mirrors `verdict`'s shape and adds nothing new to it.** Both are
+nullable `TEXT` columns with a `CHECK` naming a closed set of words
+([§4.5.2](#452-constrained-values)), and both come straight off the submitted
+document ([review-document.md §3](review-document.md#3-root-object)). The
+difference is only in how often the NULL case fires: `verdict` is NULL when a
+document never parsed, the exception; `assessment` is NULL whenever a review
+simply did not report one, which — because the field is optional — is the
+ordinary case, not the exception.
 
 **The counters carry a `num_` prefix** so a column name says what it is without
 the reader consulting its type. `comments` and `errors` read as collections;
@@ -647,9 +657,10 @@ accepts the word as a column type with numeric affinity and stores `true` and
 what this schema would use if it needed a flag, is `INTEGER NOT NULL CHECK (x IN
 (0, 1))`.
 
-For closed sets of strings the idiom is the same `CHECK` — which `verdict`
-carries, and is the only column that does. A lookup table with a foreign key is
-the other option and is not worth it for three values.
+For closed sets of strings the idiom is the same `CHECK` — which `verdict` and
+`assessment` both carry, and are the only two columns that do. A lookup table
+with a foreign key is the other option and is not worth it for three or four
+values.
 
 Two details make it work as intended:
 
@@ -660,7 +671,10 @@ Two details make it work as intended:
 - **A nullable enum needs no special case.** `verdict` is NULL when the document
   never parsed, and `NULL IN ('approve', …)` evaluates to NULL rather than
   false. A `CHECK` fails only on false, so NULL passes and the constraint still
-  rejects every wrong string.
+  rejects every wrong string. `assessment` is NULL far more often than
+  `verdict` is — the field is optional, so an ordinary review that never
+  mentions it is the common case, not an edge one — and needs nothing beyond
+  the same `CHECK`: absent is still `NULL`, not the ordinary path through it.
 
 **`exit_code` is deliberately unconstrained.** SQLite cannot alter a `CHECK`, so
 every constrained set is a table rebuild away from every addition to it — and
@@ -671,11 +685,14 @@ failure mode, which is a tax on exactly the change that should be cheap.
 
 That is the line for anything added later. Constrain a set that a
 **specification** defines, because changing it is already a versioned event and
-a migration is the honest expression of that — `verdict` comes from
-[review-document.md §3](review-document.md#3-root-object) and is API. Leave
-unconstrained a set the **implementation** reserves room to extend. When the two
-are confused, either the database accepts values the format forbids, or shipping
-a patch release needs a migration.
+a migration is the honest expression of that — `verdict` and `assessment` both
+come from [review-document.md §3](review-document.md#3-root-object) and are
+API, and the `assessment` column's own CHECK shipped exactly that way: a
+migration alongside the schema change, not a bare `ALTER TABLE` pretending the
+shape had not changed. Leave unconstrained a set the **implementation**
+reserves room to extend. When the two are confused, either the database
+accepts values the format forbids, or shipping a patch release needs a
+migration.
 
 #### 4.5.3 Why SQLite
 
@@ -724,10 +741,11 @@ Queries are written as SQL and compiled to Go by
 typed methods against them.
 
 ```
-internal/store/sql/schema.sql     the table above, and every migration
-internal/store/sql/query.sql      every query, named, with sqlc annotations
-internal/store/sqlc/              generated: models, params, methods
-sqlc.yaml                         engine sqlite, output into internal/store/sqlc
+internal/store/sql/schema.sql       the table above, its current shape only
+internal/store/sql/migrations/      every migration since schema version 1
+internal/store/sql/query.sql        every query, named, with sqlc annotations
+internal/store/sqlc/                generated: models, params, methods
+sqlc.yaml                           engine sqlite, output into internal/store/sqlc
 ```
 
 The reason is the same one behind "the schema is the documentation"
@@ -1125,6 +1143,7 @@ Default is an **index**, newest first — what was stored, not what it said:
       "ref": "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f",
       "digest": "3f9a1c2b7e04d19c…",
       "verdict": "request_changes",
+      "assessment": "mixed",
       "counts": { "comments": 6, "errors": 0, "advisories": 2, "skipped": 0 },
       "path": "/Users/me/.local/share/…/reviews/github.com/bobcob7/loam-refinery/4f2c…/3f9a1c2b7e04d19c….json"
     }
@@ -1138,6 +1157,11 @@ matching the query before `--limit`, so a caller can tell a truncated answer
 from a complete one. `path` is absolute, so anything that wants the file can
 open it without reconstructing the layout; it is computed from the row rather
 than stored, and its presence is not a claim that the file is still there.
+
+`assessment` is **omitted, not printed empty**, on a row whose review never
+reported one — the ordinary case, since the field is optional
+([§4.5.1](#451-what-it-holds)). `verdict` never has this case: a passing run
+always has one, so it is never omitted the way `assessment` is.
 
 **`--failed` lists the other half of the log** — runs that produced no review —
 with the same row shape:

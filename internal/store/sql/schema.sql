@@ -6,6 +6,7 @@ CREATE TABLE runs (
   digest         TEXT    NOT NULL,  -- sha256 of the submitted bytes
   exit_code      INTEGER NOT NULL,
   verdict        TEXT             CHECK (verdict IN ('approve', 'request_changes', 'comment')),
+  assessment     TEXT             CHECK (assessment IN ('strong', 'sound', 'mixed', 'weak')),
   num_comments   INTEGER,
   num_errors     INTEGER,
   num_advisories INTEGER,

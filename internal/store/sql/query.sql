@@ -1,14 +1,14 @@
 -- name: InsertRun :one
 INSERT INTO runs (
-  at, repo, ref, digest, exit_code, verdict,
+  at, repo, ref, digest, exit_code, verdict, assessment,
   num_comments, num_errors, num_advisories, num_skipped,
   tool_version, schema_version
 ) VALUES (
-  sqlc.arg(at), sqlc.arg(repo), sqlc.narg(ref), sqlc.arg(digest), sqlc.arg(exit_code), sqlc.narg(verdict),
+  sqlc.arg(at), sqlc.arg(repo), sqlc.narg(ref), sqlc.arg(digest), sqlc.arg(exit_code), sqlc.narg(verdict), sqlc.narg(assessment),
   sqlc.narg(num_comments), sqlc.narg(num_errors), sqlc.narg(num_advisories), sqlc.narg(num_skipped),
   sqlc.arg(tool_version), sqlc.arg(schema_version)
 )
-RETURNING id, at, repo, ref, digest, exit_code, verdict,
+RETURNING id, at, repo, ref, digest, exit_code, verdict, assessment,
   num_comments, num_errors, num_advisories, num_skipped,
   tool_version, schema_version;
 

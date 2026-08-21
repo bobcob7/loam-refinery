@@ -53,15 +53,15 @@ func (q *Queries) CountReviews(ctx context.Context, arg CountReviewsParams) (int
 
 const insertRun = `-- name: InsertRun :one
 INSERT INTO runs (
-  at, repo, ref, digest, exit_code, verdict,
+  at, repo, ref, digest, exit_code, verdict, assessment,
   num_comments, num_errors, num_advisories, num_skipped,
   tool_version, schema_version
 ) VALUES (
-  ?1, ?2, ?3, ?4, ?5, ?6,
-  ?7, ?8, ?9, ?10,
-  ?11, ?12
+  ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+  ?8, ?9, ?10, ?11,
+  ?12, ?13
 )
-RETURNING id, at, repo, ref, digest, exit_code, verdict,
+RETURNING id, at, repo, ref, digest, exit_code, verdict, assessment,
   num_comments, num_errors, num_advisories, num_skipped,
   tool_version, schema_version
 `
@@ -73,6 +73,7 @@ type InsertRunParams struct {
 	Digest        string
 	ExitCode      int64
 	Verdict       sql.NullString
+	Assessment    sql.NullString
 	NumComments   sql.NullInt64
 	NumErrors     sql.NullInt64
 	NumAdvisories sql.NullInt64
@@ -89,6 +90,7 @@ func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (Run, erro
 		arg.Digest,
 		arg.ExitCode,
 		arg.Verdict,
+		arg.Assessment,
 		arg.NumComments,
 		arg.NumErrors,
 		arg.NumAdvisories,
@@ -105,6 +107,7 @@ func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (Run, erro
 		&i.Digest,
 		&i.ExitCode,
 		&i.Verdict,
+		&i.Assessment,
 		&i.NumComments,
 		&i.NumErrors,
 		&i.NumAdvisories,
@@ -163,7 +166,7 @@ func (q *Queries) ListDistinctDigests(ctx context.Context, arg ListDistinctDiges
 }
 
 const listFailedRuns = `-- name: ListFailedRuns :many
-SELECT id, at, repo, ref, digest, exit_code, verdict, num_comments, num_errors, num_advisories, num_skipped, tool_version, schema_version FROM runs
+SELECT id, at, repo, ref, digest, exit_code, verdict, assessment, num_comments, num_errors, num_advisories, num_skipped, tool_version, schema_version FROM runs
 WHERE repo = ?1
   AND exit_code != 0
   AND (?2 IS NULL OR ref = ?2)
@@ -195,6 +198,7 @@ func (q *Queries) ListFailedRuns(ctx context.Context, arg ListFailedRunsParams) 
 			&i.Digest,
 			&i.ExitCode,
 			&i.Verdict,
+			&i.Assessment,
 			&i.NumComments,
 			&i.NumErrors,
 			&i.NumAdvisories,
@@ -257,7 +261,7 @@ func (q *Queries) ListRepoCounts(ctx context.Context) ([]ListRepoCountsRow, erro
 }
 
 const listReviews = `-- name: ListReviews :many
-SELECT id, at, repo, ref, digest, exit_code, verdict, num_comments, num_errors, num_advisories, num_skipped, tool_version, schema_version FROM runs
+SELECT id, at, repo, ref, digest, exit_code, verdict, assessment, num_comments, num_errors, num_advisories, num_skipped, tool_version, schema_version FROM runs
 WHERE repo = ?1
   AND exit_code = 0
   AND (?2 IS NULL OR ref = ?2)
@@ -290,6 +294,7 @@ func (q *Queries) ListReviews(ctx context.Context, arg ListReviewsParams) ([]Run
 			&i.Digest,
 			&i.ExitCode,
 			&i.Verdict,
+			&i.Assessment,
 			&i.NumComments,
 			&i.NumErrors,
 			&i.NumAdvisories,
