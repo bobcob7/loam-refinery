@@ -240,7 +240,6 @@ func TestLoadFile_TopLevelUnknownKey(t *testing.T) {
 func TestLoadFile_FlagOnlyKeysNameTheFlagNotUnknownKey(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"strict"} {
-		key := key
 		t.Run(key, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
@@ -262,7 +261,6 @@ func TestLoadFile_FlagOnlyKeysNameTheFlagNotUnknownKey(t *testing.T) {
 func TestLoadFile_RemovedFlagKeysAreUnknownNotFlags(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"disable", "warn_only", "require_verification"} {
-		key := key
 		t.Run(key, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
@@ -387,29 +385,4 @@ func TestMaterialize_IdempotentWhenDirectoryAlreadyExists(t *testing.T) {
 	body, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 	assert.Equal(t, `{"version":"1","store":{"enabled":true}}`, string(body))
-}
-
-func TestConfig_RepoOverride(t *testing.T) {
-	t.Parallel()
-	cfg := &Config{Store: Store{Repos: map[string]string{
-		"/some/cwd":      "cwd-repo",
-		"/some/worktree": "worktree-repo",
-	}}}
-	t.Run("no worktree matches the working directory", func(t *testing.T) {
-		t.Parallel()
-		name, ok := cfg.RepoOverride("", "/some/cwd")
-		require.True(t, ok)
-		assert.Equal(t, "cwd-repo", name)
-	})
-	t.Run("a worktree root takes precedence over the working directory", func(t *testing.T) {
-		t.Parallel()
-		name, ok := cfg.RepoOverride("/some/worktree", "/some/cwd")
-		require.True(t, ok)
-		assert.Equal(t, "worktree-repo", name)
-	})
-	t.Run("no match", func(t *testing.T) {
-		t.Parallel()
-		_, ok := cfg.RepoOverride("/nope", "/also-nope")
-		assert.False(t, ok)
-	})
 }

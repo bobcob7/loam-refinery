@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -44,53 +43,10 @@ type Reader struct {
 }
 
 // New constructs a Reader over dir. dir is not required to exist: a missing
-// directory is List's empty result, not a construction error.
+// directory is not a construction error, only an empty result for every
+// name Load is asked to resolve against it.
 func New(dir string) *Reader {
 	return &Reader{dir: dir}
-}
-
-// List returns every valid profile in the directory, sorted by name. A
-// non-.md file, and a .md file whose stem is not a valid name, is ignored
-// rather than rejected (docs/cli.md §2.1.2) - so a README.md can sit beside
-// the profiles it documents. A missing directory returns a non-nil empty
-// result and a nil error, so a JSON caller renders "[]" rather than "null";
-// a path that exists but is a regular file is an error. Every malformed
-// profile in the directory is reported, not just the first (refinery-
-// emv.12): the listing is still all-or-nothing on failure, but the single
-// error names every broken file in one pass.
-func (r *Reader) List() ([]Profile, error) {
-	entries, err := os.ReadDir(r.dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return []Profile{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", r.dir, err)
-	}
-	profiles := make([]Profile, 0, len(entries))
-	var errs []error
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name, ok := strings.CutSuffix(entry.Name(), ".md")
-		if !ok || !validName(name) {
-			continue
-		}
-		p, ok, err := r.loadEntry(name, entry.Name())
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		if !ok {
-			continue
-		}
-		profiles = append(profiles, p)
-	}
-	if err := errors.Join(errs...); err != nil {
-		return nil, err
-	}
-	slices.SortFunc(profiles, func(a, b Profile) int { return strings.Compare(a.Name, b.Name) })
-	return profiles, nil
 }
 
 // Load reads one profile by name. ok is false when name is not a valid
@@ -107,11 +63,9 @@ func (r *Reader) List() ([]Profile, error) {
 // A path is never opened by name+".md" directly: on a case-insensitive
 // filesystem the kernel would fold that open onto whatever entry
 // case-folds to it, so Load("readme") could silently open README.md even
-// though README.md is not a valid profile name and List would never show
-// it (refinery-emv.7). Instead Load enumerates the directory, the same way
-// List does, and only opens an entry whose name matches name+".md" byte for
-// byte - an identity check, not a containment one, so it agrees with List
-// over every entry.
+// though README.md is not a valid profile name (refinery-emv.7). Instead
+// Load enumerates the directory and only opens an entry whose name matches
+// name+".md" byte for byte - an identity check, not a containment one.
 func (r *Reader) Load(name string) (Profile, bool, error) {
 	if !validName(name) {
 		return Profile{}, false, nil
@@ -132,11 +86,8 @@ func (r *Reader) Load(name string) (Profile, bool, error) {
 	return Profile{}, false, nil
 }
 
-// loadEntry reads and parses one directory entry already known to be
-// filename byte for byte - the caller has either matched it by identity
-// (Load) or read it straight off a ReadDir result (List), so this never
-// re-enumerates the directory itself. That split keeps List's one pass over
-// its own entries at O(n) instead of a ReadDir per entry.
+// loadEntry reads and parses one directory entry already matched by Load's
+// identity check, so this never re-enumerates the directory itself.
 func (r *Reader) loadEntry(name, filename string) (Profile, bool, error) {
 	path := filepath.Join(r.dir, filename)
 	raw, err := os.ReadFile(path)

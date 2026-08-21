@@ -21,7 +21,7 @@ further, in response to a fifth: uncommitted work is not reviewable at all —
 a diverged anchor is now caught by a precondition, checked once immediately
 after parse rather than folded into the general verification failure, and
 reported at its own exit code (3) rather than sharing `verification-required`'s
-(1) — see [§3.4](#34-verification-is-required-to-submit). Some of what
+(1) — see [../cli.md §2.3.1](../cli.md#231-verifying-anchors). Some of what
 follows deletes work an earlier revision did; that is noted where it
 happens rather than quietly dropped.
 
@@ -43,7 +43,7 @@ This feature closes it with two changes, not one:
   ([§2](#2-the-command), [§8.3](#83-the-markdown-projection)).
 - **`submit-review`**, `validate` renamed and, as of this revision,
   meaningfully stricter — not a pure rename
-  ([§3](#3-the-rename-to-submit-review)).
+  ([../cli.md §2.3](../cli.md#23-submit-review)).
 
 The two are one feature because the rename is what the new command's name
 has to agree with: a caller that *submits* a review *collects* reviews back,
@@ -59,11 +59,10 @@ shaped it. `collect-reviews` is what reads that trace back out, which is why
 it needs a new, optional document field to carry it
 ([§7](#7-the-profile-field)).
 
-Everything here is design, not implementation. No schema changes, no code,
-and — per the acceptance criteria this document exists to satisfy — no edits
-to `cli.md`, `config.md`, or `review-document.md`. Where this feature
-requires amending one of those three, [§11](#11-amendments) quotes exactly
-what it would amend; making that edit is a later bead.
+Everything here was design, not implementation, when this section was
+written. Where this feature required amending `cli.md`, `config.md`, or
+`review-document.md`, that edit has since been made directly in each of
+those three documents.
 
 ## 2. The command
 
@@ -98,14 +97,12 @@ divergence against.
 `--format` defaults to `json`. `markdown` is the one new accepted value,
 and it exists on this command alone — [§8.3](#83-the-markdown-projection)
 specifies exactly what it is and is not, and
-[§11.10](#1110-climd-51-the-markdown-exception) amends
-[cli.md §5.1](../cli.md#51-one-format) narrowly to allow it.
+[cli.md §5.1](../cli.md#51-one-format) is amended, narrowly, to allow it.
 `collect-reviews` is also the only command in the whole ladder that still
 carries a `--format` flag at all: a later, unrelated decision drops it
 from `submit-review`, `describe`, and `reviews` entirely, on the reasoning
 that a flag exists to choose between formats and none of those three has
 more than one to choose between — see
-[§3.1](#31-what-changes-the-name) and
 [../cli.md §5.1](../cli.md#51-one-format). `--format=text` is still an
 error here, the one place the flag survives to reject it — `markdown` is a
 distinct, named value, not a synonym for the one `cli.md §5.1` already
@@ -118,8 +115,8 @@ answers a `submit-review`-shaped question about one commit, and does not
 inherit `reviews`'s surface just because it reads the same tables. There is
 deliberately no flag to turn the check in [§4.3](#43-the-head-check) off,
 for the same reason verification itself has no opt-out on `submit-review`
-([§3.4](#34-verification-is-required-to-submit)): a check that a caller can
-silently skip is a check that will, on the run that most needed it, be
+([../cli.md §2.3.1](../cli.md#231-verifying-anchors)): a check that a caller
+can silently skip is a check that will, on the run that most needed it, be
 skipped.
 
 ### 2.1 Rejected names
@@ -146,9 +143,11 @@ row. Bolting it onto `reviews` would make that command's own specification
 say less than it does.
 
 **`aggregate-reviews`** — rejected on the word alone. `aggregate` is the
-exact term [§11](#11-amendments) amends out of two out-of-scope bullets;
-naming the command with the word being carefully un-said would undo the
-carefulness in the first breath.
+exact term the amended out-of-scope bullets in
+[../cli.md §1](../cli.md#1-overview) and
+[../config.md §1](../config.md#1-what-this-adds) now avoid; naming the
+command with the word being carefully un-said would undo the carefulness in
+the first breath.
 
 **`collect-reviews`** — chosen. It reads naturally after `submit-review` in
 the same way `reviews` reads naturally after `submit-review`'s predecessor,
@@ -173,343 +172,6 @@ it reads the store `reviews` reads, so it belongs beside `reviews` in the
 command list, in the same paragraph that carves both out of the disclosure
 ladder `prime` / `describe` / `describe --lens` / `schema` climbs.
 
-## 3. The rename to submit-review
-
-`validate` becomes `submit-review`, and — this revision's most significant
-change from the first draft — it stops being *only* a rename. Three
-separate decisions land on the same command at once: no migration path
-([§3.2](#32-no-alias-no-migration-plan)), no way to soften the checks that
-already exist ([§3.3](#33-no-disable-no-warn-only)), and a materially
-stricter default ([§3.4](#34-verification-is-required-to-submit)). The
-operation stopped being "does this document hold up" the moment a second
-command started reading what it stored, and the new name is meant to carry
-all of that, not just the new spelling.
-
-### 3.1 What changes (the name)
-
-The rename touches every place `validate` appears as a **command name** —
-the proper noun, usually backticked or following `loam-refinery` — and
-leaves untouched every place "validate" appears as an ordinary English verb
-about the act of checking a document. Concretely, and by way of the
-representative set rather than an exhaustive one — the full audit belongs to
-the edit bead, not this one:
-
-- [../cli.md §2](../cli.md#2-commands)'s usage synopsis renames, and
-  shrinks twice over. [§3.3](#33-no-disable-no-warn-only) and
-  [§3.4](#34-verification-is-required-to-submit) remove three of its
-  flags outright — `--require-verification`, `--warn-only=…`,
-  `--disable=…` — see [§11.8](#118-climd-2-23-and-the-flag-table). A
-  later, unrelated user decision removes a fourth, `--format json`: a
-  command with exactly one legal output format has nothing for the flag
-  to choose, and `collect-reviews` is the only command in this ladder
-  that does ([../cli.md §5.1](../cli.md#51-one-format)). `--strict` is
-  what survives.
-- The `### 2.3` heading itself, `` `validate` ``, becomes `` `submit-review` ``.
-  Unlike the mechanical renames in this list, its **body** needs substantive
-  edits, not just a name swap: today it says verification runs "if a source
-  is supplied," which described an optional tier; under
-  [§3.4](#34-verification-is-required-to-submit) a missing or unreachable
-  source is no longer a tolerated gap, it is a failing submission. This is
-  the one heading in the synopsis where the edit bead is rewriting
-  paragraphs, not substituting a word.
-- [../cli.md §3](../cli.md#3-flags)'s flag table loses four rows outright,
-  not three — `--warn-only`, `--require-verification`, `--disable` do not
-  survive as `submit-review` flags under any name, because
-  [§3.3](#33-no-disable-no-warn-only) and
-  [§3.4](#34-verification-is-required-to-submit) remove what they did; the
-  shared `--format json ... describe validate reviews` row is not renamed,
-  it is deleted too, because `--format` exists where there is a format to
-  choose and `submit-review`, `describe`, and `reviews` each have exactly
-  one. `--strict`'s row is the one genuinely open item here —
-  [§13](#13-open-questions) — so its fate is not decided by this document.
-- [../cli.md §4](../cli.md#4-exit-codes)'s narrative prose does not name
-  `validate` at all — it says "the review," "the invocation," "the tool" —
-  so nothing there moves on the name. Its content is affected by
-  [§3.4](#34-verification-is-required-to-submit): "unverified anchors under
-  `--require-verification`" in the exit-1 row's description names a flag
-  that no longer exists, and needs rewording to describe the new
-  unconditional behavior.
-- [../cli.md §6.1](../cli.md#61-budgets)'s budget table rows, `` `validate`,
-  clean ``, `` `validate`, clean, no repository ``, and the two beside them,
-  rename to `` `submit-review`, clean `` and so on. Whether the *numbers*
-  survive is a separate question this document does not answer: the "clean,
-  no repository" row specifically describes a case
-  [§3.4](#34-verification-is-required-to-submit) may have just made
-  unreachable for any document with anchors — see
-  [§3.4.4](#344-the-unreachable-ref-consequence).
-- [../config.md](../config.md)'s usage line in
-  [§5](../config.md#5-storing-a-review), `loam-refinery validate [path]`,
-  becomes `loam-refinery submit-review [path]`. The rest of that document
-  names `` `validate` `` as a backticked command name 21 times and renames
-  the same way; 10 further occurrences use "validate" as an ordinary
-  English verb and do not move — 21 and 10 sum to the file's 31 total
-  occurrences.
-- `internal/cli/cli.go`'s `usage` const, printed on `--help` and on the
-  unknown-command path, names `validate` twice today and renames both.
-- `internal/cli/prime.txt`, the budget-pinned text
-  ([../cli.md §2.1](../cli.md#21-prime)). **This now moves.** An earlier
-  revision of this document argued for leaving it alone, on the strength of
-  a permanent alias that made `validate` correct against every binary,
-  old and new. [§3.2](#32-no-alias-no-migration-plan) deletes that alias.
-  With no alias, `prime.txt` teaching `loam-refinery validate review.json`
-  would be teaching a command that, on an upgraded binary, no longer
-  exists — so it has to teach `submit-review` instead, and the reasoning
-  that previously argued against touching it no longer applies to anything.
-  This is a real edit to a golden-tested, budget-pinned file, and it is
-  worth measuring rather than asserting it fits:
-
-  Both occurrences of `validate` in the current text —
-  `` loam-refinery validate review.json `` and `` fix, validate again `` —
-  become `` loam-refinery submit-review review.json `` and
-  `` fix, submit-review again ``. `submit-review` is five characters longer
-  than `validate` (13 versus 8), twice, for ten additional characters
-  total. Measured with this repository's own token approximation
-  ([`internal/cli/budget_test.go`](../../internal/cli/budget_test.go),
-  `approxTokens`: `len(text) / 4`) against the actual current `prime`
-  output — `internal/cli/prime.txt` and the binary's own stdout agree,
-  byte for byte, exactly as the byte-identity guarantee requires — 967
-  characters, 241 tokens today; 977 characters, 244 tokens after the
-  rename. Both are comfortably under the 250-token ceiling
-  ([../cli.md §6.1](../cli.md#61-budgets)), with 6 tokens of headroom left
-  rather than the 9 there is today. The golden file
-  ([../cli.md §6.1](../cli.md#61-budgets), "The golden-file test pins
-  `prime`'s own text against the embedded `prime.txt`") is exactly the
-  mechanism that will catch it if this estimate is wrong once the actual
-  edit is made.
-
-### 3.2 No alias, no migration plan
-
-**Decision.** `validate` does not survive the rename in any form — no
-permanent alias, no deprecation window, no transitional stderr note telling
-a caller where the command went. A caller still typing `validate` after the
-binary upgrades gets exit 2, "unknown command," the same as any other typo.
-
-This reverses the previous revision's own design, which built a permanent
-alias specifically to avoid that failure, on the reasoning that a command
-name is API the same way a lens name is
-([../cli.md §2.2.1](../cli.md#221-lens-names)). That reasoning was not
-wrong; it was answering a question this project is not old enough to be
-asked yet. There is no installed base of callers depending on `validate`
-today whose breakage has to be engineered around, and building permanent
-alias machinery for a project at this stage is solving a problem that does
-not exist in exchange for a real one — a second name to keep correct forever,
-documented nowhere as deprecated, indistinguishable from the primary one to
-anyone reading the command switch later. **The cost is accepted outright:**
-every existing caller of `validate` breaks the moment this ships, and no
-flag, alias, or grace period softens that. It is a one-time cost paid once,
-by whoever is running this tool today, and it is smaller now than it will
-ever be again.
-
-### 3.3 No disable, no warn-only
-
-**Decision.** `submit-review` drops `--disable` and `--warn-only` entirely.
-Advisories always run and are always reported — the ability to
-`--disable=body-thin`, say, and have the tool stop looking, is gone.
-Verification checks always run and can never be individually demoted — the
-ability to `--warn-only=ref-unknown` and have a shallow clone's gap excused
-is gone, folded into the unconditional behavior
-[§3.4](#34-verification-is-required-to-submit) specifies.
-
-What survives structural checks was already true — they were never
-demotable — so this section changes the *advisory* and *verification* tiers
-specifically, the two that used to have a caller-facing knob. Advisory
-findings remain non-fatal by construction
-([../review-document.md §11](../review-document.md#11-validity), "Advisory
-checks ask *is this a good review?*... never hard") — removing `--disable`
-does not make an advisory an error, it only removes the ability to make the
-tool stop mentioning one a caller has decided it does not want to hear
-about. That is a real loss of configurability, stated plainly rather than
-minimized: a caller that found `suggestion-no-cons` noise for its use case
-previously had a way to quiet it, and now does not.
-
-### 3.4 Verification is required to submit
-
-#### 3.4.1 Why: nothing enters the store unverified
-
-This is the reason for the strictness, not a side effect of it, and it is
-worth stating that way before tracing what it costs. `ref`
-([§4](#4-ref-as-the-join-key)) only became the join key `collect-reviews`
-depends on because [§7.2](#72-caller-authored-and-unverifiable) already
-established it as a claim the tool cannot independently confirm — the SHA is
-real, but whether it names the commit the reviewer actually read is taken
-entirely on faith. Verification is the one mechanism that closes any part of
-that gap: it cannot confirm `ref` is *honest*, but it can and does confirm
-that every anchor the reviewer wrote actually resolves against it. Making
-that confirmation optional — as `submit-review`'s predecessor did, running
-it by default but tolerating a skip — meant the store could hold reviews
-nobody had ever checked, silently mixed in with reviews that had been. A
-combined view built on top of a store like that inherits the gap: two
-submissions for one ref, one fully verified and one never checked at all,
-sit side by side in `collect-reviews`'s output with nothing distinguishing
-them beyond a field a caller has to know to look for.
-
-**Decision.** Any anchor `submit-review` cannot confirm fails the
-submission, unconditionally — exit 3 when the cause is a working tree that
-was never committed, exit 1 for every other cause verification can name.
-This is the load-bearing property `collect-reviews` needs to be trustworthy
-at all: everything in the store was verified at the moment it was stored,
-full stop, and a caller reading a combined output never has to ask "was
-this one actually checked" the way it would have had to under the previous,
-optional design. The split between the two exit codes is new in this
-revision and is argued in full in
-[§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing); it changes
-*when* and *how loudly* an unconfirmable anchor fails the run, never
-*whether* it does.
-
-#### 3.4.2 The check and the policy are not the same thing
-
-`anchor-worktree-diverged` ([../cli.md §2.3.1](../cli.md#231-verifying-anchors))
-is unchanged by any of this, and it is worth being exact about why, because
-conflating the check with what happens to its result would undo a
-distinction worth keeping. The **check** is still monotonic: it can only
-withhold a verification, never grant one, and firing it never counts an
-anchor as *wrong*, only as *unconfirmed*. That property is untouched — this
-document is not proposing that a diverged anchor becomes evidence the
-comment is incorrect, which would be a different and unjustified claim.
-
-What changed, twice now, is the **policy** wrapped around the check's
-result. The first change made an unconfirmed anchor fatal at all — no
-longer tolerated by default and demotable only under
-`--require-verification`, now fatal unconditionally, the same for every
-verification check. Keeping this seam visible in the prose matters: it is
-the difference between "the check got stricter" (false) and "the tool got
-stricter about what it accepts from the check" (true).
-
-**The second change, this revision's, pulls `anchor-worktree-diverged`'s
-policy further out of line with the other three verification-required
-causes.** Instead of being folded into `verification-required` alongside a
-missing repository or an unreadable file, it is checked *first*, as a
-precondition on the whole run, before structural checks, before advisories,
-before any other anchor's verification — one diagnostic, not one per
-anchor; exit 3, not exit 1. The check still only withholds; what a withheld
-verification now costs a submission depends on *which* check withheld it,
-and that split is deliberate — argued in
-[§3.4.3](#343-the-uncommitted-work-consequence) below.
-
-The reason the other three causes — no repository, an unreachable one, a
-file git could not read — stay on the *ordinary* `verification-required`
-path rather than joining the precondition: none of them can be checked from
-the document alone, immediately after parse, the way divergence can.
-Whether a repository exists, whether it can be asked, and whether a given
-file is readable are all questions the ordinary verification pass already
-has to answer to check anything else; divergence is the one verification
-question answerable before any of that work starts, from `ref` and the
-anchor list alone — which is exactly what makes it eligible to gate
-everything else.
-
-#### 3.4.3 The uncommitted-work consequence
-
-The sharpest instance of [§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing)
-is [§4.2](#42-head-and-diverging-working-trees)'s own subject: a review of
-uncommitted work. `anchor-worktree-diverged` fires whenever `ref` is `HEAD`
-and an anchored file's working-tree copy no longer matches the blob at
-`ref` — which is exactly the ordinary state of a checkout somebody is
-actively editing. Under the very first design, that fired, was reported,
-and the submission still stored, unverified anchor and all. Under the
-previous revision, it fired and failed the submission, but only after the
-ordinary flow — parse, structural checks, per-anchor verification
-collecting every diverged anchor into a list — reached the point of
-noticing. **This revision makes it a precondition instead: checked once,
-immediately after parse, before anything else runs at all.**
-
-The reason is bluntly practical. A reviewer whose whole premise was
-wrong — the state it read was never committed — does not benefit from being
-told so once per anchor, wrapped in whatever structural or advisory
-findings the rest of the document happened to also produce. Twelve anchor
-failures teach the same one-sentence lesson twelve times, badly, and
-correcting a structural nit in a document that cannot be submitted at all
-is wasted work on both sides. `submit-review` therefore reports the
-precondition's failure as **one diagnostic**, naming
-`anchor-worktree-diverged` once for the whole document, and stops — nothing
-else about the document is checked. **A review of a dirty working tree
-cannot be submitted, and the tool says so before spending any further
-effort finding out what else is wrong with it.**
-
-This is a real constraint on any orchestrator that wants a reviewer to look
-at in-progress, uncommitted changes, and stating it plainly is better than
-letting it be discovered as a surprising wall of failures. The workflow it
-forces: commit what was reviewed — even to a throwaway branch — or use
-`git stash create`, which builds a real commit object out of the working
-tree and the index without touching either, giving the reviewer a genuine,
-resolvable SHA to anchor against instead of `HEAD` plus a promise that
-nothing will move. Either way, `submit-review` now requires the reviewed
-state to be a commit, not a moment.
-
-**Exit 3, not exit 1.** [../cli.md §4](../cli.md#4-exit-codes) reserves a
-new band, 3–9, for exactly this class of problem: the review is not wrong
-and the invocation is not wrong, but something about the reviewed *state*
-is, and no amount of revising the document fixes it. Only `git commit` or a
-different, resolvable `ref` does, and a subagent reviewing on an
-orchestrator's instruction typically has authority over neither — which is
-why the failure escalates rather than asking the reviewer to retry. Design
-principle 4, "errors route to their own explanation"
-([../cli.md §1](../cli.md#1-overview)), is why the lens matters more here
-than almost anywhere else in this format: `describe --lens=anchor-worktree-diverged`
-has to state both remedies — commit, or `git stash create` — and say
-explicitly that this is not a check to retry against, because resubmitting
-the identical document against the identical dirty tree cannot succeed, and
-a reviewer that treats exit 3 like exit 1 loops until something outside the
-review changes.
-
-#### 3.4.4 The unreachable-ref consequence
-
-The same unconditional-verification shift has a second consequence
-[§3.4.3](#343-the-uncommitted-work-consequence) does not cover — a
-different failure, staying on the *ordinary* `verification-required` path
-at exit 1 rather than joining the precondition, because
-[§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing)'s reason for
-pulling divergence out does not apply to it: whether a repository can be
-asked is not answerable from the document alone the way divergence is.
-Worth tracing anyway, because it was the other legitimate use `--warn-only`
-served. `ref-unknown` fires when the document's `ref` does not resolve in
-the repository at all — a shallow clone that never fetched
-the reviewed commit, or a branch deleted and garbage-collected since.
-[../cli.md §2.3.1](../cli.md#231-verifying-anchors) previously named this
-explicitly as the case `--warn-only=ref-unknown` existed for: "a repository
-legitimately lacking the reviewed commit." That escape hatch is gone along
-with the rest of `--warn-only`.
-
-**A reviewer working from a shallow clone that does not contain the
-reviewed commit can no longer submit a document with any anchors in it, and
-there is no flag to work around it.** The only fix is a deeper fetch before
-submitting — `git fetch --deepen` or an unshallow clone — not a command-line
-option. The same holds for running `submit-review` **outside a repository
-entirely**: previously "ordinary," reporting `source: none` and passing
-regardless
-([../cli.md §2.3.1](../cli.md#231-verifying-anchors), "Running outside a
-repository is ordinary... Neither fails the run"); now, any document that
-carries at least one anchor fails, because nothing can confirm an anchor
-with no repository to ask. The one case this does not touch is a document
-with **no anchors at all** — an `approve` verdict with no comments, or
-comments that are architectural and carry none
-([../review-document.md §5](../review-document.md#5-anchor-object),
-"Architectural findings that have no single location may carry no anchors
-at all") — there is nothing for verification to confirm, so nothing about
-this policy applies to it, the same carve-out the old
-`--require-verification` flag already made explicit.
-
-#### 3.4.5 What `verification-required` now means
-
-No new check name is introduced for the three causes that remain.
-`verification-required` already existed as the name `--require-verification`
-produced when any anchor claim went unchecked — originally "no repository,
-an unreachable one, a single file git could not read, or an anchor into a
-file that has diverged"
-([../cli.md §2.3.1](../cli.md#231-verifying-anchors)). **This revision
-narrows that list by one.** Divergence moved to its own precondition
-([§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing),
-[§3.4.3](#343-the-uncommitted-work-consequence)), with its own exit code;
-`verification-required`'s trigger is now the remaining three — no
-repository, an unreachable one, a single file git could not read — and it
-still always runs, the way every other verification check always ran. This
-is not the repurposing
-[../review-document.md §11.5](../review-document.md#115-name-stability)
-warns against: the check's name, its meaning, and its exit code (1) are
-untouched for the three causes that still trigger it. What moved is which
-causes are *its* to report at all — `anchor-worktree-diverged` never shared
-a check name with `verification-required`, only a consequence, and this
-revision is what stops it sharing that too.
-
 ## 4. Ref as the join key
 
 Today `ref` decides one thing: what an anchor resolves against
@@ -527,9 +189,10 @@ commit the reviewer actually read, and nothing else in the format could:
 ([../review-document.md §4](../review-document.md#4-comment-object)) and the
 same way `profile` will be ([§7.2](#72-caller-authored-and-unverifiable)).
 Say that plainly rather than pretend `collect-reviews` adds provenance it
-does not have — [§3.4.1](#341-why-nothing-enters-the-store-unverified)
-narrows what verification can confirm about a submission, but it was never
-going to be able to confirm this.
+does not have — unconditional verification
+([../cli.md §2.3.1](../cli.md#231-verifying-anchors)) narrows what
+verification can confirm about a submission, but it was never going to be
+able to confirm this.
 
 ### 4.1 A ref that resolves to the wrong commit
 
@@ -539,9 +202,8 @@ else advanced it — produces a document that is structurally perfect and
 verifies cleanly against the *wrong* tree. Nothing in `submit-review` can
 catch it, even now: the ref it names is real, the anchors it carries
 genuinely exist at that ref, and every check this format defines passes.
-[§3.4](#34-verification-is-required-to-submit) makes verification
-unconditional; it does not make it able to ask a question it was never
-designed to answer.
+Unconditional verification ([../cli.md §2.3.1](../cli.md#231-verifying-anchors))
+does not make it able to ask a question it was never designed to answer.
 
 Under `reviews`, that mistake is contained: the review files under a ref
 nobody asked about, and a caller has to go looking for it to be misled by
@@ -558,8 +220,9 @@ value.
 ### 4.2 HEAD and diverging working trees
 
 The sharper version of the same problem is what happens to reviews of
-**uncommitted** work — which, as of [§3.4.3](#343-the-uncommitted-work-consequence),
-can no longer reach the store at all in their dirty form. That closes one
+**uncommitted** work — which, as of the uncommitted-work precondition
+([../cli.md §2.3.1](../cli.md#231-verifying-anchors)), can no longer reach
+the store at all in their dirty form. That closes one
 gap this section used to describe and leaves a narrower one open, and it is
 worth being precise about which is which.
 
@@ -568,9 +231,10 @@ resolves `git rev-parse HEAD` and names the nearest real commit there is.
 Two reviewers launched against the same checkout — a `go` profile and a
 `security` profile, say — can both resolve the same `HEAD` SHA while the
 working tree itself changes in between: a file edited after the first
-reviewer read it and before the second one started. Under
-[§3.4](#34-verification-is-required-to-submit), each individual submission
-is now guaranteed to have matched `ref` cleanly **at the moment it was
+reviewer read it and before the second one started. Under unconditional
+verification ([../cli.md §2.3.1](../cli.md#231-verifying-anchors)), each
+individual submission is now guaranteed to have matched `ref` cleanly **at
+the moment it was
 submitted** — a submission that did not match no longer reaches the store
 at all. What is **not** guaranteed is that the two submissions matched
 *each other*: the tree can still have moved between the first reviewer's
@@ -581,8 +245,8 @@ read genuinely different states of the same nominal `ref`.
 This is the interaction the `anchor-worktree-diverged` check
 ([../cli.md §2.3.1](../cli.md#231-verifying-anchors)) exists for, and it
 remains monotonic — it can only *withhold* a verification, never *grant*
-one — even though [§3.4](#34-verification-is-required-to-submit) now makes
-withholding fatal at submit time rather than merely reported. A clean
+one — even though verification being unconditional now makes withholding
+fatal at submit time rather than merely reported. A clean
 `submit-review` run is evidence that, **at the moment that run executed**,
 the working tree matched `ref` for every file that run's anchors touched.
 It says nothing about a *different*, later-verified run against the same
@@ -592,8 +256,9 @@ about making it mandatory changes that.
 
 ### 4.3 The head check
 
-[§3.4](#34-verification-is-required-to-submit) narrows this section's job
-considerably from the first draft. Under the previous, optional-verification
+Unconditional verification ([../cli.md §2.3.1](../cli.md#231-verifying-anchors))
+narrows this section's job considerably from the first draft. Under the
+previous, optional-verification
 design, `collect-reviews` had to assume a stored review's anchors might
 never have been checked at all, so its own recheck had to answer "is this
 anchor sound, full stop" from scratch, with no help from what submission
@@ -606,23 +271,23 @@ the first draft had to ask.
 **Decision.** When `--ref` names the repository's current `HEAD`, and a
 repository is available to ask, `collect-reviews` re-runs the same
 divergence check — `anchor-worktree-diverged`, the identical check
-[§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing) leaves
-untouched, not a new one — against every anchor carried by every comment in
-the combined output, fresh, at collection time. This answers "does this
-anchor, confirmed good at submission, still match `ref` right now" — a
-drift check, not a from-scratch confirmation. The property that licenses it
-is the same monotonicity [§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing)
-preserves: the recheck can only remove an anchor from "still matches," never
-add one, so running it a second time, at a second call site, withholds
-confidence rather than manufacturing it.
+([../cli.md §2.3.1](../cli.md#231-verifying-anchors)) leaves untouched, not a
+new one — against every anchor carried by every comment in the combined
+output, fresh, at collection time. This answers "does this anchor, confirmed
+good at submission, still match `ref` right now" — a drift check, not a
+from-scratch confirmation. The property that licenses it is the same
+monotonicity that check preserves: the recheck can only remove an anchor
+from "still matches," never add one, so running it a second time, at a
+second call site, withholds confidence rather than manufacturing it.
 
 #### 4.3.1 The `head_check` shape
 
 Modeled on the shape `verification.unverified` used to have on
-`submit-review`'s own output, before [§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing)
-turned that per-anchor outcome into a run-level precondition and removed
-the field from that command's result object entirely
-([../cli.md §5.2](../cli.md#52-the-result-object) says so directly now).
+`submit-review`'s own output, before the precondition
+([../cli.md §2.3.1](../cli.md#231-verifying-anchors)) turned that per-anchor
+outcome into a run-level precondition and removed the field from that
+command's result object entirely ([../cli.md §5.2](../cli.md#52-the-result-object)
+says so directly now).
 The shape is not gone, only moved: it is the same kind of fact — a check
 name, a comment, a reason — reported at a *second* call site that still
 needs exactly this granularity, because `collect-reviews` is asking a
@@ -688,9 +353,10 @@ the codebase's own architecture.
    `*verify.Verifier` is `Verify(ctx, doc) ([]review.Diagnostic, []review.Skipped, review.Verification)`,
    which also runs `ref-unknown`, `anchor-file-missing`, and
    `anchor-line-out-of-range` — checks whose answers cannot have changed
-   since submission, because `ref` is an immutable SHA and, as of
-   [§3.4](#34-verification-is-required-to-submit), every stored document
-   already passed them once. Calling it anyway and reading only
+   since submission, because `ref` is an immutable SHA and, with
+   verification unconditional ([../cli.md §2.3.1](../cli.md#231-verifying-anchors)),
+   every stored document already passed them once. Calling it anyway and
+   reading only
    `Verification.Unverified` — "one entry per anchor a dirty working tree
    kept from being checked: `anchor-worktree-diverged`, and nothing else,
    can populate this," per that type's own comment in
@@ -725,8 +391,10 @@ confirmed. Whether the tree looked the same at the two *submission* times is
 a question this design has no way to answer, because nothing records what
 the working tree looked like at either moment beyond the anchors each
 reviewer happened to touch. This residual gap is real and is left explicitly
-open in [§13](#13-open-questions) rather than papered over with a check that
-would look more reassuring than it is.
+open, recorded against the provenance-hash proposal
+([../cli.md §8](../cli.md#8-future-considerations)) that would be needed to
+close it, rather than papered over with a check that would look more
+reassuring than it is.
 
 ## 5. Merge semantics
 
@@ -798,8 +466,8 @@ identity `duplicate-anchor` already uses
 evidence than either reviewer alone. Surfacing that signal without fusing
 the comments it comes from is real, useful work this document does not
 attempt to specify, and is recorded as deferred in
-[§13](#13-open-questions) rather than built on the strength of one design
-pass.
+[../cli.md §8](../cli.md#8-future-considerations) rather than built on the
+strength of one design pass.
 
 ### 5.3 Multiple submissions, one ref: enumeration and survival
 
@@ -824,8 +492,7 @@ comment in that document would appear twice under what would then be the
 *same* qualified id, exactly the collision [§6.1](#61-the-qualified-id)
 exists to prevent.
 
-**Decision.** `collect-reviews` enumerates **distinct digests** under
-`<store>/reviews/<repo>/<ref>/` ([../config.md §4.1](../config.md#41-layout)),
+**Decision.** `collect-reviews` enumerates **distinct digests** for the ref,
 not rows in `runs`. This is the identity `reviews` already declines to use
 for its own index — that command deliberately reports one row per run,
 because a run log is the point of it: repeated identical attempts are
@@ -1027,7 +694,8 @@ given ordinal-qualified id *across* responses is not, and this document
 does not claim otherwise.
 
 The `#` prefix is not decoration — it is what keeps the two qualifier forms
-from colliding. `profile-format` ([§11.6](#116-profile-format-a-shape-check))
+from colliding. `profile-format`
+([../review-document.md §11.1](../review-document.md#111-structural-checks--hard))
 allows an all-digit name (`^[a-z0-9]+(-[a-z0-9]+)*$` matches `"3"`), so a
 bare ordinal like `3:dropped-context-1` would be genuinely ambiguous with a
 profile literally named `3`. `#` is outside both the profile grammar and
@@ -1049,7 +717,7 @@ with instead, rather than the universal mechanism `§8` originally sketched.
 
 Parsing the common case is unambiguous because the two halves come from
 disjoint character sets, **provided `profile` is shaped the way
-[§11.6](#116-profile-format-a-shape-check) proposes**: a profile name is
+`profile-format` requires**: a profile name is
 lowercase letters, digits, and hyphens, no colon possible
 ([../cli.md §2.1.2](../cli.md#212-the-profile-file)), and a comment id
 matches `^[a-z][a-z0-9]*(-[a-z0-9]+)*-[1-9][0-9]*$`
@@ -1058,10 +726,12 @@ colon possible. Without that shape check, `profile` is only constrained by
 [§7.2](#72-caller-authored-and-unverifiable)'s honesty argument to being a
 string — nothing stops `profile: "arch:v2"`, which would produce
 `arch:v2:dropped-context-1` and break the very claim this paragraph makes.
-[§11.6](#116-profile-format-a-shape-check) closes this with a structural
-check — shape only, no claim about honesty, exactly like `ref-format` — and
-it is a precondition for this section's own round-trip claim to hold, not
-an optional nicety. `origin_id` itself is not a separate field on the
+`profile-format`
+([../review-document.md §11.1](../review-document.md#111-structural-checks--hard))
+closes this with a structural check — shape only, no claim about honesty,
+exactly like `ref-format` — and it is a precondition for this section's own
+round-trip claim to hold, not an optional nicety. `origin_id` itself is not
+a separate field on the
 comment ([§8.1](#81-shape)) — it is always the substring after the first
 colon in `id`, recoverable by every caller the same way, never carried
 twice.
@@ -1139,35 +809,19 @@ That failure lands on a reviewer whose contract-correct response, per
 and resubmit — silently discarding attribution and supersession-eligibility
 for a review that was otherwise completely sound, on a failure that is a
 rollout ordering problem being misreported as a defect in the review. It
-gets worse under [§3.4](#34-verification-is-required-to-submit): the failed
-run is now guaranteed to be recorded, since every run records a row
-regardless of outcome, and shows up in `reviews --failed` as a false signal
-that this reviewer produced a bad review.
+gets worse under unconditional verification
+([../cli.md §2.3.1](../cli.md#231-verifying-anchors)): the failed run is now
+guaranteed to be recorded, since every run records a row regardless of
+outcome, and shows up in `reviews --failed` as a false signal that this
+reviewer produced a bad review.
 
-**The rollout constraint this implies:** the schema change proposed in
-[§11.5](#115-the-root-object-table-and-the-schema) must reach every binary
-an orchestrator might run a reviewer against **before** any `prime.txt`,
-profile file, or prompt teaches a reviewer to emit `profile` at all. This is
-not unique to `profile` — `additionalProperties: false` means every future
-field this format ever adds carries the identical exposure — and this
-document is not proposing a general fix for it, because there is not an
-obvious one that does not weaken the very property "unknown field"
-protection exists for
-([../review-document.md §3](../review-document.md#3-root-object)).
-
-This is the same discipline [§3.2](#32-no-alias-no-migration-plan) declines
-to soften for the opposite reason. There, an old caller typing the old
-command name against a new binary simply breaks, on purpose, with no
-alias to catch it. Here, a new document field reaching an old binary's
-schema breaks the same way, with no fallback to catch it either — but this
-one is not an accepted breaking cost the way [§3.2](#32-no-alias-no-migration-plan)'s
-is, because it is avoidable by sequencing: ship the schema everywhere before
-teaching anyone to use it. The two sections reach different postures — one
-accepts breakage outright, one insists on an ordering that prevents it —
-because one is a one-time cost paid by whoever runs the tool today, and the
-other is an ongoing cost that would be paid by every reviewer that gets
-upgraded prompts before an upgraded binary, for as long as that gap persists
-on a given machine.
+**The rollout constraint this implies** — the schema change has to reach
+every binary an orchestrator might run a reviewer against before any
+`prime.txt`, profile file, or prompt teaches a reviewer to emit `profile` at
+all — is stated in full at
+[../review-document.md §3](../review-document.md#3-root-object), which now
+owns it: it is not unique to `profile`, since `additionalProperties: false`
+means every future field this format adds carries the identical exposure.
 
 ### 7.1 Why not lens
 
@@ -1200,13 +854,14 @@ it wrote one at all when it should have. A reviewer could claim a profile it
 was never primed with, or claim one shared with an unrelated reviewer
 entirely by coincidence — the exact case [§5.3.2](#532-marking-not-deleting)
 now designs around rather than trusts — and the document would validate
-exactly as cleanly either way, even under
-[§3.4](#34-verification-is-required-to-submit)'s stricter posture:
+exactly as cleanly either way, even under unconditional verification's
+([../cli.md §2.3.1](../cli.md#231-verifying-anchors)) stricter posture:
 verification confirms anchors, never the honesty of `profile`.
 
 **A shape check is not a honesty check, and costs this section nothing.**
-[§11.6](#116-profile-format-a-shape-check) proposes `profile-format`, a
-structural check constraining `profile` to the same character grammar
+`profile-format`
+([../review-document.md §11.1](../review-document.md#111-structural-checks--hard))
+is a structural check constraining `profile` to the same character grammar
 `cli.md §2.1.2` already defines for the *filename* a profile resolves to. It
 rejects `profile: "arch:v2"` for containing a colon, the same way
 `ref-format` rejects a branch name for not being 40 hex characters — on
@@ -1264,9 +919,9 @@ another — it simply stops being reported. `origin_id` is gone from
 `comments[]` too, not because it stopped mattering but because it was
 redundant with `id`: every qualified id is `<qualifier>:<origin_id>`
 ([§6.1](#61-the-qualified-id)), and `profile-format`
-([§11.6](#116-profile-format-a-shape-check)) is what makes splitting on the
-first colon a reliable way to recover it — carrying it a second time would
-have been the same fact stated twice.
+([../review-document.md §11.1](../review-document.md#111-structural-checks--hard))
+is what makes splitting on the first colon a reliable way to recover it —
+carrying it a second time would have been the same fact stated twice.
 
 **`ordinal` is what replaces `digest` as the identity of a submission that
 has no clean profile qualifier.** A submission with no `profile`, or one
@@ -1432,11 +1087,11 @@ Markdown renderer formats it, and **neither computes anything the other
 does not already have**. No re-sorting, no re-filtering, no re-deriving a
 count, no branch in the Markdown path that asks the store a question the
 JSON path did not already ask. `internal/render`
-([../cli.md §7.1](../cli.md#71-package-layout), "the json renderer") gains
-a second formatter beside the JSON one, taking the identical value the
-first one takes — not a second implementation of `collect-reviews`'s own
-logic wearing a different output format, which is exactly the shape of
-thing `§5.1`'s own war story describes going wrong.
+([../cli.md §7.1](../cli.md#71-package-layout), "the json and markdown
+renderers") carries a second formatter beside the JSON one, taking the
+identical value the first one takes — not a second implementation of
+`collect-reviews`'s own logic wearing a different output format, which is
+exactly the shape of thing `§5.1`'s own war story describes going wrong.
 
 This is a stronger constraint than "render the same fields," and it needs
 to be, because "render the same fields" is what a second, independently
@@ -1454,9 +1109,9 @@ originated from one of two places, and they get different treatment.
 `verdict`, `category`, `effort`, `scope` — are already safe by
 construction. `id` is always `<qualifier>:<origin_id>`
 ([§6.1](#61-the-qualified-id)), and both halves are individually
-constrained: the qualifier is either a `profile-format`-shaped name
-([§11.6](#116-profile-format-a-shape-check)) or `#` followed by a plain
-integer `ordinal`, and `origin_id` matches
+constrained: the qualifier is either a `profile-format`-shaped
+([../review-document.md §11.1](../review-document.md#111-structural-checks--hard))
+name or `#` followed by a plain integer `ordinal`, and `origin_id` matches
 `^[a-z][a-z0-9]*(-[a-z0-9]+)*-[1-9][0-9]*$`
 ([../review-document.md §4](../review-document.md#comment-ids)); enums are
 closed sets; `ordinal` is a JSON integer. None of these character sets
@@ -1661,11 +1316,14 @@ the *repository*, not the ref.
 unlike `reviews`'s default index, which answers entirely from the database
 ([../config.md §6](../config.md#6-reading-the-store)) — so it inherits the
 content-reading contract [../config.md §6.3](../config.md#63-missing-and-foreign-files)
-already specifies for `reviews --content`: a deleted or corrupted file is
-**skipped and counted**, not fatal, in `unreadable` on the envelope. Unlike
-`reviews`, where `unreadable` appears only when `--content` was asked for,
-`collect-reviews` always reads content, so `unreadable` is always present
-here, `0` when nothing was missing.
+already specifies for `reviews --content`: a deleted, unreadable, or
+digest-mismatched file — bytes read back that no longer hash to the digest
+they are filed under — is **skipped and counted**, not fatal, in
+`unreadable` on the envelope — see
+[../config.md §6.3](../config.md#63-missing-and-foreign-files) for why
+`unreadable` is always present here rather than only under `--content`, and
+for why the two causes get identical envelope treatment while still being
+told apart in this run's own logs.
 
 **`store.enabled: false` does not gate this command, and reporting it is
 not the same thing as gating on it.** The flag
@@ -1682,10 +1340,8 @@ What *should* change is what the caller can tell from the output, and
 [§8.1](#81-shape)'s `store.enabled` field is that fix — the precedent is
 `verification.source`, which is not a gate on whether `submit-review` runs
 either, only a fact the result object reports about the run's own
-condition. [§11.7](#117-a-note-on-storeenabled-and-configmd-52) records the
-operational consequence this creates for
-[../config.md §5.2](../config.md#52-turning-it-off)'s read-only-image
-option.
+condition. [../config.md §5.2](../config.md#52-turning-it-off) records the
+operational consequence this creates for its read-only-image option.
 
 ## 10. Budget
 
@@ -1694,19 +1350,12 @@ submissions, the number of comments each carries, and, since
 [§5.3.2](#532-marking-not-deleting) keeps every submission rather than
 deleting superseded ones, with however many times each reviewer has ever
 resubmitted against this ref. The honest form to give it is `reviews`'s
-marginal-cost shape — an envelope plus a per-row cost — with the actual
-numbers left unmeasured, because inventing them ahead of an implementation
-to measure against is exactly the mistake
-[../cli.md §6.1](../cli.md#61-budgets) already warns against: "a limit
-nothing measures is a limit that erodes." (`prime`, `describe`, `schema`,
-and `reviews` all carry real measured figures against their ceilings today;
-`collect-reviews` does not exist yet to measure, and this table says so
-rather than filling the gap with a plausible-looking number.)
-
-| Call | Budget | Frequency |
-| --- | --- | --- |
-| `collect-reviews --format json` | *not yet measured* — envelope + *N* per submission + *M* per comment + *D* per diverged anchor | Rare; only when an orchestrator has run more than one reviewer against one ref |
-| `collect-reviews --format markdown` | unbudgeted | Rare; human reading, or embedding somewhere a human reads it — see the boundary in [§8.3.3](#833-the-test-that-pins-it) |
+marginal-cost shape — an envelope plus a per-row cost — and, now that
+`collect-reviews` exists to measure, the actual numbers are measured
+against it rather than invented, the same way `prime`, `describe`, `schema`,
+and `reviews` already are:
+[../cli.md §6.1](../cli.md#61-budgets) carries the row and the measurement
+that produced it, and this section restates only the shape.
 
 Shape, reasoned from what the object actually carries, in four parts for
 the JSON form:
@@ -1737,8 +1386,9 @@ the JSON form:
   content, smaller than the previous revision's four-field estimate.
 - **Per diverged anchor.** `head_check.diverged` is a per-anchor list in
   exactly the shape `verification.unverified` used to have on
-  `submit-review`'s own output, before [§3.4.2](#342-the-check-and-the-policy-are-not-the-same-thing)
-  moved that outcome to a precondition and took the field with it
+  `submit-review`'s own output, before the precondition
+  ([../cli.md §2.3.1](../cli.md#231-verifying-anchors)) turned that outcome
+  into a run-level failure and took the field with it
   ([§4.3.1](#431-the-head_check-shape)). The per-entry cost does not move
   with it: [../cli.md §6.1](../cli.md#61-budgets)'s standing ceiling for one
   diagnostic-shaped entry — a check name, a comment, and a reason, 60
@@ -1765,259 +1415,6 @@ iteration, just facing a person instead of a codegen tool.
 drop one reviewer's findings from a call whose whole purpose is not doing
 that — this is recorded as a real cost of the design, not an oversight, and
 is why the JSON row above has no ceiling to give, only a shape.
-
-## 11. Amendments
-
-Design principles are revised in the open here, the same posture
-[../config.md §1.1](../config.md#11-what-this-changes-about-the-design-principles)
-already uses for its own promises and [../cli.md §1](../cli.md#1-overview)
-uses for verification's working-tree read.
-
-### 11.1 The out-of-scope bullet
-
-[../cli.md §1](../cli.md#1-overview) currently reads, under "Explicitly out
-of scope":
-
-> Aggregating reviews. Passing reviews can be kept ([config.md](../config.md)),
-> but they are kept side by side — never merged, ranked, reconciled, or
-> summarized across runs.
-
-**Amended, narrowly.** `collect-reviews` combines the stored reviews for one
-ref into one attributed output. What survives, stated as precisely as the
-amendment this bullet already models for reading file contents: reviews are
-never fused into fewer findings across profiles
-([§5.2](#52-grouping-by-profile-not-by-slug)), never ranked against each
-other, and never reduced to a single reconciled verdict
-([§5.4](#54-verdict-reported-never-reconciled)). What changes is narrower
-than the bullet's own words suggest: within one claimed profile, a later
-submission is marked current relative to an earlier one
-([§5.3.2](#532-marking-not-deleting)), without deleting the earlier one's
-findings. And aggregation across **refs** remains entirely out of scope;
-`collect-reviews` combines within one ref and refuses to run without one
-([§2](#2-the-command)).
-
-### 11.2 The standing "no aggregation" bullet
-
-Separately from the out-of-scope list, [../config.md §1](../config.md#1-what-this-adds)
-carries its own commitment, in a list that document itself calls "the
-boundary that keeps this addition from turning the tool into something
-else":
-
-> No aggregation. Reviews are stored side by side, not merged, ranked, or
-> reconciled. Merging is still [cli.md §8](cli.md#8-future-considerations).
-
-**Amended, the same way as [§11.1](#111-the-out-of-scope-bullet).** The
-store itself is unchanged by this feature — reviews are still written side
-by side. What changes is that a second command now reads several of them
-back as one attributed view, under the same narrow scope
-[§11.1](#111-the-out-of-scope-bullet) states. The bullet's own final
-sentence should now point at this document instead of at the
-future-considerations entry [§11.4](#114-the-review-merging-future-consideration)
-retires.
-
-### 11.3 The amendment table row
-
-[../config.md §1.1](../config.md#11-what-this-changes-about-the-design-principles)
-currently carries this row:
-
-> | Aggregating across runs is out of scope | Unchanged. |
-
-**Amended.** The row should read:
-
-| Principle | Standing |
-| --- | --- |
-| Aggregating across runs is out of scope | **Amended, narrowly.** `loam-refinery collect-reviews` combines the reviews stored for one ref into one attributed output — see [docs/features/combined-reviews.md](../features/combined-reviews.md). Findings are combined, never fused across profiles, ranked, or reduced to one verdict; a later submission under the same claimed profile is marked current relative to an earlier one, without deleting the earlier one's findings. Aggregation across *refs* is unchanged and still out of scope. |
-
-### 11.4 The review-merging future consideration
-
-[../cli.md §8](../cli.md#8-future-considerations) currently carries:
-
-> **Review merging.** A `loam-refinery merge` subcommand combining several
-> subagent reviews into one. Comment IDs and slug grouping are what make
-> this tractable: merge by slug, keep the highest priority per group, and
-> union the suggestions. Suffixes are renumbered on merge, so IDs are
-> stable within a document but not across them.
-
-**Retired, in favor of this document.** Left standing, this bullet would
-have `cli.md` specifying a `merge` command with a slug-fusion mechanism this
-document declines to build ([§5.1](#51-why-not-by-slug),
-[§2.1](#21-rejected-names)), alongside a real, differently-named command
-that does something related but more specific. Replace with: "**Combined
-reviews.** Specified in
-[docs/features/combined-reviews.md](../features/combined-reviews.md):
-`collect-reviews`, not `merge`; grouped by profile, not by slug."
-
-### 11.5 The root object table and the schema
-
-Until `profile` is a recognized field,
-[../review-document.md §3](../review-document.md#3-root-object)'s own
-`additionalProperties: false` means `submit-review` **rejects** the
-documents `collect-reviews` is specified to read. That table's five fields
-— `version`, `verdict`, `summary`, `ref`, `comments` — all required.
-**Amended** to add a sixth, optional, row:
-
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `profile` | string | no | The reviewer profile ([cli.md §2.1.1](../cli.md#211-reviewer-profiles)) this review was written under, if any — the same `NAME` as `prime --profile=NAME`. Caller-authored and unverifiable, like `id`. Shape constrained by `profile-format` ([§11.6](#116-profile-format-a-shape-check)); honesty is not. Read by `loam-refinery collect-reviews` for attribution. |
-
-`internal/schema/review.schema.json` needs the matching property, added to
-`properties` and left out of `required`:
-
-```json
-"profile": {
-  "title": "Reviewer profile",
-  "description": "The name of the reviewer profile (cli.md §2.1.1) this review was written under, if any — the same NAME passed to `prime --profile=NAME`. Optional: omitted when the reviewer ran unprimed. Caller-authored and unverifiable, like id.",
-  "$comment": "related: profile-format",
-  "type": "string",
-  "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
-  "examples": ["backend"]
-}
-```
-
-[§7](#7-the-profile-field) states the rollout constraint this amendment
-implies.
-
-### 11.6 `profile-format`, a shape check
-
-A companion amendment to [§11.5](#115-the-root-object-table-and-the-schema).
-[../review-document.md §11.1](../review-document.md#111-structural-checks--hard)'s
-structural checks table gains a row, directly beside `ref-format`:
-
-| Check | Rule |
-| --- | --- |
-| `profile-format` | `profile`, where present, matches `^[a-z0-9]+(-[a-z0-9]+)*$` — the same grammar [cli.md §2.1.2](../cli.md#212-the-profile-file) already defines for the filename a profile resolves to. Checkable without a repository, exactly like `ref-format`. |
-
-This costs [§7.2](#72-caller-authored-and-unverifiable) nothing: it
-constrains shape, not honesty. It exists because
-[§6.1](#61-the-qualified-id)'s qualified-id round-trip claim depends on
-`profile` never containing a colon.
-
-### 11.7 A note on `store.enabled` and config.md §5.2
-
-[../config.md §5.2](../config.md#52-turning-it-off) currently presents
-`{"version":"1","store":{"enabled":false}}` as one of two supported ways to
-run in an environment where `submit-review` must not write, with no
-qualification. **Amended, by addition rather than contradiction:** a note
-that an operator choosing this option, once `collect-reviews` exists, gets
-no output from it — ever, for that machine — and that `collect-reviews`
-reports `store.enabled` on its own envelope
-([§8.1](#81-shape)) precisely so a caller in that position can tell "off"
-from "nobody has reviewed this yet." An operator who needs both — a
-read-only image *and* `collect-reviews` reading something back — has to use
-[../config.md §5.2](../config.md#52-turning-it-off)'s other option instead,
-`LOAM_REFINERY_HOME` pointed at somewhere writable.
-
-### 11.8 cli.md §2, §2.3, and the flag table
-
-Beyond the mechanical renames [§3.1](#31-what-changes-the-name) lists,
-three passages change **meaning**, not just spelling, and belong here rather
-than in that inventory:
-
-- [../cli.md §2.3](../cli.md#23-submit-review)'s opening sentence, "Runs the
-  structural checks, then verification **if a source is supplied**, then
-  the advisories," describes verification as conditional. **Amended**: under
-  [§3.4](#34-verification-is-required-to-submit), a missing or unreachable
-  source is no longer tolerated — it is a failing submission for any
-  document with anchors.
-- [../cli.md §2.3.1](../cli.md#231-verifying-anchors)'s paragraph beginning
-  "A caller who cannot accept an unchecked document passes
-  `--require-verification`..." and the paragraph after it describing
-  `--warn-only=ref-unknown`, `--warn-only=anchor-worktree-diverged`, and
-  "A caller that wants the other three non-fatal demotes them explicitly."
-  **Removed outright**, per [§3.3](#33-no-disable-no-warn-only) and
-  [§3.4](#34-verification-is-required-to-submit) — there is no flag left for
-  either paragraph to describe. [§3.4.4](#344-the-unreachable-ref-consequence)
-  is what a reader loses by their removal and should probably be folded into
-  the surrounding prose in their place.
-- [../cli.md §3](../cli.md#3-flags)'s flag table: the `--warn-only`,
-  `--require-verification`, and `--disable` rows are deleted, not renamed.
-  The shared `--format json` row is deleted too, on an unrelated later
-  decision — `--format` exists where there is a format to choose, and
-  `submit-review` does not have one — leaving `collect-reviews` as the
-  only command in this table with a `--format` row at all.
-  `--strict`'s row is undecided — [§13](#13-open-questions).
-- [../cli.md §4](../cli.md#4-exit-codes)'s exit-1 row, "unverified anchors
-  under `--require-verification`," needs rewording to describe the new
-  unconditional behavior rather than a flag that no longer exists.
-
-### 11.9 config.md §3.1's flag-only-keys sentence
-
-[../config.md §3.1](../config.md#31-what-configuration-may-not-do) currently
-reads:
-
-> **No key may change whether a document is valid.** `strict`, `disable`,
-> `warn_only`, and `require_verification` are flags and only flags. They are
-> named explicitly in the rejected-key message rather than being reported
-> as unknown, so the caller learns where they went.
-
-**Amended.** Three of those four names no longer correspond to a flag at
-all — [§3.3](#33-no-disable-no-warn-only) and
-[§3.4](#34-verification-is-required-to-submit) remove `disable`,
-`warn_only`, and `require_verification` outright, and `strict`'s survival is
-undecided ([§13](#13-open-questions)). The sentence's own claim — that these
-are "flags and only flags," named specially so a caller learns where they
-went — stops being accurate the moment three of the four things it points at
-cease to exist anywhere to be pointed at. The rejected-key message this
-sentence describes would, unedited, tell a caller that `disable` "is a flag,
-not a config key," which is no longer true — it is not a flag either.
-Replace with: "`strict` is a flag and only a flag [if it survives]. A key
-named `disable`, `warn_only`, or `require_verification` is simply unknown —
-those are not flags a caller mistook for config keys, they are names this
-tool used to accept and no longer does anywhere." This is a real edit the
-edit bead owes, not a rewording exercise: it changes what the config-file
-error message says, not just what this document says about it.
-
-### 11.10 cli.md §5.1, the markdown exception
-
-[../cli.md §5.1](../cli.md#51-one-format) currently reads:
-
-> Everything a command has to say is one JSON object on **stdout**. There is
-> no second renderer and no `--format` choice left to make: two
-> implementations of the same result disagreed about what a run found three
-> separate times, and one of them let an author-supplied comment id forge
-> diagnostic lines the document never contained. A caller parses the object;
-> nothing has to parse prose.
->
-> `--format=json` is still accepted so callers already passing it keep
-> working. `--format=text` is an error that says where the format went.
->
-> The prose that remains is prose because it is written to be read, not
-> rendered: `prime`, and the `summary` field of `describe`.
-
-**Amended, narrowly, using the same table pattern
-[../config.md §1.1](../config.md#11-what-this-changes-about-the-design-principles)
-already uses:**
-
-| Principle | Standing |
-| --- | --- |
-| No second renderer, no `--format` choice left to make | **Amended, narrowly.** `loam-refinery collect-reviews --format markdown` is the one exception, on the one command whose primary audience is a human reader rather than an agent in a loop — see [docs/features/combined-reviews.md §8.3](../features/combined-reviews.md#83-the-markdown-projection). It is not a second *renderer* in the sense this section warns against: it is a pure projection of the identical result value the JSON form serializes, built once, by one code path, with the same escaping and fencing discipline specified there to close the forgery half of this section's own argument. `submit-review`, `reviews`, `describe`, and `schema` are unchanged in the sense this row is actually about — one command, one projection, one source of truth, not a second computation of any result. A later, unrelated decision removes their `--format` flag entirely rather than leaving it accepting one value: a flag chooses between formats, and none of the four has more than one to choose between, `collect-reviews` now being the sole command that does. |
-
-### 11.11 On "once" — checked, no amendment needed
-
-An earlier revision of this document considered amending the row in
-[../cli.md §1](../cli.md#1-overview)'s own amendment table reading "the
-working tree is consulted **once**... to decide whether an anchor is
-checkable at all," on the reasoning that
-[§4.3](#43-the-head-check) adds a second caller of the same check and
-"once" would then overstate it. That does not hold up:
-[../cli.md §6.1](../cli.md#61-budgets) already glosses that same word
-precisely — "once per anchored file when `ref` is `HEAD`" — a **per-call,
-per-file** reading, not a claim that the tree is consulted once in the
-tool's entire lifetime. No edit to `cli.md §1` is proposed here. Left in
-rather than deleted, because finding a problem and then finding, on closer
-reading, that it is not one, is worth being visible about.
-
-### 11.12 The seven design principles, checked
-
-| # | Principle (as stated in `cli.md §1`) | Standing |
-| --- | --- | --- |
-| 1 | Offline, read-only about the repository | **Extended, not newly amended.** `collect-reviews`'s head check reads the working tree the same way `submit-review`'s verification already does, for the identical purpose, at a second call site. See [§11.11](#1111-on-once--checked-no-amendment-needed). |
-| 2 | The schema is the documentation | **Genuine gap, not a falsification.** Nothing explains the combined output's shape the way `describe --lens` explains every review-document field. A `topic:collect-reviews` entry through the existing topics provider ([../cli.md §2.2.3](../cli.md#223-the-entry-registry)) is the natural fix, recorded as follow-up work, not decided here. |
-| 3 | Pay for detail on demand — "No command emits everything it knows" | **Amended.** `collect-reviews` emits every comment of every surviving submission in full, by default, with no index-only rung and no `--limit` ([§10](#10-budget) concedes and defends this). The assembled findings are the entire value this command exists to provide. |
-| 4 | Errors route to their own explanation | **Consistent**, and simpler than before: [§3.3](#33-no-disable-no-warn-only) and [§3.4](#34-verification-is-required-to-submit) remove flags, not check names — every diagnostic a caller can still hit had an explanation before this revision and still does. |
-| 5 | Everything is addressable — "Every comment carries an ID the reviewer chose" | **Amended.** Under [§6.1](#61-the-qualified-id), the `id` in the combined output is composed by the tool. What survives is the origin id, embedded unchanged as the substring after the first colon rather than carried as its own field, specifically so the reviewer's own chosen id stays recoverable by a fixed rule ([§6.2](#62-routing-feedback-back-to-a-reviewer)). |
-| 6 | Advise, don't police | **Consistent.** Verification was never on the quality side of the boundary this principle draws, and this is not a close call once [../review-document.md §11](../review-document.md#11-validity)'s own taxonomy is the yardstick rather than an inference from this principle's two words: structural and verification checks are both "hard," both answering whether a document is usable at all, categorically separate from advisory's "is this a good review?" — a hallucinated anchor sits in the same tier as malformed JSON, not beside `body-thin` or `priority-flat`. [§3.4](#34-verification-is-required-to-submit) makes that tier's existing standard unconditional; it does not move verification into a tier it was never in. What changed is a caller's ability to accept a document nobody could confirm at all — an axis this principle was never about, since "good" never enters what verification checks — and [§5.4](#54-verdict-reported-never-reconciled)'s refusal to synthesize a verdict, the part of this principle that actually touches quality judgment, is untouched by any of this. |
-| 7 | Cheap to call | **Amended**, for two independent reasons now. `store.enabled` decides whether a multi-reviewer workflow built on `collect-reviews` produces any output at all ([§9](#9-empty-and-failure-cases), [§11.7](#117-a-note-on-storeenabled-and-configmd-52)) — a real behavioral stake the flag did not carry before this feature existed, even though "configuration may not change whether a document is valid" remains word-for-word true. Separately, [§3.4](#34-verification-is-required-to-submit) means a caller cannot always get a document accepted just by running `submit-review` the way it always could before — a repository state now matters to whether the call succeeds, not only to how thoroughly it is checked. |
 
 ## 12. Worked example
 
@@ -2092,7 +1489,8 @@ eleven minutes later, same `ref`:
 ```
 
 Both submissions reached the store only because they verified cleanly
-against `ref` at submission time ([§3.4](#34-verification-is-required-to-submit)).
+against `ref` at submission time — verification that cannot be skipped or
+demoted ([cli.md §2.3.1](../cli.md#231-verifying-anchors)).
 `internal/fetch/client.go` has not changed on disk since either ran, so the
 head check at collection time finds nothing drifted.
 `loam-refinery collect-reviews --ref=4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d`
@@ -2175,7 +1573,8 @@ here means something sharper than it did before this revision: `diverged:
 []` says every anchor in this output not only holds against the tree right
 now, it was **confirmed once already, at submission**, and nothing has
 moved since — a stronger claim than "nothing currently contradicts it,"
-now that [§3.4](#34-verification-is-required-to-submit) guarantees every
+now that unconditional verification at submission
+([cli.md §2.3.1](../cli.md#231-verifying-anchors)) guarantees every
 stored anchor was checked at least once.
 
 ### 12.2 One profile, revised, plus one unprofiled submission
@@ -2185,12 +1584,81 @@ that never appears in the output: `backend` reviewed once, revised its own
 finding and added a second, and an unprimed reviewer with no `profile`
 also ran.
 
-- `D1`, `profile: "backend"`, stored earliest — one comment,
-  `stale-cache-1`, priority 6.
-- `D2`, `profile: "backend"`, stored second — a revision: `stale-cache-1`
-  again (id kept, body sharpened, priority raised to 8), plus a new
-  comment, `missing-invalidation-1`.
-- `D3`, no `profile`, stored latest — one comment, `todo-left-in-1`.
+**D1**, stored under `profile: "backend"`, stored earliest — one comment,
+`stale-cache-1`, priority 6:
+
+```json
+{
+  "version": "1",
+  "verdict": "request_changes",
+  "profile": "backend",
+  "ref": "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a",
+  "summary": "Cache invalidation is missing on the write path.",
+  "comments": [
+    {
+      "id": "stale-cache-1",
+      "priority": 6,
+      "category": "correctness",
+      "body": "The write path updates the DB but never invalidates the cache entry.",
+      "anchors": [{ "file": "internal/cache/store.go", "line": 41 }],
+      "suggestions": []
+    }
+  ]
+}
+```
+
+**D2**, stored under `profile: "backend"`, stored second — a revision:
+`stale-cache-1` again (id kept, body sharpened, priority raised to 8), plus
+a new comment, `missing-invalidation-1`:
+
+```json
+{
+  "version": "1",
+  "verdict": "request_changes",
+  "profile": "backend",
+  "ref": "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a",
+  "summary": "Cache invalidation is missing on two write paths, not one.",
+  "comments": [
+    {
+      "id": "stale-cache-1",
+      "priority": 8,
+      "category": "correctness",
+      "body": "The write path updates the DB but never invalidates the cache entry; on closer read, the batch-update path has the same gap.",
+      "anchors": [{ "file": "internal/cache/store.go", "line": 41 }],
+      "suggestions": []
+    },
+    {
+      "id": "missing-invalidation-1",
+      "priority": 8,
+      "category": "correctness",
+      "body": "Same gap as stale-cache-1, on the batch-update path.",
+      "anchors": [{ "file": "internal/cache/store.go", "line": 96 }],
+      "suggestions": []
+    }
+  ]
+}
+```
+
+**D3**, no `profile`, stored latest — one comment, `todo-left-in-1`:
+
+```json
+{
+  "version": "1",
+  "verdict": "comment",
+  "ref": "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a",
+  "summary": "One stray TODO; nothing blocking.",
+  "comments": [
+    {
+      "id": "todo-left-in-1",
+      "priority": 2,
+      "category": "style",
+      "body": "A TODO from the previous change is still here and looks resolved by this one.",
+      "anchors": [{ "file": "internal/cache/store.go", "line": 12 }],
+      "suggestions": []
+    }
+  ]
+}
+```
 
 `D1` and `D2` share a claimed profile; `D2` is later, so `D1` carries
 `superseded_by` and `D2` does not. Neither is dropped — `D1`'s
@@ -2365,55 +1833,3 @@ backticks — which is why the example above shows ```` ```` ```` opening
 and closing the block instead of `` ``` ``. The excerpt displays exactly
 as submitted, backticks and all, because the fence that contains it cannot
 be closed by anything shorter than itself.
-
-## 13. Open questions
-
-Recorded rather than guessed at, in the style
-[../cli.md §8](../cli.md#8-future-considerations) and
-[../config.md §8](../config.md#8-future-considerations) already use.
-
-- **`--strict`'s fate.** [§3.3](#33-no-disable-no-warn-only) removes
-  `--disable` and `--warn-only`; [§3.4](#34-verification-is-required-to-submit)
-  removes `--require-verification`. None of those three decisions rules on
-  `--strict`, which treats advisories as errors and is not a disable flag —
-  it does not let a caller skip or soften a check, only choose whether
-  advisory findings gate the exit code. Keeping it preserves the one
-  remaining place a caller distinguishes review *quality* concerns from the
-  *correctness* concerns [§3.4](#34-verification-is-required-to-submit) now
-  enforces unconditionally, which matters because advisories are explicitly
-  "information... not a style guide being enforced"
-  ([../review-document.md §11](../review-document.md#11-validity)).
-  Removing it too would fully unify the strictness posture into one setting
-  with no dial, at the cost of that distinction. Left open rather than
-  decided either way.
-- **Cross-profile convergence.** Two comments from different profiles that
-  anchor the identical `file`/`line`/`end_line` — the same identity
-  `duplicate-anchor` already checks for within one document
-  ([../review-document.md §11.3](../review-document.md#113-advisory-checks--soft))
-  — are independent evidence pointing at the same place, and surfacing that
-  without fusing the comments themselves ([§5.2](#52-grouping-by-profile-not-by-slug))
-  is real, unbuilt value. Deferred because "surface" needs its own shape
-  decision, and nothing here should invent that shape to look complete.
-- **Whether two HEAD-pinned submissions reviewed the same tree.** Stated
-  precisely in [§4.3](#43-the-head-check): the head check proves an
-  anchor still holds *now*, not that two submissions saw the *same* tree at
-  their own two moments, even with verification now mandatory at submit
-  time. Closing this gap for real would need the store to record more about
-  the working tree at submission time than it does today — a `config.md`
-  §4 change, not a `collect-reviews` change, and well outside this
-  document's scope.
-- **A non-HEAD ref whose repository has since rewritten history.** A
-  force-pushed branch can leave a `ref` that once resolved no longer
-  resolving. `collect-reviews` inherits `reviews`'s own posture — it
-  resolves nothing — and whether that is the right answer for a *combined*
-  view is not settled.
-- **A `--profile=NAME` filter.** A natural complement to `--ref`, not
-  included because nothing yet demonstrates it is wanted over reading one
-  submission's own stored file directly.
-- **A way to see only "current" submissions without post-filtering.** Since
-  [§5.3.2](#532-marking-not-deleting), a caller that wants just the current
-  opinion per profile has to filter out everything carrying
-  `superseded_by` itself. Whether that deserves a flag is not yet known.
-- **Budget numbers.** [§10](#10-budget) gives the shape for the JSON form;
-  the actual envelope, per-submission, per-comment, and per-diverged-anchor
-  figures want a real implementation and a real store to measure against.

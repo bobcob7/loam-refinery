@@ -121,12 +121,24 @@ func noopReviewStore() *reviewStoreMock {
 }
 
 // noopHeadChecker stands in for headChecker wherever a test drives a command
-// other than collect-reviews: it reports "none" and never errors, the same
-// answer CheckDivergence gives outside a repository.
+// other than collect-reviews: Discover reports "none" and never errors, the
+// same answer Discover gives outside a repository.
 func noopHeadChecker() *headCheckerMock {
 	return &headCheckerMock{
-		CheckDivergenceFunc: func(context.Context, string, *review.Document, map[string]string) (string, bool, []DivergedAnchor, error) {
-			return "none", false, nil, nil
+		DiscoverFunc: func(context.Context, string, string) (HeadCheck, error) {
+			return noopHeadCheckResult(), nil
+		},
+	}
+}
+
+// noopHeadCheckResult stands in for the HeadCheck a noopHeadChecker's
+// Discover returns: source "none", never diverges, never errors.
+func noopHeadCheckResult() *HeadCheckMock {
+	return &HeadCheckMock{
+		SourceFunc: func() string { return "none" },
+		IsHeadFunc: func() bool { return false },
+		DivergedFunc: func(context.Context, *review.Document, map[string]string) ([]DivergedAnchor, error) {
+			return nil, nil
 		},
 	}
 }
@@ -233,6 +245,15 @@ func TestDescribeResolvesLenses(t *testing.T) {
 			args:   []string{"describe", "--lens=code"},
 			code:   ExitUsage,
 			stderr: []string{"comments.code", "comments.suggestions.code"},
+		},
+		{
+			// refinery-gne: a root field's own name is one of its ambiguous
+			// candidates, unlike --lens=code above where neither candidate is
+			// a bare root field; this is the shape that went silent.
+			name:   "an ambiguous lens naming a root field still names both candidates",
+			args:   []string{"describe", "--lens=summary"},
+			code:   ExitUsage,
+			stderr: []string{"comments.suggestions.summary", "field:summary"},
 		},
 		{
 			name:   "an empty lens is a usage error",
@@ -468,13 +489,18 @@ func TestValidatePassesFlagsThrough(t *testing.T) {
 }
 
 // testRegistry holds one entry per namespace, plus the two field paths ending
-// in code that the ambiguity rule exists for.
+// in code that the ambiguity rule exists for, and a root field ("summary")
+// that a nested field path also ends in — refinery-gne's shape, where one
+// ambiguity candidate resolves directly off the root name rather than only
+// through the suffix scan.
 func testRegistry(t *testing.T) *entry.Registry {
 	t.Helper()
 	registry, err := entry.NewRegistry(&stubProvider{entries: []entry.Entry{
 		{Name: "comments.priority", Namespace: entry.NamespaceField, Title: "Priority", Body: "Integer 1-10."},
 		{Name: "comments.code", Namespace: entry.NamespaceField, Title: "Code", Body: "The problem as it stands."},
 		{Name: "comments.suggestions.code", Namespace: entry.NamespaceField, Title: "Resulting code", Body: "The fix."},
+		{Name: "summary", Namespace: entry.NamespaceField, Title: "Summary", Body: "The review's own summary."},
+		{Name: "comments.suggestions.summary", Namespace: entry.NamespaceField, Title: "Suggestion summary", Body: "The suggestion's summary."},
 		{Name: "id-unique", Namespace: entry.NamespaceCheck, Title: "Duplicate id", Body: "Two comments share an id."},
 		{Name: "ids", Namespace: entry.NamespaceTopic, Title: "Ids", Body: "Checkable claims."},
 	}})

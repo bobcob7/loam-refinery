@@ -10,9 +10,9 @@ So the document carries a ref: a full 40-character commit SHA, never a branch.
 A branch names a moving target — an anchor recorded against main means whatever
 main points at when someone looks, stale without ever changing.
 
-validate checks those claims against the repository it is run in, by default and
-with no flag, by object lookup — a commit that is not checked out still
-resolves. With no repository the tier is skipped and reported as skipped —
+submit-review checks those claims against the repository it is run in, by default
+and with no flag, by object lookup — a commit that is not checked out still
+resolves. With no repository the tier is skipped, reported as skipped —
 but not passed: any anchor still fails at exit 1 with nothing to confirm it.
 An anchorless document passes either way.
 

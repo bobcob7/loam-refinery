@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/bobcob7/loam-refinery/internal/config"
 	"github.com/bobcob7/loam-refinery/internal/store"
@@ -19,13 +18,12 @@ import (
 // as empty rather than materialized (docs/config.md §2.2).
 type reviewsAdapter struct {
 	git *store.Git
-	log *slog.Logger
 }
 
 // newReviewsAdapter returns a reviewStore that resolves and opens the store
 // fresh on every call, mirroring newStoreAdapter.
 func newReviewsAdapter(log *slog.Logger) *reviewsAdapter {
-	return &reviewsAdapter{git: store.NewGit(log), log: log}
+	return &reviewsAdapter{git: store.NewGit(log)}
 }
 
 // RepoName implements internal/cli's reviewStore: it walks up from dir the
@@ -109,18 +107,19 @@ func (a *reviewsAdapter) DistinctDigests(ctx context.Context, repo, ref string) 
 
 // ReviewPath implements internal/cli's reviewStore: the digest-to-path half
 // of collect-reviews's own reader (refinery-uyb.11's notes: "digest to path
-// is not on the reviewStore interface" until now). It mirrors
-// internal/store.Store.ReviewPath's own formula rather than opening a
-// *Store just to call it — a Store's root is always cfg.Store.Path, the
-// same value store.New and store.NewReadOnly are constructed with, so
-// nothing beyond the config file is needed to compute it. Keep this in sync
-// with internal/store/files.go's ReviewPath if that formula ever changes.
+// is not on the reviewStore interface" until now). It calls
+// store.ReviewPathAt rather than opening a *Store just to call
+// Store.ReviewPath — a Store's root is always cfg.Store.Path, the same
+// value store.New and store.NewReadOnly are constructed with, so nothing
+// beyond the config file is needed to compute it. Both this method and
+// Store.ReviewPath go through ReviewPathAt, so there is exactly one
+// formula to keep in sync with itself.
 func (a *reviewsAdapter) ReviewPath(ctx context.Context, repo, ref, digest string) (string, error) {
 	cfg, err := loadValidConfig()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(cfg.Store.Path, "reviews", filepath.FromSlash(repo), ref, digest+".json"), nil
+	return store.ReviewPathAt(cfg.Store.Path, repo, ref, digest), nil
 }
 
 // StoreEnabled implements internal/cli's reviewStore: collect-reviews's own

@@ -64,9 +64,17 @@ Explicitly out of scope:
    repository either: the store is a directory under the user's home
    ([config.md §2](config.md#2-locations)). Amended; see
    [Amendments](#amendments) below.
-2. **The schema is the documentation.** Field descriptions and examples live in
-   the annotated schema, and `describe` renders from it, so explanation cannot
-   drift from enforcement.
+2. **The schema is the documentation for lenses.** Field descriptions and
+   examples live in the annotated schema, and `describe --lens=NAME` renders
+   each entry from it ([§2.2.3](#223-the-entry-registry)), so a lens
+   explanation cannot drift from enforcement. `describe`'s own summary
+   ([§2.2](#22-describe)) is different: hand-written prose, chosen to read
+   well as one paragraph rather than assembled from entries. Nothing renders
+   it from the schema, so nothing stops its prose from going stale — what
+   stops it is narrower: a test pins the summary's field list against the
+   schema's own property list, so a field can go undocumented there for no
+   longer than it takes CI to notice. Amended; see
+   [Amendments](#amendments) below.
 3. **Pay for detail on demand.** No command emits everything it knows. `prime`
    teaches the loop, `describe` summarizes the contract, `describe --lens` opens one
    field or one failed check. A caller reads the paragraph it needs and nothing
@@ -99,7 +107,7 @@ statements made above:
 | Verification reads only whether a path and line exist, never file content (design principle 1) | **Amended.** Verifying an anchor now also reads the working-tree copy of the anchored file, to compare it against the blob at `ref` — git's own comparison, filters applied, not a raw byte diff. What survives is the reason the principle existed: `loam-refinery` compares the file against `ref` to decide whether `ref` is still authoritative for it, and never reads to interpret what a line means — reading to decide checkability is not reading to review. |
 | Reading file contents is out of scope (§1, explicitly out of scope) | **Amended, narrowly.** Reading to *compare* — is this, right now, the file `ref` names — is now in scope, for the one purpose the check exists for. Reading to *judge* — forming an opinion about what a line does — remains out of scope, and that narrower boundary is the one that actually matters: it is what keeps `loam-refinery` a referee rather than a reviewer. |
 | Anchors resolve only against the object database, never a working tree ([§2.3.1](#231-verifying-anchors)) | **Amended, and now re-amended.** The working tree is consulted once, and only when `ref` is `HEAD`, to decide whether an anchor is checkable at all — whether the file at `ref` and the file on disk are still the same file. It never supplies an answer of its own: it can only withhold a verification, never grant one — that much is still exactly true, and is the reason the working tree gets consulted at all rather than being ignored in favor of the object database alone. What changed is what withholding *does*: a diverged file is no longer reported unverified and passed through; it fails the precondition outright, once for the document, at exit 3, before the object database's own answers for every other anchor are even reached. |
-| Exit 0 means anchors verified where a repository was available ([§4](#4-exit-codes)) | **Amended, and now re-amended twice.** A repository being available no longer implied every anchor was verified merely because a run exited 0 — that gap was real for one release, while `anchor-worktree-diverged` ([§2.3.1](#231-verifying-anchors)) was a routine, non-fatal reason some anchors were not. It closed with [docs/features/combined-reviews.md §3.4](features/combined-reviews.md#34-verification-is-required-to-submit): the check still only withholds a verification, never wrongly denies one, but a withheld verification stopped being tolerated. What changed a second time is *how* it stopped being tolerated: a diverged anchor is now caught by a precondition before the rest of the run even starts, exit 3, not folded into exit 1 with the other verification failures. Either way, exit 0 means every anchor was verified, full stop; a document carrying any anchor the working tree could not confirm does not reach exit 0 at all — it does not even reach the checks that would have counted it. |
+| Exit 0 means anchors verified where a repository was available ([§4](#4-exit-codes)) | **Amended, and now re-amended twice.** A repository being available no longer implied every anchor was verified merely because a run exited 0 — that gap was real for one release, while `anchor-worktree-diverged` ([§2.3.1](#231-verifying-anchors)) was a routine, non-fatal reason some anchors were not. It closed with [§2.3.1](#231-verifying-anchors): the check still only withholds a verification, never wrongly denies one, but a withheld verification stopped being tolerated. What changed a second time is *how* it stopped being tolerated: a diverged anchor is now caught by a precondition before the rest of the run even starts, exit 3, not folded into exit 1 with the other verification failures. Either way, exit 0 means every anchor was verified, full stop; a document carrying any anchor the working tree could not confirm does not reach exit 0 at all — it does not even reach the checks that would have counted it. |
 
 Two things do not move. `loam-refinery` still forms no opinion about what an
 anchored line *does* — a match says the file on disk is still the one `ref`
@@ -118,6 +126,16 @@ back as one attributed output.
 | Principle | Standing |
 | --- | --- |
 | Aggregating reviews is out of scope (§1, explicitly out of scope) | **Amended, narrowly.** `collect-reviews` combines the reviews stored for one ref into one attributed output — see [docs/features/combined-reviews.md](features/combined-reviews.md). Findings are combined, never fused across profiles, ranked, or reduced to one verdict; within one claimed profile, a later submission is marked current relative to an earlier one, without deleting the earlier one's findings. Aggregation across *refs* remains entirely out of scope: `collect-reviews` combines within one ref and refuses to run without one. |
+
+A third amendment corrects the record rather than the tool: the schema
+gained the `profile` field in the same branch that added `collect-reviews`,
+and `describe`'s hand-written summary went a full amendment pass without
+mentioning it — proof that "the schema is the documentation" was never true
+of that summary the way it is of a lens.
+
+| Principle | Standing |
+| --- | --- |
+| The schema is the documentation (design principle 2) | **Amended, narrowly.** True of `describe --lens=NAME`, which renders each entry from the annotated schema. Not true of `describe`'s own summary, which is hand-written prose and always was — nothing ever rendered it from the schema. What changed is that the gap is now mechanically pinned: a test compares the summary's field list against the schema's property list, field for field, so a field added to one without the other fails the build instead of surviving an amendment pass unnoticed. |
 
 ## 2. Commands
 
@@ -477,13 +495,14 @@ proportional to the number of entries rather than their content.
 ### 2.3 `submit-review`
 
 Reads a review document from `path`, or from stdin when `path` is `-` or omitted.
-Immediately after parsing, and before anything else, it checks one
-precondition — is the reviewed state actually a commit — then runs the
-structural checks, then verification, then the advisories; emits diagnostics
-and sets the exit code per [§4](#4-exit-codes). Verification itself is no
-longer conditional on a source being supplied: it always runs, and a document
-that carries any anchors needs a working source of truth to pass — see
-[§2.3.1](#231-verifying-anchors).
+Immediately after parsing it runs verification, which is no longer
+conditional on a source being supplied: it always runs, and a document that
+carries any anchors needs a working source of truth to pass. Verification's
+own result answers one question before anything else does — is the
+reviewed state actually a commit — and when it says no, the run stops
+there and reports only that; otherwise the structural checks run, then the
+advisories, emitting diagnostics and setting the exit code per
+[§4](#4-exit-codes) — see [§2.3.1](#231-verifying-anchors).
 
 **Every check runs, with one exception.** A failure in one tier does not gate
 the next, and a failure on one comment does not gate the others — see
@@ -541,19 +560,23 @@ skipped**, with the reason in `verification`. It is never silently passed: a
 run that verified nothing must not look like a run that verified everything, or
 the tier is worse than absent — it would license confidence it never earned.
 
-**The precondition, checked first.** Before any of that, `submit-review`
+**The precondition, read off verification's own result.** `submit-review`
 asks one question none of the rest of verification does: is the reviewed
-state a commit at all. When `ref` names the repository's current `HEAD` and
-at least one anchored file's working-tree copy has since diverged from the
-blob at `ref` — the ordinary state of a checkout somebody is actively
-editing — the run stops immediately: before the structural checks, before
-the advisories, before any other anchor is even looked at. One diagnostic
-reports it, in `diagnostics`, naming `anchor-worktree-diverged` once for the
-document rather than once per diverged anchor — exit 3, not exit 1; [§4](#4-exit-codes)
-argues why that is its own code. A reviewer that has to read twelve anchor
-failures to learn its whole premise was wrong is being told the same thing
-twelve times, badly, and a document whose reviewed state was never committed
-is not one this tool spends further work reading.
+state a commit at all. Verification finds the answer the same way it finds
+everything else, by checking every anchor; when `ref` names the
+repository's current `HEAD` and that pass turns up at least one anchored
+file whose working-tree copy has since diverged from the blob at `ref` —
+the ordinary state of a checkout somebody is actively editing — the run
+stops there: before the structural checks, before the advisories, and
+before the rest of verification's own findings are added to the result,
+discarded rather than reported alongside a premise that was never sound.
+One diagnostic reports it, in `diagnostics`, naming `anchor-worktree-diverged`
+once for the document rather than once per diverged anchor — exit 3, not
+exit 1; [§4](#4-exit-codes) argues why that is its own code. A reviewer
+that has to read twelve anchor failures to learn its whole premise was
+wrong is being told the same thing twelve times, badly, and a document
+whose reviewed state was never committed is not one worth carrying into the
+structural and advisory tiers once that much is known.
 
 ```json
 {
@@ -589,8 +612,13 @@ went unchecked for a reason short of a diverged working tree: no repository,
 an unreachable one, or a single file git could not read. There is no flag to
 demote it and no way to accept the gap: a document is not wrong for being
 checked somewhere that could not check it, but as of this release nothing
-enters the store unverified either — see
-[docs/features/combined-reviews.md §3.4](features/combined-reviews.md#34-verification-is-required-to-submit).
+enters the store unverified either: `collect-reviews`
+([docs/features/combined-reviews.md](features/combined-reviews.md)) depends
+on `ref` as a join key across independently-submitted reviews, and a store
+that could hold both a fully verified submission and one nobody had ever
+checked would put a caller in the position of having to know to ask which was
+which. Requiring verification unconditionally is what lets a combined view
+skip that question entirely.
 A document with no anchors is never failed by this: there is nothing for it to
 ask about.
 
@@ -661,9 +689,12 @@ Verifying an anchor is therefore three cases, not two, and they are disjoint:
 `anchor-file-missing` and `anchor-line-out-of-range` are, and it is a lens
 like every other check name ([§2.2](#22-describe)) — the precondition above
 did not replace it, it is the same check, monotonic exactly as before,
-running once up front instead of once per anchor mid-flow (see
-[docs/features/combined-reviews.md §3.4.2](features/combined-reviews.md#342-the-check-and-the-policy-are-not-the-same-thing)
-for why that distinction matters).
+running once up front instead of once per anchor mid-flow. The check and the
+policy wrapped around its result are not the same thing: the check is still
+monotonic — it can only withhold a verification, never grant one, and firing
+it never counts an anchor as *wrong*, only as *unconfirmed* — and that
+property is untouched. What changed is the policy: a withheld verification,
+which used to be tolerated, is now fatal.
 
 An anchor `anchor-worktree-diverged` reports is never line-checked at all —
 not against `ref`, not against the working tree. That is deliberate: a file
@@ -681,8 +712,7 @@ actually runs, the same way `ref-unknown`, `anchor-file-missing`, and
 the reviewed commit is the sharpest instance: a reviewer working from one
 can no longer submit a document with any anchors in it, and there is no
 flag to work around it. The only fix is a deeper fetch before submitting —
-`git fetch --deepen` or an unshallow clone — not a command-line option
-([docs/features/combined-reviews.md §3.4.4](features/combined-reviews.md#344-the-unreachable-ref-consequence)).
+`git fetch --deepen` or an unshallow clone — not a command-line option.
 
 Verification is not the only audit path, and deliberately not the last word.
 Because a ref is an immutable SHA, every anchor in a passing review remains
@@ -766,12 +796,12 @@ only set the store flags.
 Structural checks cannot be disabled or demoted, and neither can verification
 or advisory ones anymore: `submit-review` dropped `--disable`, `--warn-only`,
 and `--require-verification` together, so every check that used to have a
-caller-facing knob no longer has one — see
-[§2.3.1](#231-verifying-anchors) and
-[docs/features/combined-reviews.md §3.3](features/combined-reviews.md#33-no-disable-no-warn-only).
-Verification runs whenever a repository is found, and when none is, or an
-anchor cannot be confirmed, the submission fails outright rather than
-reporting a gap a caller could choose to accept.
+caller-facing knob no longer has one — see [§2.3.1](#231-verifying-anchors).
+Removing `--disable` does not make an advisory an error; it only removes the
+ability to make the tool stop mentioning one a caller has decided it does not
+want to hear about. Verification runs whenever a repository is found, and
+when none is, or an anchor cannot be confirmed, the submission fails outright
+rather than reporting a gap a caller could choose to accept.
 
 `--strict` is how a caller opts into advisories gating a pipeline. It is not the
 default posture: review quality is a judgment the caller owns.
@@ -845,13 +875,22 @@ of them touch 3, which is why it was free to take.
 
 Advisories alone never produce exit 1. Verification failures always do —
 there is no flag left to demote one. A working tree that has diverged from
-`ref` produces exit 3 instead, before verification even runs — see
+`ref` produces exit 3 instead, once verification itself finds it — see
 [§2.3.1](#231-verifying-anchors).
 
 A failed store produces exit 101 — never 1, and no longer 2. A full disk is not
 a defect in the review and not a mistake in the command line. Stdout carries
 nothing in that case, as on any failing exit; the code is the signal and stderr
 is the reason. See [config.md §5.1](config.md#51-when-storing-fails).
+
+**This table is written in `submit-review`'s terms; `collect-reviews` uses a
+narrower slice of it and nothing outside it.** It never exits 1 and never
+exits 3 — there is no review to fail structurally or verify, and no working
+tree whose divergence a read-only query could be blocked by. Every empty or
+not-found case is 0; a malformed `--ref` or `--repo` is 2; a store that
+exists but cannot be opened or read is 101. See
+[docs/features/combined-reviews.md §9](features/combined-reviews.md#9-empty-and-failure-cases)
+for the full table.
 
 ## 5. Output
 
@@ -868,11 +907,14 @@ argument rather than sitting beside it. `--format=json` used to be accepted
 anyway, as a courtesy to callers who already passed it, and `--format=text`
 used to be the error that told them where the old format went — a
 backward-compatibility shim, kept for exactly one reason: not breaking
-callers. That reason does not survive next to
-[the rename](features/combined-reviews.md#32-no-alias-no-migration-plan):
-`submit-review` breaks every existing caller of `validate` outright, no
-alias, no grace period, and a flag whose only job was softening a break
-has nothing left to soften once the same change breaks louder anyway. On a
+callers. That reason does not survive next to the rename: `validate` does
+not survive becoming `submit-review` in any form — no permanent alias, no
+deprecation window, no transitional stderr note telling a caller where the
+command went, and a caller still typing `validate` on an upgraded binary
+gets exit 2, "unknown command," the same as any other typo. `submit-review`
+breaks every existing caller of `validate` outright, no alias, no grace
+period, and a flag whose only job was softening a break has nothing left to
+soften once the same change breaks louder anyway. On a
 command with one legal output there is also nothing left for the flag to
 choose — it would cost a row in [§3](#3-flags), a branch in the parser, and
 a sentence of explanation, for a decision the caller never gets to make.
@@ -888,7 +930,7 @@ already uses:**
 
 | Principle | Standing |
 | --- | --- |
-| No second renderer, no `--format` choice left to make | **Amended, narrowly.** `loam-refinery collect-reviews --format markdown` is the one exception, on the one command whose primary audience is a human reader rather than an agent in a loop — see [docs/features/combined-reviews.md §8.3](features/combined-reviews.md#83-the-markdown-projection). It is not a second *renderer* in the sense this section warns against: it is a pure projection of the identical result value the JSON form serializes, built once, by one code path, with the same escaping and fencing discipline specified there to close the forgery half of this section's own argument. `submit-review`, `reviews`, `describe`, and `schema` are entirely unchanged — one command, one projection, one source of truth, not a second computation of any result. |
+| No second renderer, no `--format` choice left to make | **Amended, narrowly.** `loam-refinery collect-reviews --format markdown` is the one exception, on the one command whose primary audience is a human reader rather than an agent in a loop — see [docs/features/combined-reviews.md §8.3](features/combined-reviews.md#83-the-markdown-projection). It is not a second *renderer* in the sense this section warns against: it is a pure projection of the identical result value the JSON form serializes, built once, by one code path, with the same escaping and fencing discipline specified there to close the forgery half of this section's own argument. `submit-review`, `reviews`, `describe`, and `schema` are unchanged in the sense this row is actually about — one command, one projection, one source of truth, not a second computation of any result. A later, unrelated decision removes their `--format` flag entirely rather than leaving it accepting one value: a flag chooses between formats, and none of the four has more than one to choose between, `collect-reviews` now being the sole command that does. |
 
 ### 5.2 The result object
 
@@ -1038,6 +1080,8 @@ nothing measures is a limit that erodes.
 | `reviews --failed` | 60 + 120 per row | Rare; diagnosing a reviewing agent |
 | `reviews --list` | 60 + 25 per repository | Rare; discovery |
 | `reviews --content` | none | Returns caller-authored documents |
+| `collect-reviews --format json` | 80 + 40 per submission + 60 per comment + 60 per diverged anchor | Rare; only when an orchestrator has run more than one reviewer against one ref |
+| `collect-reviews --format markdown` | unbudgeted | Rare; human reading, or embedding somewhere a human reads it |
 
 These are higher than the text format they replaced. Measured over a
 realistic write-submit-review-fix cycle it is about **2.1x**; a clean `submit-review`
@@ -1068,10 +1112,11 @@ but a run that verified nothing would then look like a run that verified
 everything, which [§2.3.1](#231-verifying-anchors) rules out on purpose. A
 dirty checkout no longer costs content that scales with the number of
 diverged anchors: [§2.3.1](#231-verifying-anchors)'s precondition reports
-the whole thing once, in one diagnostic, the moment the reviewed state
-turns out not to be a commit — before structural checks, before advisories,
-before any other anchor is even examined. That is the uncommitted-work row
-above, measured at 153 — flat whether one anchor diverged or ten, which is
+the whole thing once, in one diagnostic, the moment verification's own pass
+finds the reviewed state is not a commit — discarding the rest of what that
+pass found, and running before structural checks and before advisories. That
+is the uncommitted-work row above, measured at 153 — flat whether one
+anchor diverged or ten, which is
 the whole point: the precondition reports once for the document rather than
 once per anchor, so the cost cannot grow with how many anchors turned out to
 be wrong about the same thing. It does not carry forward the old per-anchor
@@ -1135,6 +1180,25 @@ rather than invented: it returns review documents the caller wrote, at whatever
 size the caller wrote them. `--limit` is the control that exists instead, and
 the default index form is what keeps the common query cheap.
 
+`collect-reviews --format json`'s row is measured, not guessed, against the
+real binary and a real store: an empty envelope costs about 73 tokens, each
+additional submission's shape — `profile`, `ordinal`, `verdict`, an optional
+`superseded_by` — costs about 27 to 34, and each additional comment's shape —
+`id` and `profile` — costs about 46 to 52, both rounded up with headroom.
+Neither figure prices the free-text content riding along with it: a
+submission's `summary` and a comment's `body`, `suggestions`, and `anchors`
+are unbudgeted, the same exemption `reviews --content` gets above, for the
+same reason — it is content the caller wrote, and charging a ceiling against
+it would be rationing the caller's own words back to it. Per-diverged-anchor
+reuses the standing 60-token ceiling for one diagnostic-shaped entry — a
+check name, a comment, and a reason — rather than a fresh measurement,
+because `head_check.diverged`
+([docs/features/combined-reviews.md §4.3.1](features/combined-reviews.md#431-the-head_check-shape))
+is the identical shape that ceiling was already measured against.
+`--format markdown` stays unbudgeted outright: it is read by a human once, or
+piped into a comment body a human reads once, never paid on a loop the way
+every other row here is.
+
 The largest saving is not in any row of that table — it is in **not repeating
 it**. A validator that reports one problem at a time turns a document with four
 mistakes into four write-submit-review cycles, each paying the model's full cost of
@@ -1155,6 +1219,58 @@ costs a caller no more than a registry of 20, because a caller reads one entry.
 Only `describe` default and `--list` scale with registry size, which is why the
 default summary is specified as a fixed shape rather than a walk of everything
 registered.
+
+**Some topic entries run close to their 350-token ceiling by now, not by
+accident.** `topic:store`, `topic:tiers`, and `topic:verification` exist to
+carry a small number of load-bearing facts that do not belong on any one
+check's own lens, and each has already been trimmed of boilerplate once to
+fit those facts under the ceiling — `topic:store` and `topic:verification`
+currently measure exactly 350 apiece, `topic:tiers` 348. `topic:store`
+crossed into that trim when it picked up the resubmission-supersedes fact
+below. A future edit to any of them that goes red is not, by itself,
+evidence that 350 is wrong: the response is to trim prose elsewhere in the
+same entry first, the same trade the entry has already made once, and treat
+the ceiling as the hard boundary it is stated to be above rather than a
+target with slack behind it. Splitting a topic in two remains available when
+trimming genuinely cannot fit the next fact in, but it is not free — it costs
+a lens name and a row in `describe --list`, whose own headroom is thin (see
+below) — so it is the second thing tried, not the first. Raising the
+per-entry ceiling is likewise available, but only deliberately, with the
+reason stated in the same change that raises it; done reflexively on
+contact with a red test, it is the one response this section exists to rule
+out, since a limit raised the first time it bites is a limit that never bit.
+
+**`describe --list` has little room left, and two things already planned
+spend it.** [§8](#8-future-considerations) anticipates a `kb:*` namespace
+registering entries through the same provider mechanism this registry
+already uses, and `internal/entry/schema.go` generates one `field:*` entry
+per schema property, so any future field the review document gains lands in
+this index too, unasked. The index is already close to its minimal shape —
+one namespace label plus a bare list of names, no descriptions — so there is
+little slack to recover by making it terser without changing what it is.
+The honest default, then, is the same one clean `submit-review` gets when a
+result field is genuinely new: raise the ceiling deliberately, in the same
+change that adds the field or namespace pushing past it, stating how many
+tokens the addition cost and why. Reaching for a terser shape instead is
+worth doing only once raising the ceiling has happened more than once for
+the same reason — a pattern, not a single addition — since restructuring the
+index is a larger change than any one field justifies on its own.
+
+**`topic:collect-reviews` measured its own row before it was added, per the
+policy above, and fit.** `describe --list` stood at 372 of 380 with no entry
+for the one command with a seven-field envelope, a qualified-id grammar, a
+supersession model, and a second output format — a genuine gap against
+design principles 2 and 4, not a falsification of either, since nothing was
+there to render or route to. Adding the row measured 378 of 380: two tokens
+of headroom left, not zero, and no ceiling was raised to make it fit. The
+entry itself landed at 321 of the 350 per-entry ceiling, trimmed once on the
+same pass topic:store, topic:tiers, and topic:verification already made,
+to leave room under both budgets rather than either — this is exactly the
+"second thing tried" the ceiling-raising sentence above defers to, done
+before it was needed rather than after. The two tokens of headroom left on
+`describe --list` are smaller than either of the two additions
+[§8](#8-future-considerations) already anticipates, so the next one of
+those is the one likely to actually need the ceiling raised, not this one.
 
 ### 6.2 Why progressive disclosure
 
@@ -1212,7 +1328,7 @@ internal/entry/schema.go          field:* provider, reads the annotated schema
 internal/entry/checks.go          check:* provider, reads the check registries
 internal/entry/topics/            topic:* entries, //go:embed of hand-written md
 internal/collect/                 collect-reviews's merge semantics, qualified ids
-internal/render/                  the json renderer
+internal/render/                  the json and markdown renderers
 internal/config/                  locations, the config file, precedence
 internal/profile/                 the profile directory, frontmatter, bodies
 internal/store/                   stored files, the run database, queries
@@ -1225,10 +1341,22 @@ internal/store/interfaces.go      clock, repository namer
 Interfaces live in each package's `interfaces.go`, defined at the consumer.
 Constructors take dependencies explicitly; the graph is wired in `main`.
 
+`internal/render`'s two formatters share one constraint that makes carrying
+two of them safe: exactly one function decides what `collect-reviews` found,
+and both renderers are downstream of its return value, never of the store —
+neither computes anything the other does not already have
+([docs/features/combined-reviews.md
+§8.3.1](features/combined-reviews.md#831-one-structure-two-renderers)).
+
 ### 7.2 Advisory registry
 
-An advisory is a small value with a name, a one-line description (reused verbatim
-by `prime`), and a check function over the parsed document. The registry is a
+An advisory is a small value: a name, a one-line summary, a title, a body, and a
+check function over the parsed document. The summary is not reused by `prime` —
+`prime` stays fixed and deliberately small ([§2.1](#21-prime)) and cannot absorb
+a per-check line — nor by `describe --list`, which prints names alone, no bodies
+([§2.2.5](#225---list)). Nothing renders it today; it is bookkeeping on the
+value, not a rung on the disclosure ladder. `describe --lens` explains a check
+from its title and body alone ([§2.2.2](#222-entry-content)). The registry is a
 slice built at construction, not package-level state — so tests can build a
 registry holding one advisory.
 
@@ -1272,6 +1400,20 @@ and `internal/structural/testdata/`, each paired with its expected diagnostic
 set. Every check needs a passing case and a failing case. Golden files cover the
 renderer.
 
+`collect-reviews`'s two renderers are pinned by three further tests, run
+against the same fixture data the JSON renderer's own golden tests already
+use: **parity**, that the qualified-id headings the Markdown renderer emits
+are the identical set `comments[].id` names in the JSON form; **fidelity**,
+that unescaping a Markdown body recovers the JSON `body` byte for byte; and
+**forgery**, that a body or `code` excerpt engineered to look like tool
+structure — a fake heading, a fence-breaking run of backticks — renders as
+inert prose rather than as structure
+([docs/features/combined-reviews.md
+§8.3.3](features/combined-reviews.md#833-the-test-that-pins-it)). Parity is
+the test that would have caught this section's own war story: two renderers
+disagreeing about what a run found becomes a failing assertion instead of an
+invisible drift.
+
 ## 8. Future considerations
 
 Deliberately deferred, recorded so the design leaves room for them.
@@ -1298,10 +1440,39 @@ Deliberately deferred, recorded so the design leaves room for them.
   moment `submit-review` runs ([§2.3.1](#231-verifying-anchors)); a provenance
   hash asks, after the fact and from the store, whether the world has moved
   on since. Tracked as its own proposal for that reason, and touches the store,
-  not the review-document schema.
+  not the review-document schema. The same mechanism is also the only way to
+  close a narrower gap `collect-reviews` leaves open: two submissions pinned
+  to the same `HEAD` SHA can still have read different working trees at
+  their own two moments, and a provenance hash recorded at ingest is what
+  would let a later consumer tell whether they in fact saw the same one.
 - **Combined reviews.** Specified in
   [docs/features/combined-reviews.md](features/combined-reviews.md):
   `collect-reviews`, not `merge`; grouped by profile, not by slug.
+- **Cross-profile convergence on `collect-reviews`.** Two comments from
+  different profiles that anchor the identical `file`/`line`/`end_line` — the
+  same identity `duplicate-anchor` already checks for within one document
+  ([review-document.md §11.3](review-document.md#113-advisory-checks--soft))
+  — are independent evidence pointing at the same place.
+  `collect-reviews` never fuses comments across profiles
+  ([docs/features/combined-reviews.md
+  §5.2](features/combined-reviews.md#52-grouping-by-profile-not-by-slug)), so
+  surfacing that convergence as its own signal, without fusing the comments
+  it comes from, is real, unbuilt value — deferred because "surface" needs
+  its own shape decision, not because it lacks one.
+- **A non-`HEAD` `collect-reviews` ref whose repository has since rewritten
+  history.** A force-pushed branch can leave a `ref` that once resolved no
+  longer resolving. `collect-reviews` inherits `reviews`'s own posture — it
+  resolves nothing — and whether that is the right answer for a *combined*
+  view is not settled.
+- **A `--profile=NAME` filter on `collect-reviews`.** A natural complement to
+  `--ref`, not included because nothing yet demonstrates it is wanted over
+  reading one submission's own stored file directly.
+- **A way to see only "current" `collect-reviews` submissions without
+  post-filtering.** A caller that wants just the current opinion per profile
+  has to filter out everything carrying `superseded_by` itself
+  ([docs/features/combined-reviews.md
+  §5.3.2](features/combined-reviews.md#532-marking-not-deleting)). Whether
+  that deserves a flag is not yet known.
 - **Suggestion selection.** A `loam-refinery pick` subcommand that, given a review and
   a ceiling on effort and blast radius, emits the subset of suggestions worth
   taking now — e.g. `--max-effort=small --max-scope=file` to assemble a
@@ -1323,12 +1494,14 @@ Deliberately deferred, recorded so the design leaves room for them.
   with prose written by hand rather than generated from a schema — a knowledge
   base is exactly where 350-token entries quietly become 900-token ones, so the
   budget tests apply to `kb:*` from its first entry. And `describe --list`'s own
-  ceiling ([§6.1](#61-budgets)) has little room left to grow into: one new root
-  field, `profile` ([review-document.md §3](review-document.md#3-root-object)),
-  cost it 5 measured tokens, leaving about 15 of the 380-token ceiling — three
-  more names, roughly, before it needs raising. A `kb:*` rollout that registers
-  more than a handful of entries at once should expect to renegotiate that
-  ceiling rather than assume the existing one still fits.
+  ceiling ([§6.1](#61-budgets)) has little room left to grow into: measured
+  after the `profile` root field
+  ([review-document.md §3](review-document.md#3-root-object)) landed alongside
+  everything else this branch added to the index, `describe --list` is 372
+  tokens against its 380-token ceiling — 8 left, room for one more name before
+  it needs raising, not three. A `kb:*` rollout that registers more than a
+  single entry at once should expect to renegotiate that ceiling rather than
+  assume the existing one still fits.
 
   A project-supplied knowledge base — conventions read from the repository rather
   than compiled into the binary — is the obvious follow-on and would be another

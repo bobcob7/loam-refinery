@@ -170,23 +170,25 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 		return review.Diagnostic{
 			Severity: review.SeverityError,
 			Name:     "anchor-file-missing",
-			Comment:  commentID(comment),
+			Comment:  comment.DiagnosticID(),
 			Path:     anchor.Path + "/file",
-			Message:  fmt.Sprintf("%s does not exist at %s", file, short(ref)),
+			Message:  v.missingFileMessage(file, ref),
 		}, refuted
 	case "blob":
 	default:
 		return review.Diagnostic{
 			Severity: review.SeverityError,
 			Name:     "anchor-file-missing",
-			Comment:  commentID(comment),
+			Comment:  comment.DiagnosticID(),
 			Path:     anchor.Path + "/file",
 			Message:  fmt.Sprintf("%s is a directory at %s, not a file", file, short(ref)),
 		}, refuted
 	}
-	// The working tree is consulted only now that the path is confirmed
-	// present at ref as a file: a path absent at ref stays anchor-file-missing
-	// above, and the working tree never softens that. Case 2's remaining two
+	// The working tree is consulted for divergence only now that the path is
+	// confirmed present at ref as a file: a path absent at ref stays
+	// anchor-file-missing above, and the working tree never softens that —
+	// missingFileMessage above also reads the working tree, but only to
+	// name a likelier cause, never to change the outcome. Case 2's remaining two
 	// conditions — a working-tree copy exists, and it differs — are exactly
 	// what worktreeDiverged answers; a copy that does not exist reports
 	// "not diverged" on its own, which is what keeps a deleted working-tree
@@ -200,7 +202,7 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 		if differs {
 			return review.Diagnostic{
 				Name:    "anchor-worktree-diverged",
-				Comment: commentID(comment),
+				Comment: comment.DiagnosticID(),
 				Path:    anchor.Path,
 				Message: fmt.Sprintf("%s differs from %s in the working tree", file, short(ref)),
 			}, diverged
@@ -216,13 +218,33 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 		return review.Diagnostic{
 			Severity: review.SeverityError,
 			Name:     "anchor-line-out-of-range",
-			Comment:  commentID(comment),
+			Comment:  comment.DiagnosticID(),
 			Path:     anchor.Path + "/" + candidate.name,
 			Message: fmt.Sprintf("%s %d is out of range in a %d-line file at %s",
 				candidate.name, candidate.field.Value, state.lines, short(ref)),
 		}, refuted
 	}
 	return review.Diagnostic{}, verified
+}
+
+// missingFileMessage builds anchor-file-missing's message for a path absent
+// at ref. Severity and outcome are unchanged either way — refuted, exit 1 —
+// but a path that exists on disk and was simply never committed is a
+// different mistake from a hallucinated one (refinery-qu7), and naming that
+// difference is design principle 4's job, not a separate check's: the
+// working tree is consulted here only to pick the truer sentence, never to
+// soften the diagnosis.
+func (v *Verifier) missingFileMessage(file, ref string) string {
+	base := fmt.Sprintf("%s does not exist at %s", file, short(ref))
+	exists, err := v.git.worktreeExists(file)
+	if err != nil {
+		v.log.Debug("working-tree existence check failed", "file", file, "error", err)
+		return base
+	}
+	if !exists {
+		return base
+	}
+	return base + "; it exists in the working tree but was never committed — commit it, or anchor the ref you actually reviewed"
 }
 
 // RefIsHEAD reports whether ref names the checked-out commit, resolved once
@@ -394,13 +416,6 @@ func SkipAll(reason string) []review.Skipped {
 		skipped = append(skipped, review.Skipped{Name: name, Reason: reason})
 	}
 	return skipped
-}
-
-func commentID(comment review.Comment) string {
-	if comment.ID.OK {
-		return comment.ID.Value
-	}
-	return ""
 }
 
 func short(ref string) string {

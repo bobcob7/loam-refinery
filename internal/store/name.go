@@ -176,7 +176,11 @@ func RepoName(ctx context.Context, git gitRunner, workingDir string, overrides m
 	if root == "" {
 		return noRepo, nil
 	}
-	if name, ok := remoteName(ctx, git, root); ok {
+	name, ok, err := remoteName(ctx, git, root)
+	if err != nil {
+		return "", err
+	}
+	if ok {
 		return name, nil
 	}
 	if name, ok := localName(root); ok {
@@ -188,16 +192,24 @@ func RepoName(ctx context.Context, git gitRunner, workingDir string, overrides m
 // remoteName derives a repository name from root's origin remote, per
 // config.md section 4.2's normalization (lowercase the host, drop
 // userinfo, port, a trailing .git, and leading or trailing /) followed by
-// section 4.8's general path-safety normalization. It reports false when
-// there is no origin, or when nothing usable survives normalization.
-func remoteName(ctx context.Context, git gitRunner, root string) (string, bool) {
+// section 4.8's general path-safety normalization. It reports ok false
+// with a nil error when there is no origin, or when nothing usable
+// survives normalization — both ordinary reasons to fall back to
+// local/<basename>. A non-nil error means git failed to answer the
+// question at all, which must never be read as "no origin": doing so is
+// how a deadline-killed git config call used to silently misname a
+// repository under local/<basename> instead of failing loudly.
+func remoteName(ctx context.Context, git gitRunner, root string) (string, bool, error) {
 	raw, err := git.originURL(ctx, root)
-	if err != nil || raw == "" {
-		return "", false
+	if err != nil {
+		return "", false, err
+	}
+	if raw == "" {
+		return "", false, nil
 	}
 	host, path, ok := parseOrigin(raw)
 	if !ok {
-		return "", false
+		return "", false, nil
 	}
 	path = strings.TrimSuffix(path, ".git")
 	path = strings.Trim(path, "/")
@@ -205,7 +217,8 @@ func remoteName(ctx context.Context, git gitRunner, root string) (string, bool) 
 	if path != "" {
 		segments = append(segments, strings.Split(path, "/")...)
 	}
-	return normalizeName(segments)
+	name, ok := normalizeName(segments)
+	return name, ok, nil
 }
 
 // parseOrigin splits a git remote URL into its host and path, ahead of

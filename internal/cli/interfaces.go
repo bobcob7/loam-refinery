@@ -12,7 +12,7 @@ import (
 	"github.com/bobcob7/loam-refinery/internal/validate"
 )
 
-//go:generate moq -out moq_test.go . documentValidator renderer entryRegistry documentStore reviewStore profileSource headChecker
+//go:generate moq -out moq_test.go . documentValidator documentStore reviewStore profileSource headChecker HeadCheck
 
 // documentValidator runs every check tier over one document.
 type documentValidator interface {
@@ -190,28 +190,54 @@ type DivergedAnchor struct {
 	Message string
 }
 
-// headChecker answers docs/features/combined-reviews.md §4.3's head_check
-// question for one parsed submission: has an anchor already confirmed at
-// submission time drifted from ref in the working tree since. It is the one
-// place this package asks anything about git at all, and per §4.3.2's
-// routes 2+3, it must not pull internal/verify into this package to do it -
-// the concrete implementation lives in cmd/loam-refinery, which is already
-// free to import internal/verify the way its reviewsAdapter does for
-// verify.Discover.
+// headChecker resolves docs/features/combined-reviews.md §4.3's head_check
+// question once per collect-reviews invocation: which repository, if any,
+// answers ref, and whether ref names HEAD there. Both are per-invocation
+// facts - every submission shares the one ref this command was asked about
+// - so they are asked for exactly once, not once per submission
+// (refinery-k3h), unlike the per-anchor divergence check the returned
+// HeadCheck answers afterward. It is the one place this package asks
+// anything about git at all, and per §4.3.2's routes 2+3, it must not pull
+// internal/verify into this package to do it - the concrete implementation
+// lives in cmd/loam-refinery, which is already free to import
+// internal/verify the way its reviewsAdapter does for verify.Discover.
 type headChecker interface {
-	// CheckDivergence re-runs anchor-worktree-diverged against every anchor
-	// doc carries, fresh, and reports whether ref names HEAD along with
-	// which anchors have drifted since submission. qualifiedIDs maps doc's
-	// own origin comment ids to the qualified id the combined output
-	// assigned them - only the collect-assemble bead's code knows that
-	// mapping, so it is supplied rather than re-derived here.
+	// Discover resolves the repository for dir and whether ref names HEAD
+	// there, once. The returned HeadCheck answers Diverged for each
+	// surviving submission afterward without repeating repository
+	// discovery or the HEAD check itself.
 	//
 	// source is "repo", "none", or "unavailable", the same three values
-	// verification.source uses. isHead is meaningful only when
-	// source == "repo". diverged is non-nil - an empty slice when nothing
-	// has drifted - only when isHead is also true, and nil otherwise: the
-	// check does not apply to a non-HEAD ref, or outside a repository, so
-	// there is nothing to report, and a caller must be able to tell that
-	// apart from "checked, found nothing" (§4.3.1).
-	CheckDivergence(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (source string, isHead bool, diverged []DivergedAnchor, err error)
+	// verification.source uses, and is fixed on the returned HeadCheck
+	// along with isHead, which is meaningful only when source == "repo".
+	Discover(ctx context.Context, dir, ref string) (HeadCheck, error)
+}
+
+// HeadCheck is what one collect-reviews invocation's repository discovery
+// resolved (§4.3, §4.3.2): Source and IsHead are invocation-level facts,
+// fixed once headChecker.Discover returns; Diverged is the one part of the
+// check that remains genuinely per-submission, since two submissions can
+// carry different anchors even though they share Source and IsHead
+// (refinery-k3h). Exported because cmd/loam-refinery's concrete
+// implementation must name this type in its own method signature to
+// satisfy headChecker above.
+type HeadCheck interface {
+	// Source reports "repo", "none", or "unavailable" (see headChecker).
+	Source() string
+	// IsHead reports whether ref, as resolved by Discover, names HEAD.
+	// Meaningful only when Source() == "repo".
+	IsHead() bool
+	// Diverged re-runs anchor-worktree-diverged against every anchor doc
+	// carries, fresh, reusing the repository state Discover already
+	// resolved. qualifiedIDs maps doc's own origin comment ids to the
+	// qualified id the combined output assigned them - only the
+	// collect-assemble bead's code knows that mapping, so it is supplied
+	// rather than re-derived here.
+	//
+	// diverged is non-nil - an empty slice when nothing has drifted - only
+	// when IsHead() is also true, and nil otherwise: the check does not
+	// apply to a non-HEAD ref, or outside a repository, so there is
+	// nothing to report, and a caller must be able to tell that apart from
+	// "checked, found nothing" (§4.3.1).
+	Diverged(ctx context.Context, doc *review.Document, qualifiedIDs map[string]string) (diverged []DivergedAnchor, err error)
 }

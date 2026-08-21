@@ -57,8 +57,3 @@ func NewReadOnly(ctx context.Context, root string) (*Store, error) {
 func (s *Store) Close() error {
 	return s.db.Close()
 }
-
-// Root is the absolute path this store is rooted at.
-func (s *Store) Root() string {
-	return s.root
-}

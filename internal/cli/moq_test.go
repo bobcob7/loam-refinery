@@ -5,13 +5,10 @@ package cli
 
 import (
 	"context"
-	"github.com/bobcob7/loam-refinery/internal/entry"
 	"github.com/bobcob7/loam-refinery/internal/profile"
-	"github.com/bobcob7/loam-refinery/internal/render"
 	"github.com/bobcob7/loam-refinery/internal/review"
 	"github.com/bobcob7/loam-refinery/internal/store"
 	"github.com/bobcob7/loam-refinery/internal/validate"
-	"io"
 	"sync"
 )
 
@@ -90,437 +87,6 @@ func (mock *documentValidatorMock) ValidateCalls() []struct {
 	mock.lockValidate.RLock()
 	calls = mock.calls.Validate
 	mock.lockValidate.RUnlock()
-	return calls
-}
-
-// Ensure, that rendererMock does implement renderer.
-// If this is not the case, regenerate this file with moq.
-var _ renderer = &rendererMock{}
-
-// rendererMock is a mock implementation of renderer.
-//
-//	func TestSomethingThatUsesrenderer(t *testing.T) {
-//
-//		// make and configure a mocked renderer
-//		mockedrenderer := &rendererMock{
-//			CollectReviewsFunc: func(w io.Writer, envelope render.CollectReviewsEnvelope) error {
-//				panic("mock out the CollectReviews method")
-//			},
-//			EntriesFunc: func(w io.Writer, entries []entry.Entry) error {
-//				panic("mock out the Entries method")
-//			},
-//			IndexFunc: func(w io.Writer, groups []entry.Group) error {
-//				panic("mock out the Index method")
-//			},
-//			ProfilesFunc: func(w io.Writer, profiles []profile.Profile) error {
-//				panic("mock out the Profiles method")
-//			},
-//			ResultFunc: func(w io.Writer, result *review.Result) error {
-//				panic("mock out the Result method")
-//			},
-//			SummaryFunc: func(w io.Writer, text string, groups []entry.Group) error {
-//				panic("mock out the Summary method")
-//			},
-//		}
-//
-//		// use mockedrenderer in code that requires renderer
-//		// and then make assertions.
-//
-//	}
-type rendererMock struct {
-	// CollectReviewsFunc mocks the CollectReviews method.
-	CollectReviewsFunc func(w io.Writer, envelope render.CollectReviewsEnvelope) error
-
-	// EntriesFunc mocks the Entries method.
-	EntriesFunc func(w io.Writer, entries []entry.Entry) error
-
-	// IndexFunc mocks the Index method.
-	IndexFunc func(w io.Writer, groups []entry.Group) error
-
-	// ProfilesFunc mocks the Profiles method.
-	ProfilesFunc func(w io.Writer, profiles []profile.Profile) error
-
-	// ResultFunc mocks the Result method.
-	ResultFunc func(w io.Writer, result *review.Result) error
-
-	// SummaryFunc mocks the Summary method.
-	SummaryFunc func(w io.Writer, text string, groups []entry.Group) error
-
-	// calls tracks calls to the methods.
-	calls struct {
-		// CollectReviews holds details about calls to the CollectReviews method.
-		CollectReviews []struct {
-			// W is the w argument value.
-			W io.Writer
-			// Envelope is the envelope argument value.
-			Envelope render.CollectReviewsEnvelope
-		}
-		// Entries holds details about calls to the Entries method.
-		Entries []struct {
-			// W is the w argument value.
-			W io.Writer
-			// Entries is the entries argument value.
-			Entries []entry.Entry
-		}
-		// Index holds details about calls to the Index method.
-		Index []struct {
-			// W is the w argument value.
-			W io.Writer
-			// Groups is the groups argument value.
-			Groups []entry.Group
-		}
-		// Profiles holds details about calls to the Profiles method.
-		Profiles []struct {
-			// W is the w argument value.
-			W io.Writer
-			// Profiles is the profiles argument value.
-			Profiles []profile.Profile
-		}
-		// Result holds details about calls to the Result method.
-		Result []struct {
-			// W is the w argument value.
-			W io.Writer
-			// Result is the result argument value.
-			Result *review.Result
-		}
-		// Summary holds details about calls to the Summary method.
-		Summary []struct {
-			// W is the w argument value.
-			W io.Writer
-			// Text is the text argument value.
-			Text string
-			// Groups is the groups argument value.
-			Groups []entry.Group
-		}
-	}
-	lockCollectReviews sync.RWMutex
-	lockEntries        sync.RWMutex
-	lockIndex          sync.RWMutex
-	lockProfiles       sync.RWMutex
-	lockResult         sync.RWMutex
-	lockSummary        sync.RWMutex
-}
-
-// CollectReviews calls CollectReviewsFunc.
-func (mock *rendererMock) CollectReviews(w io.Writer, envelope render.CollectReviewsEnvelope) error {
-	if mock.CollectReviewsFunc == nil {
-		panic("rendererMock.CollectReviewsFunc: method is nil but renderer.CollectReviews was just called")
-	}
-	callInfo := struct {
-		W        io.Writer
-		Envelope render.CollectReviewsEnvelope
-	}{
-		W:        w,
-		Envelope: envelope,
-	}
-	mock.lockCollectReviews.Lock()
-	mock.calls.CollectReviews = append(mock.calls.CollectReviews, callInfo)
-	mock.lockCollectReviews.Unlock()
-	return mock.CollectReviewsFunc(w, envelope)
-}
-
-// CollectReviewsCalls gets all the calls that were made to CollectReviews.
-// Check the length with:
-//
-//	len(mockedrenderer.CollectReviewsCalls())
-func (mock *rendererMock) CollectReviewsCalls() []struct {
-	W        io.Writer
-	Envelope render.CollectReviewsEnvelope
-} {
-	var calls []struct {
-		W        io.Writer
-		Envelope render.CollectReviewsEnvelope
-	}
-	mock.lockCollectReviews.RLock()
-	calls = mock.calls.CollectReviews
-	mock.lockCollectReviews.RUnlock()
-	return calls
-}
-
-// Entries calls EntriesFunc.
-func (mock *rendererMock) Entries(w io.Writer, entries []entry.Entry) error {
-	if mock.EntriesFunc == nil {
-		panic("rendererMock.EntriesFunc: method is nil but renderer.Entries was just called")
-	}
-	callInfo := struct {
-		W       io.Writer
-		Entries []entry.Entry
-	}{
-		W:       w,
-		Entries: entries,
-	}
-	mock.lockEntries.Lock()
-	mock.calls.Entries = append(mock.calls.Entries, callInfo)
-	mock.lockEntries.Unlock()
-	return mock.EntriesFunc(w, entries)
-}
-
-// EntriesCalls gets all the calls that were made to Entries.
-// Check the length with:
-//
-//	len(mockedrenderer.EntriesCalls())
-func (mock *rendererMock) EntriesCalls() []struct {
-	W       io.Writer
-	Entries []entry.Entry
-} {
-	var calls []struct {
-		W       io.Writer
-		Entries []entry.Entry
-	}
-	mock.lockEntries.RLock()
-	calls = mock.calls.Entries
-	mock.lockEntries.RUnlock()
-	return calls
-}
-
-// Index calls IndexFunc.
-func (mock *rendererMock) Index(w io.Writer, groups []entry.Group) error {
-	if mock.IndexFunc == nil {
-		panic("rendererMock.IndexFunc: method is nil but renderer.Index was just called")
-	}
-	callInfo := struct {
-		W      io.Writer
-		Groups []entry.Group
-	}{
-		W:      w,
-		Groups: groups,
-	}
-	mock.lockIndex.Lock()
-	mock.calls.Index = append(mock.calls.Index, callInfo)
-	mock.lockIndex.Unlock()
-	return mock.IndexFunc(w, groups)
-}
-
-// IndexCalls gets all the calls that were made to Index.
-// Check the length with:
-//
-//	len(mockedrenderer.IndexCalls())
-func (mock *rendererMock) IndexCalls() []struct {
-	W      io.Writer
-	Groups []entry.Group
-} {
-	var calls []struct {
-		W      io.Writer
-		Groups []entry.Group
-	}
-	mock.lockIndex.RLock()
-	calls = mock.calls.Index
-	mock.lockIndex.RUnlock()
-	return calls
-}
-
-// Profiles calls ProfilesFunc.
-func (mock *rendererMock) Profiles(w io.Writer, profiles []profile.Profile) error {
-	if mock.ProfilesFunc == nil {
-		panic("rendererMock.ProfilesFunc: method is nil but renderer.Profiles was just called")
-	}
-	callInfo := struct {
-		W        io.Writer
-		Profiles []profile.Profile
-	}{
-		W:        w,
-		Profiles: profiles,
-	}
-	mock.lockProfiles.Lock()
-	mock.calls.Profiles = append(mock.calls.Profiles, callInfo)
-	mock.lockProfiles.Unlock()
-	return mock.ProfilesFunc(w, profiles)
-}
-
-// ProfilesCalls gets all the calls that were made to Profiles.
-// Check the length with:
-//
-//	len(mockedrenderer.ProfilesCalls())
-func (mock *rendererMock) ProfilesCalls() []struct {
-	W        io.Writer
-	Profiles []profile.Profile
-} {
-	var calls []struct {
-		W        io.Writer
-		Profiles []profile.Profile
-	}
-	mock.lockProfiles.RLock()
-	calls = mock.calls.Profiles
-	mock.lockProfiles.RUnlock()
-	return calls
-}
-
-// Result calls ResultFunc.
-func (mock *rendererMock) Result(w io.Writer, result *review.Result) error {
-	if mock.ResultFunc == nil {
-		panic("rendererMock.ResultFunc: method is nil but renderer.Result was just called")
-	}
-	callInfo := struct {
-		W      io.Writer
-		Result *review.Result
-	}{
-		W:      w,
-		Result: result,
-	}
-	mock.lockResult.Lock()
-	mock.calls.Result = append(mock.calls.Result, callInfo)
-	mock.lockResult.Unlock()
-	return mock.ResultFunc(w, result)
-}
-
-// ResultCalls gets all the calls that were made to Result.
-// Check the length with:
-//
-//	len(mockedrenderer.ResultCalls())
-func (mock *rendererMock) ResultCalls() []struct {
-	W      io.Writer
-	Result *review.Result
-} {
-	var calls []struct {
-		W      io.Writer
-		Result *review.Result
-	}
-	mock.lockResult.RLock()
-	calls = mock.calls.Result
-	mock.lockResult.RUnlock()
-	return calls
-}
-
-// Summary calls SummaryFunc.
-func (mock *rendererMock) Summary(w io.Writer, text string, groups []entry.Group) error {
-	if mock.SummaryFunc == nil {
-		panic("rendererMock.SummaryFunc: method is nil but renderer.Summary was just called")
-	}
-	callInfo := struct {
-		W      io.Writer
-		Text   string
-		Groups []entry.Group
-	}{
-		W:      w,
-		Text:   text,
-		Groups: groups,
-	}
-	mock.lockSummary.Lock()
-	mock.calls.Summary = append(mock.calls.Summary, callInfo)
-	mock.lockSummary.Unlock()
-	return mock.SummaryFunc(w, text, groups)
-}
-
-// SummaryCalls gets all the calls that were made to Summary.
-// Check the length with:
-//
-//	len(mockedrenderer.SummaryCalls())
-func (mock *rendererMock) SummaryCalls() []struct {
-	W      io.Writer
-	Text   string
-	Groups []entry.Group
-} {
-	var calls []struct {
-		W      io.Writer
-		Text   string
-		Groups []entry.Group
-	}
-	mock.lockSummary.RLock()
-	calls = mock.calls.Summary
-	mock.lockSummary.RUnlock()
-	return calls
-}
-
-// Ensure, that entryRegistryMock does implement entryRegistry.
-// If this is not the case, regenerate this file with moq.
-var _ entryRegistry = &entryRegistryMock{}
-
-// entryRegistryMock is a mock implementation of entryRegistry.
-//
-//	func TestSomethingThatUsesentryRegistry(t *testing.T) {
-//
-//		// make and configure a mocked entryRegistry
-//		mockedentryRegistry := &entryRegistryMock{
-//			IndexFunc: func() []entry.Group {
-//				panic("mock out the Index method")
-//			},
-//			ResolveFunc: func(name string) (entry.Entry, error) {
-//				panic("mock out the Resolve method")
-//			},
-//		}
-//
-//		// use mockedentryRegistry in code that requires entryRegistry
-//		// and then make assertions.
-//
-//	}
-type entryRegistryMock struct {
-	// IndexFunc mocks the Index method.
-	IndexFunc func() []entry.Group
-
-	// ResolveFunc mocks the Resolve method.
-	ResolveFunc func(name string) (entry.Entry, error)
-
-	// calls tracks calls to the methods.
-	calls struct {
-		// Index holds details about calls to the Index method.
-		Index []struct {
-		}
-		// Resolve holds details about calls to the Resolve method.
-		Resolve []struct {
-			// Name is the name argument value.
-			Name string
-		}
-	}
-	lockIndex   sync.RWMutex
-	lockResolve sync.RWMutex
-}
-
-// Index calls IndexFunc.
-func (mock *entryRegistryMock) Index() []entry.Group {
-	if mock.IndexFunc == nil {
-		panic("entryRegistryMock.IndexFunc: method is nil but entryRegistry.Index was just called")
-	}
-	callInfo := struct {
-	}{}
-	mock.lockIndex.Lock()
-	mock.calls.Index = append(mock.calls.Index, callInfo)
-	mock.lockIndex.Unlock()
-	return mock.IndexFunc()
-}
-
-// IndexCalls gets all the calls that were made to Index.
-// Check the length with:
-//
-//	len(mockedentryRegistry.IndexCalls())
-func (mock *entryRegistryMock) IndexCalls() []struct {
-} {
-	var calls []struct {
-	}
-	mock.lockIndex.RLock()
-	calls = mock.calls.Index
-	mock.lockIndex.RUnlock()
-	return calls
-}
-
-// Resolve calls ResolveFunc.
-func (mock *entryRegistryMock) Resolve(name string) (entry.Entry, error) {
-	if mock.ResolveFunc == nil {
-		panic("entryRegistryMock.ResolveFunc: method is nil but entryRegistry.Resolve was just called")
-	}
-	callInfo := struct {
-		Name string
-	}{
-		Name: name,
-	}
-	mock.lockResolve.Lock()
-	mock.calls.Resolve = append(mock.calls.Resolve, callInfo)
-	mock.lockResolve.Unlock()
-	return mock.ResolveFunc(name)
-}
-
-// ResolveCalls gets all the calls that were made to Resolve.
-// Check the length with:
-//
-//	len(mockedentryRegistry.ResolveCalls())
-func (mock *entryRegistryMock) ResolveCalls() []struct {
-	Name string
-} {
-	var calls []struct {
-		Name string
-	}
-	mock.lockResolve.RLock()
-	calls = mock.calls.Resolve
-	mock.lockResolve.RUnlock()
 	return calls
 }
 
@@ -1205,8 +771,8 @@ var _ headChecker = &headCheckerMock{}
 //
 //		// make and configure a mocked headChecker
 //		mockedheadChecker := &headCheckerMock{
-//			CheckDivergenceFunc: func(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (string, bool, []DivergedAnchor, error) {
-//				panic("mock out the CheckDivergence method")
+//			DiscoverFunc: func(ctx context.Context, dir string, ref string) (HeadCheck, error) {
+//				panic("mock out the Discover method")
 //			},
 //		}
 //
@@ -1215,66 +781,212 @@ var _ headChecker = &headCheckerMock{}
 //
 //	}
 type headCheckerMock struct {
-	// CheckDivergenceFunc mocks the CheckDivergence method.
-	CheckDivergenceFunc func(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (string, bool, []DivergedAnchor, error)
+	// DiscoverFunc mocks the Discover method.
+	DiscoverFunc func(ctx context.Context, dir string, ref string) (HeadCheck, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// CheckDivergence holds details about calls to the CheckDivergence method.
-		CheckDivergence []struct {
+		// Discover holds details about calls to the Discover method.
+		Discover []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// Dir is the dir argument value.
 			Dir string
+			// Ref is the ref argument value.
+			Ref string
+		}
+	}
+	lockDiscover sync.RWMutex
+}
+
+// Discover calls DiscoverFunc.
+func (mock *headCheckerMock) Discover(ctx context.Context, dir string, ref string) (HeadCheck, error) {
+	if mock.DiscoverFunc == nil {
+		panic("headCheckerMock.DiscoverFunc: method is nil but headChecker.Discover was just called")
+	}
+	callInfo := struct {
+		Ctx context.Context
+		Dir string
+		Ref string
+	}{
+		Ctx: ctx,
+		Dir: dir,
+		Ref: ref,
+	}
+	mock.lockDiscover.Lock()
+	mock.calls.Discover = append(mock.calls.Discover, callInfo)
+	mock.lockDiscover.Unlock()
+	return mock.DiscoverFunc(ctx, dir, ref)
+}
+
+// DiscoverCalls gets all the calls that were made to Discover.
+// Check the length with:
+//
+//	len(mockedheadChecker.DiscoverCalls())
+func (mock *headCheckerMock) DiscoverCalls() []struct {
+	Ctx context.Context
+	Dir string
+	Ref string
+} {
+	var calls []struct {
+		Ctx context.Context
+		Dir string
+		Ref string
+	}
+	mock.lockDiscover.RLock()
+	calls = mock.calls.Discover
+	mock.lockDiscover.RUnlock()
+	return calls
+}
+
+// Ensure, that HeadCheckMock does implement HeadCheck.
+// If this is not the case, regenerate this file with moq.
+var _ HeadCheck = &HeadCheckMock{}
+
+// HeadCheckMock is a mock implementation of HeadCheck.
+//
+//	func TestSomethingThatUsesHeadCheck(t *testing.T) {
+//
+//		// make and configure a mocked HeadCheck
+//		mockedHeadCheck := &HeadCheckMock{
+//			DivergedFunc: func(ctx context.Context, doc *review.Document, qualifiedIDs map[string]string) ([]DivergedAnchor, error) {
+//				panic("mock out the Diverged method")
+//			},
+//			IsHeadFunc: func() bool {
+//				panic("mock out the IsHead method")
+//			},
+//			SourceFunc: func() string {
+//				panic("mock out the Source method")
+//			},
+//		}
+//
+//		// use mockedHeadCheck in code that requires HeadCheck
+//		// and then make assertions.
+//
+//	}
+type HeadCheckMock struct {
+	// DivergedFunc mocks the Diverged method.
+	DivergedFunc func(ctx context.Context, doc *review.Document, qualifiedIDs map[string]string) ([]DivergedAnchor, error)
+
+	// IsHeadFunc mocks the IsHead method.
+	IsHeadFunc func() bool
+
+	// SourceFunc mocks the Source method.
+	SourceFunc func() string
+
+	// calls tracks calls to the methods.
+	calls struct {
+		// Diverged holds details about calls to the Diverged method.
+		Diverged []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
 			// Doc is the doc argument value.
 			Doc *review.Document
 			// QualifiedIDs is the qualifiedIDs argument value.
 			QualifiedIDs map[string]string
 		}
+		// IsHead holds details about calls to the IsHead method.
+		IsHead []struct {
+		}
+		// Source holds details about calls to the Source method.
+		Source []struct {
+		}
 	}
-	lockCheckDivergence sync.RWMutex
+	lockDiverged sync.RWMutex
+	lockIsHead   sync.RWMutex
+	lockSource   sync.RWMutex
 }
 
-// CheckDivergence calls CheckDivergenceFunc.
-func (mock *headCheckerMock) CheckDivergence(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (string, bool, []DivergedAnchor, error) {
-	if mock.CheckDivergenceFunc == nil {
-		panic("headCheckerMock.CheckDivergenceFunc: method is nil but headChecker.CheckDivergence was just called")
+// Diverged calls DivergedFunc.
+func (mock *HeadCheckMock) Diverged(ctx context.Context, doc *review.Document, qualifiedIDs map[string]string) ([]DivergedAnchor, error) {
+	if mock.DivergedFunc == nil {
+		panic("HeadCheckMock.DivergedFunc: method is nil but HeadCheck.Diverged was just called")
 	}
 	callInfo := struct {
 		Ctx          context.Context
-		Dir          string
 		Doc          *review.Document
 		QualifiedIDs map[string]string
 	}{
 		Ctx:          ctx,
-		Dir:          dir,
 		Doc:          doc,
 		QualifiedIDs: qualifiedIDs,
 	}
-	mock.lockCheckDivergence.Lock()
-	mock.calls.CheckDivergence = append(mock.calls.CheckDivergence, callInfo)
-	mock.lockCheckDivergence.Unlock()
-	return mock.CheckDivergenceFunc(ctx, dir, doc, qualifiedIDs)
+	mock.lockDiverged.Lock()
+	mock.calls.Diverged = append(mock.calls.Diverged, callInfo)
+	mock.lockDiverged.Unlock()
+	return mock.DivergedFunc(ctx, doc, qualifiedIDs)
 }
 
-// CheckDivergenceCalls gets all the calls that were made to CheckDivergence.
+// DivergedCalls gets all the calls that were made to Diverged.
 // Check the length with:
 //
-//	len(mockedheadChecker.CheckDivergenceCalls())
-func (mock *headCheckerMock) CheckDivergenceCalls() []struct {
+//	len(mockedHeadCheck.DivergedCalls())
+func (mock *HeadCheckMock) DivergedCalls() []struct {
 	Ctx          context.Context
-	Dir          string
 	Doc          *review.Document
 	QualifiedIDs map[string]string
 } {
 	var calls []struct {
 		Ctx          context.Context
-		Dir          string
 		Doc          *review.Document
 		QualifiedIDs map[string]string
 	}
-	mock.lockCheckDivergence.RLock()
-	calls = mock.calls.CheckDivergence
-	mock.lockCheckDivergence.RUnlock()
+	mock.lockDiverged.RLock()
+	calls = mock.calls.Diverged
+	mock.lockDiverged.RUnlock()
+	return calls
+}
+
+// IsHead calls IsHeadFunc.
+func (mock *HeadCheckMock) IsHead() bool {
+	if mock.IsHeadFunc == nil {
+		panic("HeadCheckMock.IsHeadFunc: method is nil but HeadCheck.IsHead was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockIsHead.Lock()
+	mock.calls.IsHead = append(mock.calls.IsHead, callInfo)
+	mock.lockIsHead.Unlock()
+	return mock.IsHeadFunc()
+}
+
+// IsHeadCalls gets all the calls that were made to IsHead.
+// Check the length with:
+//
+//	len(mockedHeadCheck.IsHeadCalls())
+func (mock *HeadCheckMock) IsHeadCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockIsHead.RLock()
+	calls = mock.calls.IsHead
+	mock.lockIsHead.RUnlock()
+	return calls
+}
+
+// Source calls SourceFunc.
+func (mock *HeadCheckMock) Source() string {
+	if mock.SourceFunc == nil {
+		panic("HeadCheckMock.SourceFunc: method is nil but HeadCheck.Source was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockSource.Lock()
+	mock.calls.Source = append(mock.calls.Source, callInfo)
+	mock.lockSource.Unlock()
+	return mock.SourceFunc()
+}
+
+// SourceCalls gets all the calls that were made to Source.
+// Check the length with:
+//
+//	len(mockedHeadCheck.SourceCalls())
+func (mock *HeadCheckMock) SourceCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockSource.RLock()
+	calls = mock.calls.Source
+	mock.lockSource.RUnlock()
 	return calls
 }

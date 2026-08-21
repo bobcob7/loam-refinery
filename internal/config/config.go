@@ -146,18 +146,6 @@ func Materialize(configPath string) error {
 	return nil
 }
 
-// RepoOverride looks up store.repos for one repository, matched against
-// worktreeRoot when it is not empty, or workingDir when there is no
-// worktree (docs/config.md §4.2).
-func (c *Config) RepoOverride(worktreeRoot, workingDir string) (string, bool) {
-	key := worktreeRoot
-	if key == "" {
-		key = workingDir
-	}
-	name, ok := c.Store.Repos[key]
-	return name, ok
-}
-
 // locations is where the config file and the default store directory are,
 // resolved from the environment alone — before the config file is read, so
 // that Load knows where to read it from.

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/bobcob7/loam-refinery/internal/cli"
+	"github.com/bobcob7/loam-refinery/internal/store"
 	_ "modernc.org/sqlite"
 
 	"github.com/stretchr/testify/assert"
@@ -299,7 +300,7 @@ func TestValidRef(t *testing.T) {
 
 func TestValidVerdict(t *testing.T) {
 	t.Parallel()
-	for _, v := range []string{"approve", "request_changes", "comment"} {
+	for _, v := range store.Verdicts() {
 		assert.Equal(t, v, validVerdict(v))
 	}
 	assert.Empty(t, validVerdict(""))

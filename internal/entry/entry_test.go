@@ -137,6 +137,23 @@ func TestSchemaProviderReadsTheAnnotatedSchema(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEqual(t, root.Body, nested.Body)
 	})
+	t.Run("a bare name colliding with a root field is ambiguous, not silent", func(t *testing.T) {
+		t.Parallel()
+		// refinery-gne: describe --lens=summary went silent — no output, no
+		// error, no exit signal — because summary names both the root field
+		// and comments.suggestions.summary. Unlike "code" (TestResolveNeverGuesses),
+		// where neither collision is a root field, this exercises the path
+		// where one candidate resolves directly off byKey before the suffix
+		// scan ever runs, which is the path the reported bug actually took.
+		// Mutation this kills: dropping the byKey scan from matching (or its
+		// merge with the bySuffix scan) would resolve "summary" to whichever
+		// scan runs alone instead of erroring.
+		_, err := registry.Resolve("summary")
+		var ambiguous *AmbiguousLensError
+		require.ErrorAs(t, err, &ambiguous)
+		assert.Equal(t, "summary", ambiguous.Name)
+		assert.Equal(t, []string{"comments.suggestions.summary", "field:summary"}, ambiguous.Candidates)
+	})
 	t.Run("the anchor object carries no ref", func(t *testing.T) {
 		t.Parallel()
 		_, err := registry.Resolve("comments.anchors.ref")

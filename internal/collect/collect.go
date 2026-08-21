@@ -281,7 +281,7 @@ func buildComments(submissions []Submission) []Comment {
 // when it claimed a profile and is current (SupersededBy nil),
 // ordinal-qualified otherwise. Building the profile form as
 // profile+":"+origin_id relies on an invariant this package cannot check
-// itself: profile-format (combined-reviews.md section 11.6) rejects any
+// itself: profile-format (docs/review-document.md §11.1) rejects any
 // profile containing a colon before submit-review ever writes it to the
 // store, which is what keeps the two qualifier forms from ever colliding
 // with each other or with an origin id. A profile that reached this code
@@ -296,7 +296,7 @@ func qualifierFor(sub *Submission) string {
 // convertAnchors carries a comment's anchors through unchanged, dropping
 // only the validation scaffolding (Field presence/OK) that a stored
 // review has already passed by the time collect-reviews reads it
-// (combined-reviews.md section 3.4: nothing enters the store unverified).
+// (docs/cli.md §2.3.1: nothing enters the store unverified).
 func convertAnchors(anchors []review.Anchor) []Anchor {
 	out := make([]Anchor, 0, len(anchors))
 	for _, a := range anchors {

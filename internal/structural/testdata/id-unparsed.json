@@ -1,0 +1,31 @@
+{
+  "version": "1",
+  "verdict": "request_changes",
+  "ref": "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d",
+  "summary": "Neither comment below carries a usable id, so their diagnostics must name them the empty string.",
+  "comments": [
+    {
+      "priority": 9,
+      "category": "correctness",
+      "body": "This comment has no id field at all.",
+      "anchors": [
+        {
+          "file": "internal/fetch/client.go",
+          "line": 94,
+          "end_line": 88
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "priority": 5,
+      "category": "testing",
+      "body": "This comment's id is a number, not a string.",
+      "anchors": [
+        {
+          "file": "/home/me/repo/client_test.go"
+        }
+      ]
+    }
+  ]
+}

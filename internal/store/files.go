@@ -34,11 +34,21 @@ func Digest(data []byte) string {
 	return sha256Hex(data)
 }
 
+// ReviewPathAt is the formula ReviewPath applies once it has a Store's root
+// in hand, exported for a caller that knows root without opening a Store —
+// cmd/loam-refinery's reviewsAdapter, which resolves root from config
+// alone and would otherwise need a *Store just to compute this. Keeping
+// the formula here, called from both, is what makes the two stay in sync;
+// neither reimplements it.
+func ReviewPathAt(root, repo, ref, digest string) string {
+	return filepath.Join(root, "reviews", filepath.FromSlash(repo), ref, digest+".json")
+}
+
 // ReviewPath returns the path a passing review of ref in repo, with the
 // given digest, occupies under the store — computed, never stored
 // (config.md section 4.5.1).
 func (s *Store) ReviewPath(repo, ref, digest string) string {
-	return filepath.Join(s.root, "reviews", filepath.FromSlash(repo), ref, digest+".json")
+	return ReviewPathAt(s.root, repo, ref, digest)
 }
 
 // RejectedPath returns the path a rejected input in repo, with the given

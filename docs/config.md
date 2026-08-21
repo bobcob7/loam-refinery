@@ -260,8 +260,7 @@ a flag. It is named explicitly in the rejected-key message rather than being
 reported as unknown, so the caller learns where it went. A key named
 `disable`, `warn_only`, or `require_verification` is simply unknown — those
 are not flags a caller mistook for config keys, they are names this tool used
-to accept and no longer does anywhere
-([docs/features/combined-reviews.md §3.3](features/combined-reviews.md#33-no-disable-no-warn-only)).
+to accept and no longer does anywhere ([cli.md §3](cli.md#3-flags)).
 
 The reason is the one this format is built around. A document's validity is a
 property of the document, and the moment a file in someone's home directory can
@@ -857,11 +856,16 @@ migrate what is on disk, and `PRAGMA user_version`
 ([§4.5.4](#454-sqlc)) is what makes that orderly.
 
 The supported way to read a store is `loam-refinery reviews`
-([§6](#6-reading-the-store)). That command's *output* is the contract; what sits
-behind it is not. Opening `store.db` with `sqlite3` to answer a question nobody
-built a flag for is expected and fine — that is much of why it is SQL — but a
-script that depends on a column name is a script a migration will break, and it
-will not be warned first.
+([§6](#6-reading-the-store)) and, for one ref across submissions,
+`loam-refinery collect-reviews`
+([docs/features/combined-reviews.md](features/combined-reviews.md)). Both
+read through this package's query layer — `DistinctDigests`, `ReviewPath`,
+`ReadContent` — never the layout directly, and it is those commands'
+*output* that is the contract; what sits behind either of them is not.
+Opening `store.db` with `sqlite3` to answer a question nobody built a flag
+for is expected and fine — that is much of why it is SQL — but a script that
+depends on a column name is a script a migration will break, and it will not
+be warned first.
 
 This is deliberately weaker than every other promise in these specifications.
 Check names are API; lens names are API; the result object is API. The store is
@@ -878,7 +882,7 @@ renegotiate.
 ## 5. Storing a review
 
 ```
-loam-refinery submit-review [path]
+loam-refinery submit-review [path] [--strict]
 ```
 
 `path` names the review document to read — from stdin when omitted or `-`,
@@ -887,11 +891,14 @@ repository a run stores against is a separate question, always inferred
 from the working directory ([§4.2](#42-repository-identity)) rather than
 named on the command line at all.
 
-There is no flag here, and no `--format` either ([cli.md §5.1](cli.md#51-one-format)
-is why `submit-review` has none). Every review that validates clean is
-stored, and every input that reaches validation and fails it is stored too.
-An exit-3 run reaches neither — the precondition it fails on runs before
-validation starts — and is covered on its own terms below.
+`--strict` survives here, but it changes only what a run reports, never
+whether it stores: there is no flag that turns storing on or off for a
+single run, and no `--format` either ([cli.md §5.1](cli.md#51-one-format)
+is why `submit-review` carries no second one). Every review that validates
+clean is stored, and every input that reaches validation and fails it is
+stored too. An exit-3 run reaches neither — the precondition it fails on is
+read off verification's own result and stops the rest of validation there
+— and is covered on its own terms below.
 
 **Exit 0 writes a review; exit 1 writes a rejected input; exit 3 writes
 neither.** Exit 0 and exit 1 go in separate trees ([§4.4](#44-the-stored-files))
@@ -1016,16 +1023,30 @@ arranged **before** the run rather than during it:
 2. **Ship a config file** containing `{"version":"1","store":{"enabled":false}}`.
    Storing is off, and nothing is created or recorded.
 
-**Amended, by addition rather than contradiction:** the second option costs an
-operator something new once
-[`loam-refinery collect-reviews`](features/combined-reviews.md) exists. A
-machine with `store.enabled: false` gets no output from `collect-reviews`
-whatsoever — not "no reviews yet," but nothing, ever, for that machine — and
-`collect-reviews` reports `store.enabled` on its own envelope precisely so a
-caller in that position can tell "off" from "nobody has reviewed this yet."
-An operator who needs both — a read-only image *and* `collect-reviews`
-reading something back — has to use the first option instead,
-`LOAM_REFINERY_HOME` pointed at somewhere writable.
+**Amended, by addition rather than contradiction:** the second option is worth
+a note now that
+[`loam-refinery collect-reviews`](features/combined-reviews.md) exists,
+though not the note an earlier draft of this section made. `store.enabled`
+gates *writing*, exactly as it always has for
+[`loam-refinery reviews`](#6-reading-the-store) — it has never gated
+reading, because [`internal/store/read.go`](../internal/store/read.go)
+answers every query form straight from `store.db` with no reference to the
+flag. A machine that stored reviews before `store.enabled` was set to
+`false`, and is then pointed at with `collect-reviews`, gets every one of
+them back — full output, exit 0 — because the store the flag turned off
+*writing* to is the same store the read is answering from. What the flag
+buys an operator is narrower: nothing submitted while it is off gets added,
+so a store that was empty when the flag was set stays empty, and
+`collect-reviews` against it looks like any other repository or ref the
+store has nothing filed under
+([docs/features/combined-reviews.md §9](features/combined-reviews.md#9-empty-and-failure-cases)).
+`collect-reviews` reports `store.enabled` on its own envelope precisely so
+a caller can tell "off, holding whatever was written while it was on" apart
+from "on, and current." An operator who wants a `collect-reviews` read to
+see nothing at all — not merely nothing new — needs a store with nothing in
+it, which means the first option instead: `LOAM_REFINERY_HOME` pointed at
+somewhere that has never been used, not this flag toggled on an existing
+one.
 
 The second one has a bootstrapping edge worth stating plainly, because it is the
 sharpest consequence of removing the flag. The key that disables storing lives
@@ -1300,19 +1321,49 @@ its `path` values are computed addresses rather than verified ones and no
 slow down as a store grows, and a caller that needs certainty asks for the
 content.
 
+`loam-refinery collect-reviews`
+([docs/features/combined-reviews.md](features/combined-reviews.md)) always
+reads content — it has no index-only rung, unlike `reviews` — so
+`unreadable` is always present on its envelope, `0` when nothing was
+missing, rather than appearing only when `--content` was asked for.
+
 Verifying each file against the digest that names it was specified in an earlier
-draft and is not here. Content addressing makes tampering *detectable* — a
-review file whose bytes no longer hash to its own name has been altered — but
-re-hashing every file a caller reads is machinery this command does not need
-yet, and [§8](#8-future-considerations) is where it waits.
+draft and was not here — for `--content`, that is still the case: re-hashing
+every file a human-driven `reviews --content` reads is machinery that query
+does not need, and [§8](#8-future-considerations) is where it still waits.
+
+**`collect-reviews` is a narrower exception.** Content
+addressing makes tampering *detectable* — a review file whose bytes no longer
+hash to its own name has been altered — but detectable is not the same as
+detected, and `collect-reviews`'s own scenario is the one where that gap
+matters: N reviewer agents running as one user against one store means a
+compromised co-resident agent can write to the same 0700 tree every other
+agent's output is read back from. A forged file there would otherwise be
+parsed and projected with none of `submit-review`'s own structural or schema
+checks re-run against it — worse, re-running those checks would not even
+help, since a forged document can be built to pass them; only comparing
+against the digest the file is filed under confirms these are the bytes that
+actually passed them when written. So `collect-reviews` now verifies: the
+digest it already asked `DistinctDigests` for is compared against
+`store.Digest` of the bytes `ReadContent` returns
+([internal/cli/collect_reviews.go](../internal/cli/collect_reviews.go)), and a
+mismatch is skipped and counted into `unreadable`, the identical treatment a
+missing file gets — a corrupt store entry is the tool's own state, not a fact
+about any review, so it earns no louder a response than "could not be read"
+does. It is logged distinctly from a plain read failure, so an operator
+watching this run's logs, unlike a caller reading only the envelope, can still
+tell "file missing" from "file present and not what it claims to be."
+`reviews --content` does not gain this check here — it is a person's own
+query against their own store, not the multi-agent path this check exists
+for — and stays exactly the deferred case above.
 
 A rejected file is a partial exception to what a mismatch means: it is not
 necessarily tampering, because a file over 1 MiB is truncated to its first
 megabyte by design while its name still names the full input
 ([§4.4.1](#441-rejected-inputs)). The same hash-against-name check that would
 catch tampering doubles as the only signal that a rejected file was truncated
-rather than kept whole — and this command runs it no more for that than it
-does for the reviews tree above.
+rather than kept whole — and neither `reviews --content` nor `collect-reviews`
+(which never reads the rejected tree) runs it for that.
 
 Files in a tree that no row accounts for are ignored entirely rather than
 counted: the litter editors and backup tools leave behind, and the file of a run
@@ -1376,9 +1427,10 @@ Deliberately deferred, recorded so the design leaves room for them.
 - **Querying by ref prefix.** `--ref` takes the full SHA
   ([§6](#6-reading-the-store)); resolving a unique prefix is the first
   convenience to add if querying by hand becomes common.
-- **Verifying stored files against their digests.** Content addressing makes
-  tampering detectable; nothing checks for it yet
-  ([§6.3](#63-missing-and-foreign-files)).
+- **Verifying `reviews --content` against its digest.** `collect-reviews`
+  gained this check ([§6.3](#63-missing-and-foreign-files)); a human-driven
+  `reviews --content` still has not, since it is not the multi-agent-one-store
+  path the check exists for.
 - **Run analytics.** `reviews --failed` lists; it does not summarize. The
   questions the run log exists to answer — which checks this agent trips most,
   whether that is improving, how a prompt change moved the numbers — want

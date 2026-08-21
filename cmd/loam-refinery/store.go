@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 
 	"github.com/bobcob7/loam-refinery/internal/cli"
@@ -17,14 +18,13 @@ import (
 // prime, describe, schema, and version never construct one.
 type storeAdapter struct {
 	git *store.Git
-	log *slog.Logger
 }
 
 // newStoreAdapter returns a documentStore that resolves and opens the store
 // fresh on every call, per docs/config.md §2.2: nothing about a store is
 // read or created until a validate run has something to keep.
 func newStoreAdapter(log *slog.Logger) *storeAdapter {
-	return &storeAdapter{git: store.NewGit(log), log: log}
+	return &storeAdapter{git: store.NewGit(log)}
 }
 
 // Save implements internal/cli's documentStore. It loads the config file,
@@ -108,17 +108,18 @@ func validRef(ref string) string {
 	return ref
 }
 
-// validVerdict reports verdict only when it is one of the three values the
-// runs table's CHECK constraint accepts (docs/config.md §4.5.2); anything
-// else — absent, ill-typed, or simply not one of the three words — is left
-// out rather than sent to a column that would reject it.
+// validVerdict reports verdict only when it is one of store.Verdicts() —
+// the runs table's CHECK constraint (docs/config.md §4.5.2) and
+// review.schema.json's verdict enum both name the same three words, and
+// store.Verdicts() is the single place this package spells them out rather
+// than retyping them here too. Anything else — absent, ill-typed, or
+// simply not one of those words — is left out rather than sent to a
+// column that would reject it.
 func validVerdict(verdict string) string {
-	switch verdict {
-	case "approve", "request_changes", "comment":
+	if slices.Contains(store.Verdicts(), verdict) {
 		return verdict
-	default:
-		return ""
 	}
+	return ""
 }
 
 // validateRepoOverrides checks every store.repos value against

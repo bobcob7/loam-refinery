@@ -61,6 +61,7 @@
     {
       "namespace": "topic",
       "names": [
+        "collect-reviews",
         "effort-vs-scope",
         "ids",
         "store",

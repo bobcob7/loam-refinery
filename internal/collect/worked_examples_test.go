@@ -2,6 +2,8 @@ package collect
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,63 +11,119 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// submissionA and submissionB are docs/features/combined-reviews.md
-// section 12.1's two stored documents, copied verbatim.
-const submissionA = `{
-  "version": "1",
-  "verdict": "request_changes",
-  "profile": "backend",
-  "ref": "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d",
-  "summary": "The retry loop is sound, but the context deadline is not propagated to the downstream call.",
-  "comments": [
-    {
-      "id": "dropped-context-1",
-      "priority": 9,
-      "category": "correctness",
-      "body": "The retry loop calls c.do(context.Background(), req) rather than passing the caller's ctx.",
-      "anchors": [
-        { "file": "internal/fetch/client.go", "line": 88, "end_line": 94 }
-      ],
-      "suggestions": [
-        {
-          "summary": "Pass the caller's context straight through to c.do",
-          "effort": "trivial",
-          "scope": "line",
-          "pros": ["Cancellation and deadlines propagate immediately"],
-          "cons": ["A caller relying on retries outliving the request context sees a behavior change"]
-        }
-      ]
-    }
-  ]
-}`
+// combinedReviewsDoc, heading121, and heading122 locate the two worked
+// examples this file reproduces: docs/features/combined-reviews.md §12.1
+// and §12.2.
+const combinedReviewsDoc = "../../docs/features/combined-reviews.md"
 
-const submissionB = `{
-  "version": "1",
-  "verdict": "comment",
-  "profile": "security",
-  "ref": "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d",
-  "summary": "One low-severity logging concern; nothing blocking.",
-  "comments": [
-    {
-      "id": "dropped-context-1",
-      "priority": 3,
-      "category": "security",
-      "body": "The retry loop's debug log includes req.Header verbatim, which can carry an Authorization value on a retried request.",
-      "anchors": [
-        { "file": "internal/fetch/client.go", "line": 82 }
-      ],
-      "suggestions": [
-        {
-          "summary": "Redact known-sensitive headers before logging the request",
-          "effort": "small",
-          "scope": "file",
-          "pros": ["Removes the leak at the one place it can happen"],
-          "cons": ["A future header added to the allowlist could reopen this silently"]
-        }
-      ]
-    }
-  ]
-}`
+const heading121 = "### 12.1 Two profiles, one ref"
+
+const heading122 = "### 12.2 One profile, revised, plus one unprofiled submission"
+
+// backtickRun returns the number of leading backtick characters in s.
+func backtickRun(s string) int {
+	n := 0
+	for _, r := range s {
+		if r != '`' {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+// docSectionEnd returns the offset, within text, of the next heading line
+// (any level) following the heading line found at anchorPos, ignoring any
+// line inside a fenced code block — a fence can contain a line that merely
+// looks like a heading, and CommonMark never reads it as one. A minimal,
+// package-local mirror of internal/cli/docs_shape_test.go's own
+// docSectionEnd (refinery-xlp.9): this package does not import
+// internal/cli, so the technique is duplicated here rather than shared,
+// but the property it enforces is the same one that helper protects — a
+// search for a fenced block must never roll past the section it was asked
+// about into whatever comes next.
+func docSectionEnd(text string, anchorPos int) int {
+	lines := strings.SplitAfter(text[anchorPos:], "\n")
+	pos := anchorPos
+	fenceLen := 0
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		run := backtickRun(trimmed)
+		switch {
+		case fenceLen == 0 && run >= 3:
+			fenceLen = run
+		case fenceLen > 0 && run >= fenceLen && run == len(trimmed):
+			fenceLen = 0
+		case fenceLen == 0 && i > 0 && strings.HasPrefix(trimmed, "#"):
+			return pos
+		}
+		pos += len(line)
+	}
+	return len(text)
+}
+
+// findFenceClose scans lines starting at offset from in text for the first
+// line whose trimmed content is entirely backticks, at least closeLen of
+// them — CommonMark's actual fence-closing rule, matched by line shape
+// rather than by the first bare "```" substring anywhere in the content,
+// which a fenced excerpt containing its own embedded backticks could
+// otherwise close early.
+func findFenceClose(text string, from, closeLen int) (blockEnd, nextPos int) {
+	lines := strings.SplitAfter(text[from:], "\n")
+	pos := from
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && len(trimmed) >= closeLen && strings.Trim(trimmed, "`") == "" {
+			return pos, pos + len(line)
+		}
+		pos += len(line)
+	}
+	return -1, -1
+}
+
+// docFencedJSON returns the occurrence-th fenced ```json block that
+// appears after anchor, and before the next heading, in the document at
+// path, as raw trimmed text — read fresh every run rather than copied into
+// a Go literal (refinery-xlp.9), so editing the doc's own displayed
+// example changes what this test feeds Assemble, and a docs edit that
+// drifts from the documented output fails here instead of nothing
+// noticing.
+func docFencedJSON(t *testing.T, path, anchor string, occurrence int) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err, "reading %s", path)
+	text := string(data)
+	at := strings.Index(text, anchor)
+	require.GreaterOrEqualf(t, at, 0, "anchor %q not found in %s", anchor, path)
+	rest := text[at:docSectionEnd(text, at)]
+	const fence = "```json"
+	pos := 0
+	for n := 1; ; n++ {
+		open := strings.Index(rest[pos:], fence)
+		require.GreaterOrEqualf(t, open, 0, "json block #%d after %q not found before the next heading in %s", occurrence, anchor, path)
+		openLineEnd := pos + open + len(fence)
+		if nl := strings.IndexByte(rest[openLineEnd:], '\n'); nl >= 0 {
+			openLineEnd += nl + 1
+		} else {
+			openLineEnd = len(rest)
+		}
+		blockEnd, nextPos := findFenceClose(rest, openLineEnd, backtickRun(fence))
+		require.GreaterOrEqualf(t, blockEnd, 0, "unterminated json block after %q in %s", anchor, path)
+		block := strings.TrimSpace(rest[openLineEnd:blockEnd])
+		pos = nextPos
+		if n == occurrence {
+			return block
+		}
+	}
+}
+
+// submissionA and submissionB are docs/features/combined-reviews.md
+// §12.1's two stored documents, read from the file rather than copied
+// verbatim into a literal — occurrence 1 is Submission A, occurrence 2 is
+// Submission B.
+func submissionA(t *testing.T) string { return docFencedJSON(t, combinedReviewsDoc, heading121, 1) }
+
+func submissionB(t *testing.T) string { return docFencedJSON(t, combinedReviewsDoc, heading121, 2) }
 
 // TestAssemble_WorkedExample_TwoProfilesOneRef reproduces
 // docs/features/combined-reviews.md section 12.1: two current submissions
@@ -83,9 +141,9 @@ func TestAssemble_WorkedExample_TwoProfilesOneRef(t *testing.T) {
 	r := &readerMock{ReadReviewFunc: func(_ context.Context, digest string) ([]byte, error) {
 		switch digest {
 		case "digest-a":
-			return []byte(submissionA), nil
+			return []byte(submissionA(t)), nil
 		case "digest-b":
-			return []byte(submissionB), nil
+			return []byte(submissionB(t)), nil
 		default:
 			t.Fatalf("unexpected digest %q", digest)
 			return nil, nil
@@ -139,76 +197,16 @@ func TestAssemble_WorkedExample_TwoProfilesOneRef(t *testing.T) {
 	}(), "QualifiedIDs maps the submission's own origin id to the id this package assigned it")
 }
 
-// docs/features/combined-reviews.md section 12.2's three documents,
-// referred to as D1, D2, D3 in the spec. Suggestion content is invented
-// where the spec elides it with "/* … */" — only the fields the spec
-// pins (ids, profile, priority, supersession, ordering) are asserted.
-const submissionD1 = `{
-  "version": "1",
-  "verdict": "request_changes",
-  "profile": "backend",
-  "ref": "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a",
-  "summary": "Cache invalidation is missing on the write path.",
-  "comments": [
-    {
-      "id": "stale-cache-1",
-      "priority": 6,
-      "category": "correctness",
-      "body": "The write path updates the DB but never invalidates the cache entry.",
-      "anchors": [{ "file": "internal/cache/store.go", "line": 41 }],
-      "suggestions": [
-        { "summary": "Invalidate the cache entry after the write", "effort": "small", "scope": "function", "pros": ["Closes the gap"], "cons": ["Adds one more call on the write path"] }
-      ]
-    }
-  ]
-}`
+// submissionD1, submissionD2, and submissionD3 are docs/features/
+// combined-reviews.md §12.2's three stored documents — D1, D2, D3 in the
+// spec's own labels — read from the file rather than copied verbatim into
+// a literal. Occurrences 1-3 within §12.2 are D1, D2, and D3; occurrence 4
+// is the documented output.
+func submissionD1(t *testing.T) string { return docFencedJSON(t, combinedReviewsDoc, heading122, 1) }
 
-const submissionD2 = `{
-  "version": "1",
-  "verdict": "request_changes",
-  "profile": "backend",
-  "ref": "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a",
-  "summary": "Cache invalidation is missing on two write paths, not one.",
-  "comments": [
-    {
-      "id": "stale-cache-1",
-      "priority": 8,
-      "category": "correctness",
-      "body": "The write path updates the DB but never invalidates the cache entry; on closer read, the batch-update path has the same gap.",
-      "anchors": [{ "file": "internal/cache/store.go", "line": 41 }],
-      "suggestions": [
-        { "summary": "Invalidate the cache entry after every write path", "effort": "small", "scope": "function", "pros": ["Closes the gap on both paths"], "cons": ["Adds one more call on both write paths"] }
-      ]
-    },
-    {
-      "id": "missing-invalidation-1",
-      "priority": 8,
-      "category": "correctness",
-      "body": "Same gap as stale-cache-1, on the batch-update path.",
-      "anchors": [{ "file": "internal/cache/store.go", "line": 96 }],
-      "suggestions": [
-        { "summary": "Invalidate within the batch-update transaction", "effort": "small", "scope": "function", "pros": ["Keeps both paths consistent"], "cons": ["Couples the batch path to the cache layer"] }
-      ]
-    }
-  ]
-}`
+func submissionD2(t *testing.T) string { return docFencedJSON(t, combinedReviewsDoc, heading122, 2) }
 
-const submissionD3 = `{
-  "version": "1",
-  "verdict": "comment",
-  "ref": "9c1a2e4f6b8d0c3a5e7f9b1d3c5a7e9f1b3d5c7a",
-  "summary": "One stray TODO; nothing blocking.",
-  "comments": [
-    {
-      "id": "todo-left-in-1",
-      "priority": 2,
-      "category": "style",
-      "body": "A TODO from the previous change is still here and looks resolved by this one.",
-      "anchors": [{ "file": "internal/cache/store.go", "line": 12 }],
-      "suggestions": []
-    }
-  ]
-}`
+func submissionD3(t *testing.T) string { return docFencedJSON(t, combinedReviewsDoc, heading122, 3) }
 
 // TestAssemble_WorkedExample_RevisedAndUnprofiled reproduces
 // docs/features/combined-reviews.md section 12.2: one profile revised
@@ -223,11 +221,11 @@ func TestAssemble_WorkedExample_RevisedAndUnprofiled(t *testing.T) {
 	r := &readerMock{ReadReviewFunc: func(_ context.Context, digest string) ([]byte, error) {
 		switch digest {
 		case "d1":
-			return []byte(submissionD1), nil
+			return []byte(submissionD1(t)), nil
 		case "d2":
-			return []byte(submissionD2), nil
+			return []byte(submissionD2(t)), nil
 		case "d3":
-			return []byte(submissionD3), nil
+			return []byte(submissionD3(t)), nil
 		default:
 			t.Fatalf("unexpected digest %q", digest)
 			return nil, nil

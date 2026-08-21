@@ -119,6 +119,30 @@ func TestOneMistakeCostsOneDiagnostic(t *testing.T) {
 	}
 }
 
+// TestUnparsedCommentIDNamesItsDiagnosticEmpty pins the contract
+// review.Comment.DiagnosticID documents: a comment whose id is missing or
+// ill-typed is named by the empty string in every diagnostic about it, not
+// by a placeholder of any kind. Before this test, no test anywhere exercised
+// an unparsed id through to a diagnostic, so DiagnosticID's fallback could be
+// changed to anything and the full suite stayed green.
+func TestUnparsedCommentIDNamesItsDiagnosticEmpty(t *testing.T) {
+	t.Parallel()
+	diagnostics := check(t, "id-unparsed.json")
+	var rangeDiagnostic, pathDiagnostic *review.Diagnostic
+	for i, diagnostic := range diagnostics {
+		switch diagnostic.Name {
+		case "anchor-range-ordered":
+			rangeDiagnostic = &diagnostics[i]
+		case "anchor-path-safe":
+			pathDiagnostic = &diagnostics[i]
+		}
+	}
+	require.NotNil(t, rangeDiagnostic, "the missing-id comment's backwards range should still be reported")
+	require.NotNil(t, pathDiagnostic, "the ill-typed-id comment's absolute path should still be reported")
+	assert.Equal(t, "", rangeDiagnostic.Comment, "a missing comment id names the diagnostic with the empty string")
+	assert.Equal(t, "", pathDiagnostic.Comment, "an ill-typed comment id names the diagnostic with the empty string")
+}
+
 func TestValidSHAAcceptsOnlyFullLowercaseHex(t *testing.T) {
 	t.Parallel()
 	assert.True(t, ValidSHA("4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d"))

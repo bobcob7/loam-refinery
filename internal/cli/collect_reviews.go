@@ -4,12 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/bobcob7/loam-refinery/internal/collect"
 	"github.com/bobcob7/loam-refinery/internal/render"
 	"github.com/bobcob7/loam-refinery/internal/review"
 	"github.com/bobcob7/loam-refinery/internal/store"
 )
+
+// errDigestMismatch marks a stored review whose bytes do not hash to the
+// digest they are filed under (refinery-qs2). Content addressing
+// (docs/config.md §4.4) makes this detectable in the first place; checking
+// for it is what makes it detected. It is stronger than re-running
+// submit-review's own structural and schema checks against the bytes read
+// back — a mismatch means these are not the bytes that passed those checks,
+// which no amount of re-validating the bytes actually present can fix, so
+// this package checks identity instead of re-deriving validity.
+var errDigestMismatch = errors.New("stored content does not match its digest")
 
 const collectReviewsUsage = `usage: loam-refinery collect-reviews --ref=SHA [--repo=NAME] [--format=json|markdown]
 `
@@ -84,9 +95,14 @@ func (a *App) collectReviewsRun(ctx context.Context, repo, ref, format string) i
 		a.fail(err)
 		return ExitTool
 	}
-	result, err := collect.Assemble(ctx, toCollectDigests(digests), &collectReader{store: a.reviewStore, repo: repo, ref: ref})
+	reader := &collectReader{store: a.reviewStore, repo: repo, ref: ref, log: a.log}
+	result, err := collect.Assemble(ctx, toCollectDigests(digests), reader)
 	if err != nil {
 		a.fail(err)
+		return ExitTool
+	}
+	if reader.pathErr != nil {
+		a.fail(fmt.Errorf("resolving stored review path: %w", reader.pathErr))
 		return ExitTool
 	}
 	source, isHead, diverged, err := a.collectHeadCheck(ctx, ref, result.Submissions)
@@ -151,55 +167,96 @@ func toCollectDigests(rows []store.DigestRow) []collect.DigestRow {
 type collectReader struct {
 	store     reviewStore
 	repo, ref string
+	// pathErr is the first error ReviewPath returned, if any. ReviewPath's
+	// only failure mode is a config load, the same tool-state failure
+	// Known, StoreEnabled, and DistinctDigests already exit ExitTool for
+	// elsewhere in this run, not a per-digest content problem — so it must
+	// not be folded into Assemble's Unreadable count, which would report a
+	// tool error as a lost review with no cause an operator could read.
+	// collectReviewsRun checks it once Assemble returns and fails the run
+	// with the real cause instead.
+	pathErr error
+	// log records what Assemble's own error return cannot: a digest
+	// mismatch and a missing file both become the identical
+	// skip-and-count against Result.Unreadable (refinery-qs2's own
+	// instinct — a corrupt store entry is the tool's own state, not
+	// something about the review, so it gets the same treatment a review
+	// that never made it to the store gets), but an operator watching this
+	// run's logs must still be able to tell "file missing" from "file
+	// present and not what it claims to be" — one is routine, the other is
+	// the store having been written to outside submit-review's checks. nil
+	// is valid and simply skips logging, so tests that build a
+	// collectReader directly need not supply one.
+	log *slog.Logger
 }
 
-// ReadReview implements internal/collect's reader. Any error here — from
-// resolving the path or from reading it — is reported by Assemble as one
-// unreadable digest, skipped and counted rather than failing the whole run
-// (docs/features/combined-reviews.md §9): a missing or corrupted stored
-// file is exactly config.md §6.3's contract, and a config that could not be
-// read at all fails the same way reviews --content's own ReadContent
-// failures already do — counted, never silently dropped.
+// ReadReview implements internal/collect's reader. A ReadContent failure —
+// a missing file — is exactly what Assemble's reader contract expects:
+// reported through the returned error, skipped and counted against
+// Result.Unreadable. So is a digest mismatch, checked here against the
+// digest Assemble is asking for by name (config.md §4.4: the filename is
+// the digest, so verifying is comparing content already in hand against a
+// value already in hand, not a second read or a second store call) — but
+// logged first, distinctly from a plain read failure, so the two remain
+// tellable apart outside the envelope itself (refinery-qs2). A ReviewPath
+// failure is not treated as either: it is recorded on pathErr rather than
+// left for Assemble to count, since collectReviewsRun treats it as the tool
+// failure it is.
 func (r *collectReader) ReadReview(ctx context.Context, digest string) ([]byte, error) {
 	path, err := r.store.ReviewPath(ctx, r.repo, r.ref, digest)
 	if err != nil {
+		if r.pathErr == nil {
+			r.pathErr = err
+		}
 		return nil, err
 	}
-	return r.store.ReadContent(path)
+	data, err := r.store.ReadContent(path)
+	if err != nil {
+		return nil, err
+	}
+	if actual := store.Digest(data); actual != digest {
+		if r.log != nil {
+			r.log.Warn("stored review does not match its digest", "repo", r.repo, "ref", r.ref, "path", path, "want_digest", digest, "got_digest", actual)
+		}
+		return nil, fmt.Errorf("%s: %w", path, errDigestMismatch)
+	}
+	return data, nil
 }
 
 // collectHeadCheck answers §4.3's head_check question for the whole
 // combined result: has an anchor already confirmed at submission time
-// drifted from ref since. headChecker only ever answers for one parsed
-// document at a time, so this loops over every surviving submission's own
-// Document and merges what comes back — source and is_head are read from
-// the first call (every submission shares the one ref this command was
-// asked about, so every call must agree), and diverged is the
-// concatenation of every call's own entries, staying nil until the first
-// non-nil one arrives so "the check does not apply" survives having zero
-// submissions to check against.
+// drifted from ref since. Repository discovery and the HEAD check are
+// per-invocation facts, not per-submission ones, so headChecker.Discover is
+// called exactly once regardless of how many submissions survived
+// (refinery-k3h); only the returned HeadCheck's Diverged call — which of
+// one submission's own anchors have drifted — is repeated per submission,
+// since that answer genuinely differs from one document to the next.
 //
 // With no submissions at all, there is nothing to loop over, but
 // head_check is still always present (§4.3.1) — a synthetic document
-// carrying only ref, no comments, is enough for headChecker to answer
-// source and is_head from, and AnchorCount()==0 means the recheck itself
-// has nothing to withhold, so diverged still comes back correctly (empty
-// when is_head is true, absent otherwise).
+// carrying only ref, no comments, is enough for Diverged to answer from,
+// and AnchorCount()==0 means the recheck itself has nothing to withhold, so
+// diverged still comes back correctly (empty when is_head is true, absent
+// otherwise).
 func (a *App) collectHeadCheck(ctx context.Context, ref string, submissions []collect.Submission) (string, bool, []DivergedAnchor, error) {
+	head, err := a.headChecker.Discover(ctx, a.dir, ref)
+	if err != nil {
+		return "", false, nil, err
+	}
+	source, isHead := head.Source(), head.IsHead()
 	if len(submissions) == 0 {
 		doc := &review.Document{Ref: review.Field[string]{Value: ref, Present: true, OK: true}}
-		return a.headChecker.CheckDivergence(ctx, a.dir, doc, nil)
-	}
-	var source string
-	var isHead bool
-	var diverged []DivergedAnchor
-	for i, sub := range submissions {
-		s, head, d, err := a.headChecker.CheckDivergence(ctx, a.dir, sub.Document, sub.QualifiedIDs)
+		diverged, err := head.Diverged(ctx, doc, nil)
 		if err != nil {
 			return "", false, nil, err
 		}
-		if i == 0 {
-			source, isHead = s, head
+		return source, isHead, diverged, nil
+	}
+	var diverged []DivergedAnchor
+	for _, sub := range submissions {
+		d, err := head.Diverged(ctx, sub.Document, sub.QualifiedIDs)
+		if err != nil {
+			return "", false, nil, err
 		}
 		if d != nil {
 			if diverged == nil {

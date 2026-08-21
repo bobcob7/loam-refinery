@@ -261,14 +261,3 @@ func TestDistinctDigests_ExcludesOtherRepoOrRef(t *testing.T) {
 	require.Len(t, digests, 1)
 	assert.Equal(t, "target", digests[0].Digest)
 }
-
-func TestReadContent_ReturnsExactBytes(t *testing.T) {
-	t.Parallel()
-	s := newTestStore(t)
-	data := []byte("not json {{{")
-	_, path, err := s.WriteRejected("example", data)
-	require.NoError(t, err)
-	on, err := s.ReadContent(path)
-	require.NoError(t, err)
-	assert.Equal(t, data, on)
-}

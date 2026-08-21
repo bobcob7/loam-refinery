@@ -5,7 +5,7 @@ import "github.com/bobcob7/loam-refinery/internal/review"
 // Checks returns the verification check registry: anchor claims checked against
 // the repository. They run whenever one is found, are reported as skipped when
 // none is, and cannot be disabled or demoted — every verification failure is
-// unconditional (docs/features/combined-reviews.md §3.3).
+// unconditional (docs/cli.md §3).
 func Checks() []review.Check {
 	return []review.Check{
 		{
@@ -59,15 +59,20 @@ loam-refinery never touches the network itself.`,
 			Summary: "the anchored path does not exist at the document ref",
 			Title:   "Anchored file missing",
 			Body: `Fires when an anchor's path does not exist at the document ref, or names a
-directory rather than a file. The diagnostic names the ref it looked
-in, so the claim can be checked by hand:
+directory rather than a file:
 
   git ls-tree -r --name-only 4f2c1a9 | grep client
 
-The usual causes are a path invented from memory, a path relative to a
-subdirectory rather than the repository root, and a file that exists in the
-working tree but not at the reviewed commit. Anchors are repository-relative
-from the root, always — internal/fetch/client.go, never fetch/client.go because
+Two causes read identically but are not the same mistake. A path invented
+from memory exists nowhere. One that exists on disk but was never committed
+— an ordinary new file in an unmerged change — is absent from ref for a
+different reason, and the message says so: commit it, or anchor the ref
+actually reviewed. No such note means no working-tree copy either. Either
+way this stays an error, unconditionally: review an uncommitted document by
+committing it first, not by demoting the check.
+
+A third, unrelated cause: a path relative to a subdirectory rather than the
+repository root — internal/fetch/client.go, never fetch/client.go, because
 that is where you happened to be standing.
 
 An anchor pointing at nothing makes its comment unactionable, which is why this
@@ -104,11 +109,11 @@ answer when you are not certain.`,
 			Title:   "Anchored file diverged from ref",
 			Body: `Fires when ref is the checked-out commit, an anchored file exists there, a
 working-tree copy exists too, and git says the two differ — the ordinary
-state of a checkout somebody is actively editing. It runs as a precondition,
-immediately after parse and before anything else: before structural checks,
-before advisories, before any other anchor. One diagnostic covers the whole
-document, however many anchors diverged, and the run stops there at exit 3,
-not exit 1.
+state of a checkout somebody is actively editing. It is read off
+verification's own pass as a precondition: once found, that pass's other
+results are discarded and the run stops before structural checks and
+advisories. One diagnostic covers the whole document, however many anchors
+diverged — exit 3, not exit 1.
 
 The reviewed state is not a commit, and revising the document cannot fix
 that. Commit what was reviewed — even to a throwaway branch — so ref and the

@@ -43,7 +43,6 @@ func idGrouping(doc *review.Document) ([]review.Diagnostic, []review.Skipped) {
 	type slugState struct {
 		suffixes []int
 		comments map[int]review.Comment
-		order    int
 	}
 	slugs := map[string]*slugState{}
 	order := []string{}

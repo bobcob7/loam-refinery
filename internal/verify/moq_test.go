@@ -24,6 +24,9 @@ var _ gitRunner = &gitRunnerMock{}
 //			worktreeDivergedFunc: func(ctx context.Context, ref string, path string) (bool, error) {
 //				panic("mock out the worktreeDiverged method")
 //			},
+//			worktreeExistsFunc: func(path string) (bool, error) {
+//				panic("mock out the worktreeExists method")
+//			},
 //		}
 //
 //		// use mockedgitRunner in code that requires gitRunner
@@ -36,6 +39,9 @@ type gitRunnerMock struct {
 
 	// worktreeDivergedFunc mocks the worktreeDiverged method.
 	worktreeDivergedFunc func(ctx context.Context, ref string, path string) (bool, error)
+
+	// worktreeExistsFunc mocks the worktreeExists method.
+	worktreeExistsFunc func(path string) (bool, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -55,9 +61,15 @@ type gitRunnerMock struct {
 			// Path is the path argument value.
 			Path string
 		}
+		// worktreeExists holds details about calls to the worktreeExists method.
+		worktreeExists []struct {
+			// Path is the path argument value.
+			Path string
+		}
 	}
 	lockrun              sync.RWMutex
 	lockworktreeDiverged sync.RWMutex
+	lockworktreeExists   sync.RWMutex
 }
 
 // run calls runFunc.
@@ -133,5 +145,37 @@ func (mock *gitRunnerMock) worktreeDivergedCalls() []struct {
 	mock.lockworktreeDiverged.RLock()
 	calls = mock.calls.worktreeDiverged
 	mock.lockworktreeDiverged.RUnlock()
+	return calls
+}
+
+// worktreeExists calls worktreeExistsFunc.
+func (mock *gitRunnerMock) worktreeExists(path string) (bool, error) {
+	if mock.worktreeExistsFunc == nil {
+		panic("gitRunnerMock.worktreeExistsFunc: method is nil but gitRunner.worktreeExists was just called")
+	}
+	callInfo := struct {
+		Path string
+	}{
+		Path: path,
+	}
+	mock.lockworktreeExists.Lock()
+	mock.calls.worktreeExists = append(mock.calls.worktreeExists, callInfo)
+	mock.lockworktreeExists.Unlock()
+	return mock.worktreeExistsFunc(path)
+}
+
+// worktreeExistsCalls gets all the calls that were made to worktreeExists.
+// Check the length with:
+//
+//	len(mockedgitRunner.worktreeExistsCalls())
+func (mock *gitRunnerMock) worktreeExistsCalls() []struct {
+	Path string
+} {
+	var calls []struct {
+		Path string
+	}
+	mock.lockworktreeExists.RLock()
+	calls = mock.calls.worktreeExists
+	mock.lockworktreeExists.RUnlock()
 	return calls
 }

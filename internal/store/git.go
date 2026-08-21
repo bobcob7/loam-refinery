@@ -6,23 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/bobcob7/loam-refinery/internal/verify"
 )
 
-// gitTimeout bounds one git call, matching internal/verify's reasoning: a
-// call here is local and object-store bound, so a slow one means something
-// is wrong rather than something is big.
-const gitTimeout = 30 * time.Second
-
-// waitDelay bounds the wait after a kill, for the same reason
-// internal/verify carries one: Wait blocks on the pipes a descendant
-// process may have inherited.
-const waitDelay = 5 * time.Second
+// errGitTimedOut marks a git invocation that ended because verify.GitTimeout
+// passed rather than because git decided anything. exec.ExitError.Exited()
+// cannot be trusted to tell those apart on its own: it is hardcoded true on
+// Windows even for a process this package killed, so once the deadline has
+// passed the exit status is not evidence of anything — see internal/verify's
+// identical reasoning for exitStatus.
+var errGitTimedOut = errors.New("git did not answer")
 
 // Git resolves repository identity by consulting git. Worktree discovery
 // reuses internal/verify's, since duplicating its "not a repository"
@@ -58,6 +54,19 @@ func (g *Git) originURL(ctx context.Context, root string) (string, error) {
 	if err == nil {
 		return strings.TrimSpace(string(out)), nil
 	}
+	return classifyOriginErr(err)
+}
+
+// classifyOriginErr turns originURL's failure into either an absent remote
+// or an error. errGitTimedOut is checked first and unconditionally: once
+// the deadline has passed, whatever exec.ExitError.Exited() reports cannot
+// be trusted, so a timeout is never read as git having looked and found
+// nothing. Only once a timeout is ruled out does an exited process read as
+// an absent remote.
+func classifyOriginErr(err error) (string, error) {
+	if errors.Is(err, errGitTimedOut) {
+		return "", fmt.Errorf("reading origin remote: %w", err)
+	}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.Exited() {
 		return "", nil
@@ -66,30 +75,19 @@ func (g *Git) originURL(ctx context.Context, root string) (string, error) {
 }
 
 func (g *Git) run(ctx context.Context, root string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	ctx, cancel := context.WithTimeout(ctx, verify.GitTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
-	cmd.Env = plainEnv()
-	cmd.WaitDelay = waitDelay
+	cmd.Env = verify.PlainEnv()
+	cmd.WaitDelay = verify.WaitDelay
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%w: %w", errGitTimedOut, err)
+		}
 		return nil, err
 	}
 	return stdout.Bytes(), nil
-}
-
-// plainEnv gives git an environment whose answers do not depend on the
-// caller's locale, matching internal/verify's reasoning for the same
-// variables.
-func plainEnv() []string {
-	env := make([]string, 0, len(os.Environ())+3)
-	for _, entry := range os.Environ() {
-		if strings.HasPrefix(entry, "GIT_TRACE") || strings.HasPrefix(entry, "GIT_CURL_VERBOSE") {
-			continue
-		}
-		env = append(env, entry)
-	}
-	return append(env, "LC_ALL=C", "LANGUAGE=", "GIT_NO_LAZY_FETCH=1")
 }
