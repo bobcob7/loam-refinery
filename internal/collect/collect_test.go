@@ -63,6 +63,18 @@ func TestAssemble_EqualAtTieBreaksOnDigestNotInputOrder(t *testing.T) {
 // would make ordinal assignment depend on map iteration order, which Go
 // deliberately randomizes — this loop would go red, possibly flakily,
 // the first time two profiles landed in the wrong relative order.
+//
+// That mutation-name is wrong, though (refinery-xlp.4): by the time
+// buildSubmissions groups items, names is an append-ordered slice, not a
+// map key set, so dropping sort.Strings(names) stays fully deterministic
+// — it just stops being alphabetical. This fixture's digests are read
+// oldest-first as zulu, none, alpha, mu, so without the sort the profiled
+// groups would append in that same order (zulu, alpha, mu) instead of
+// alphabetical (alpha, mu, zulu); every previous assertion here passes
+// either way, since determinism alone does not require alphabetical
+// order. The order assertion below is what actually requires it, per
+// section 8.1's clustering rule that every ordinal — and so every #N:
+// qualified id — depends on.
 func TestAssemble_RepeatedCallsAgainstUnchangedInputAreDeterministic(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
@@ -89,6 +101,12 @@ func TestAssemble_RepeatedCallsAgainstUnchangedInputAreDeterministic(t *testing.
 	}
 	first, err := Assemble(t.Context(), digests, r)
 	require.NoError(t, err)
+	require.Len(t, first.Submissions, 4)
+	gotProfiles := make([]string, len(first.Submissions))
+	for i, s := range first.Submissions {
+		gotProfiles[i] = s.Profile
+	}
+	assert.Equal(t, []string{"alpha", "mu", "zulu", ""}, gotProfiles, "profiled submissions cluster alphabetically by profile name, unprofiled last — the falsifying case: without sort.Strings, append order (zulu, alpha, mu) would still be deterministic but not alphabetical")
 	for i := 0; i < 20; i++ {
 		next, err := Assemble(t.Context(), digests, r)
 		require.NoError(t, err)

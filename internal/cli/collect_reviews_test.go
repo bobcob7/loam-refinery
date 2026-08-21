@@ -288,7 +288,7 @@ func TestCollectReviews_FormatMarkdownRendersMarkdownNotJSON(t *testing.T) {
 	assert.True(t, strings.HasPrefix(stdout, "# collect-reviews:"), "markdown output, not a JSON object: %q", stdout)
 	assert.Contains(t, stdout, "## backend:dropped-context-1")
 	assert.Contains(t, stdout, "## security:dropped-context-1")
-	assert.NotEqual(t, '{', stdout[0], "must not be the JSON envelope")
+	assert.NotEqual(t, byte('{'), stdout[0], "must not be the JSON envelope")
 }
 
 // TestCollectReviews_FormatJSONStillRendersJSON is the negative case
@@ -306,14 +306,20 @@ func TestCollectReviews_FormatJSONStillRendersJSON(t *testing.T) {
 	assert.Contains(t, got, "ref")
 }
 
-// TestCollectReviewsEmptyCases pins every exit-0 row of §9's table — known
-// with nothing stored, an unknown repository, no store at all, and
-// store.enabled:false — asserting they all produce the identical
-// known/total/submissions/comments shape (empty) except for known and
-// store.enabled themselves, which differ per row. store.enabled:false gets
-// its own explicit assertion (mutation this kills: a special-cased branch
-// for store.enabled:false — the exact over-specification §9 warns against
-// by name — would diverge this row's shape from the others, e.g. by
+// TestCollectReviewsEmptyCases pins every exit-0 row of §9's table that is
+// distinguishable at this layer — known with nothing stored, an unknown
+// repository (which stands in for both "repository not in the store" and
+// "store does not exist at all": setCollectReviewsStore's mock only ever
+// exposes Known and StoreEnabled as booleans, so those two §9 rows drive
+// this command through the identical known:false, storeEnabled:true input
+// and cannot be told apart by any assertion this test could make — a
+// distinct row here would be two names for one test, not two tests), and
+// store.enabled:false. All produce the identical known/total/submissions/
+// comments shape (empty) except for known and store.enabled themselves,
+// which differ per row. store.enabled:false gets its own explicit
+// assertion (mutation this kills: a special-cased branch for
+// store.enabled:false — the exact over-specification §9 warns against by
+// name — would diverge this row's shape from the others, e.g. by
 // short-circuiting before DistinctDigests is even called).
 func TestCollectReviewsEmptyCases(t *testing.T) {
 	t.Parallel()
@@ -323,8 +329,7 @@ func TestCollectReviewsEmptyCases(t *testing.T) {
 		storeEnabled bool
 	}{
 		{name: "known repo, ref has no stored submissions", known: true, storeEnabled: true},
-		{name: "repository not in the store", known: false, storeEnabled: true},
-		{name: "no store at all", known: false, storeEnabled: true},
+		{name: "repository not in the store (same shape as no store at all)", known: false, storeEnabled: true},
 		{name: "store.enabled is false, same empty shape as no store", known: false, storeEnabled: false},
 	}
 	for _, test := range tests {
@@ -430,6 +435,82 @@ func TestCollectReviews_DivergedKeyIsAnEmptyArrayWhenHeadAndNothingDiverged(t *t
 	diverged, hasDiverged := headCheck["diverged"]
 	require.True(t, hasDiverged, "diverged must be present once the check ran, even with nothing to report")
 	assert.Equal(t, []any{}, diverged)
+}
+
+// TestCollectReviews_DivergedPopulatedFieldsFlowThroughUnscrambled is the
+// populated-diverged case the absent/empty tests above leave unpinned
+// (refinery-hxc): with a real drifted anchor, head_check.diverged in the
+// encoded JSON must carry every field keyed to its own JSON name, not some
+// other field's value. Each of the four DivergedAnchor fields is given a
+// distinct, recognizable value so no permutation of the four could satisfy
+// this test by accident.
+//
+// Mutation this kills: convertDiverged replaced with an empty slice (every
+// drifted anchor silently dropped), and convertDiverged scrambled so Name
+// carries the message and Comment carries the file, both leave this red.
+func TestCollectReviews_DivergedPopulatedFieldsFlowThroughUnscrambled(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	setCollectReviewsStore(t, h.reviews, "some/repo", testRef, true, true, nil, nil)
+	setHeadCheckStub(h.headChecker, "repo", true, []DivergedAnchor{{
+		Name:    "anchor-worktree-diverged",
+		Comment: "backend:dropped-context-1",
+		File:    "internal/fetch/client.go",
+		Message: "the anchored line no longer matches the working tree",
+	}})
+	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + testRef, "--repo=some/repo"})
+	require.Equal(t, ExitValid, code, h.stderr.String())
+	got := asObject(t, h.stdout.String())
+	headCheck := got["head_check"].(map[string]any)
+	diverged, ok := headCheck["diverged"].([]any)
+	require.True(t, ok)
+	require.Len(t, diverged, 1)
+	entry := diverged[0].(map[string]any)
+	assert.Equal(t, "anchor-worktree-diverged", entry["name"])
+	assert.Equal(t, "backend:dropped-context-1", entry["comment"])
+	assert.Equal(t, "internal/fetch/client.go", entry["file"])
+	assert.Equal(t, "the anchored line no longer matches the working tree", entry["message"])
+}
+
+// TestCollectReviews_HeadCheckMergesDivergedAcrossSubmissionsUsingFirstsSourceAndIsHead
+// drives collectHeadCheck's cross-submission merge (§4.3) with two
+// submissions whose headChecker answers genuinely differ — unlike every
+// other test in this file, which stubs one identical answer for every
+// call via setHeadCheckStub and so cannot tell a merge from a pick
+// (refinery-hxc).
+//
+// Mutation this kills: replacing the diverged concatenation with "take the
+// last answer" would drop the first submission's entry from the merged
+// list; moving the i==0 source/is_head capture to the last submission
+// would report is_head:false (security's answer) instead of true
+// (backend's, the first submission processed).
+func TestCollectReviews_HeadCheckMergesDivergedAcrossSubmissionsUsingFirstsSourceAndIsHead(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	setCollectReviewsStore(t, h.reviews, repo121, ref121, true, true,
+		[]string{"digest-a", "digest-b"},
+		map[string]string{"digest-a": submissionA, "digest-b": submissionB},
+	)
+	h.headChecker.CheckDivergenceFunc = func(_ context.Context, _ string, doc *review.Document, _ map[string]string) (string, bool, []DivergedAnchor, error) {
+		if doc.Profile.Value == "backend" {
+			return "repo", true, []DivergedAnchor{{Name: "anchor-worktree-diverged", Comment: "backend:dropped-context-1", File: "a.go", Message: "from backend's submission"}}, nil
+		}
+		return "repo", false, []DivergedAnchor{{Name: "anchor-worktree-diverged", Comment: "security:dropped-context-1", File: "b.go", Message: "from security's submission"}}, nil
+	}
+	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + ref121, "--repo=" + repo121})
+	require.Equal(t, ExitValid, code, h.stderr.String())
+	got := asObject(t, h.stdout.String())
+	headCheck := got["head_check"].(map[string]any)
+	assert.Equal(t, true, headCheck["is_head"], "is_head is the FIRST submission's answer (backend, true), not the last's (security, false)")
+	diverged, ok := headCheck["diverged"].([]any)
+	require.True(t, ok)
+	require.Len(t, diverged, 2, "both submissions' diverged entries are concatenated, not just the last one")
+	messages := make([]string, 0, 2)
+	for _, d := range diverged {
+		messages = append(messages, d.(map[string]any)["message"].(string))
+	}
+	assert.Contains(t, messages, "from backend's submission")
+	assert.Contains(t, messages, "from security's submission")
 }
 
 // TestCollectReviews_MatchesDocumentedShape_TwoProfilesOneRef is the third

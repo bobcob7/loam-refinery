@@ -2,6 +2,7 @@ package render
 
 import (
 	"bytes"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -189,23 +190,97 @@ const wantEscapableAnywhere = "\\`*_[]<&"
 // being a line-start marker) must render every one of them
 // backslash-escaped. A partial implementation built only around "#" and
 // "`" would pass a narrower test but fail this one.
+//
+// Each character sits in its own "mid<char>line" token, separated from
+// its neighbors by a space: wantEscapableAnywhere's own raw bytes open
+// with a backslash immediately followed by a backtick ("\\`"), so a
+// fixture that concatenates the set directly makes the "`" row's check
+// (Contains(rendered, "\\`")) trivially true from that raw adjacency
+// alone, whether or not escaping ran at all (refinery-2lw). Isolating each
+// character removes every such accidental backslash-adjacency between two
+// members of the set.
 func TestMarkdownEscapesEveryAnywhereCharacterMidLine(t *testing.T) {
 	t.Parallel()
 	require.Len(t, wantEscapableAnywhere, 8, "the anywhere set is exactly eight characters")
+	var body strings.Builder
+	body.WriteString("every one of these must escape:")
+	for _, r := range wantEscapableAnywhere {
+		fmt.Fprintf(&body, " mid%cline", r)
+	}
 	envelope := docs121Envelope()
 	envelope.Result = &collect.Result{
 		Submissions: []collect.Submission{{Ordinal: 1, Profile: "backend", Verdict: "comment", Summary: "s"}},
 		Comments: []collect.Comment{{
 			ID: "backend:punct-1", Profile: "backend", Priority: 1, Category: "style",
-			Body: "every one of these must escape: " + wantEscapableAnywhere,
+			Body: body.String(),
 		}},
 	}
 	var out bytes.Buffer
 	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
 	rendered := out.String()
 	for _, r := range wantEscapableAnywhere {
-		assert.Contains(t, rendered, "\\"+string(r), "character %q of the anywhere set must render backslash-escaped mid-line", string(r))
+		want := fmt.Sprintf("mid\\%cline", r)
+		assert.Contains(t, rendered, want, "character %q of the anywhere set must render backslash-escaped mid-line", string(r))
 	}
+}
+
+// TestMarkdownEscapesSubmissionSummary pins the one call site
+// writeMarkdownSubmissions makes to escapeMarkdown: refinery-hxc's
+// mutation review found that dropping it survived the existing suite,
+// since every submission summary fixture used elsewhere was already inert
+// prose. A "*" mid-word is neither at line start nor in the never-escape
+// set, so an unescaped rendering is unambiguous.
+//
+// Mutation this kills: writeMarkdownSubmissions writing s.Summary
+// unescaped.
+func TestMarkdownEscapesSubmissionSummary(t *testing.T) {
+	t.Parallel()
+	envelope := docs121Envelope()
+	envelope.Result = &collect.Result{
+		Submissions: []collect.Submission{{Ordinal: 1, Profile: "backend", Verdict: "comment", Summary: "mid*summary must escape"}},
+	}
+	var out bytes.Buffer
+	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
+	rendered := out.String()
+	assert.Contains(t, rendered, `mid\*summary`, "the submission summary is free-text prose and must be escaped")
+	assert.NotContains(t, rendered, "mid*summary", "the unescaped form must not appear")
+}
+
+// TestMarkdownEscapesSuggestionSummaryProsAndCons pins the three call
+// sites writeMarkdownSuggestions makes to escapeMarkdown /
+// escapeMarkdownList: refinery-hxc's mutation review found that dropping
+// any one of them survived the existing suite, for the same reason as the
+// submission summary above — every suggestion fixture elsewhere used
+// inert prose. Each field carries its own distinct marker so a failure
+// names exactly which call site was dropped.
+//
+// Mutation this kills: writeMarkdownSuggestions writing s.Summary,
+// s.Pros, or s.Cons unescaped.
+func TestMarkdownEscapesSuggestionSummaryProsAndCons(t *testing.T) {
+	t.Parallel()
+	envelope := docs121Envelope()
+	envelope.Result = &collect.Result{
+		Submissions: []collect.Submission{{Ordinal: 1, Profile: "backend", Verdict: "comment", Summary: "s"}},
+		Comments: []collect.Comment{{
+			ID: "backend:sugg-1", Profile: "backend", Priority: 1, Category: "style",
+			Body: "an ordinary body long enough to pass validation for sure.",
+			Suggestions: []collect.Suggestion{{
+				Summary: "mid*suggestion must escape",
+				Effort:  "trivial", Scope: "line",
+				Pros: []string{"mid*pro must escape"},
+				Cons: []string{"mid*con must escape"},
+			}},
+		}},
+	}
+	var out bytes.Buffer
+	require.NoError(t, NewMarkdown().CollectReviews(&out, envelope))
+	rendered := out.String()
+	assert.Contains(t, rendered, `mid\*suggestion`, "the suggestion summary is free-text prose and must be escaped")
+	assert.Contains(t, rendered, `mid\*pro`, "pros are free-text prose and must be escaped")
+	assert.Contains(t, rendered, `mid\*con`, "cons are free-text prose and must be escaped")
+	assert.NotContains(t, rendered, "mid*suggestion", "the unescaped suggestion summary form must not appear")
+	assert.NotContains(t, rendered, "mid*pro", "the unescaped pro form must not appear")
+	assert.NotContains(t, rendered, "mid*con", "the unescaped con form must not appear")
 }
 
 // TestMarkdownDoesNotEscapeNonStructuralPunctuationMidLine is the other
@@ -313,7 +388,6 @@ func TestMarkdownForgery_FenceIsStrictlyLongerThanEveryRunInside(t *testing.T) {
 	require.Equal(t, "````", expectedFence)
 	expectedBlock := expectedFence + "\n" + comment.Code + "\n" + expectedFence
 	assert.Contains(t, rendered, expectedBlock, "§12.3's own four-backtick fence, reproduced exactly, wrapping the code verbatim")
-	assert.Greater(t, len(expectedFence), longestRun, "the fence is strictly longer than every backtick run inside the content it wraps, so the block cannot be closed early by that content")
 }
 
 // TestMarkdownAnchorCodeSpan_SizedOneLongerThanLongestRunInPath is the

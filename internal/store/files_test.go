@@ -52,15 +52,34 @@ func TestDigest_MatchesWhatWriteReviewWouldAddress(t *testing.T) {
 
 // TestDigest_NeverTouchesTheFilesystem proves Digest is pure computation:
 // calling it before a store even exists must not create one, unlike every
-// Write* method above.
+// Write* method above. Digest([]byte) string takes no path or directory
+// argument of its own (refinery-2lw), so watching an unrelated t.TempDir()
+// proves nothing — Digest is never given that directory to write into, and
+// the assertion would pass no matter what Digest actually did. The one
+// filesystem location a stray relative-path write could plausibly land in
+// is the process's own working directory, so that is what this test
+// watches instead.
 func TestDigest_NeverTouchesTheFilesystem(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	before, err := os.ReadDir(wd)
+	require.NoError(t, err)
 	got := Digest([]byte("anything"))
 	assert.Len(t, got, 64, "a lowercase hex SHA-256 digest is 64 characters")
-	entries, err := os.ReadDir(dir)
+	after, err := os.ReadDir(wd)
 	require.NoError(t, err)
-	assert.Empty(t, entries, "Digest must not write anything")
+	assert.Equal(t, direntNames(before), direntNames(after), "Digest must not write anything to its own working directory")
+}
+
+// direntNames extracts each entry's name, so two os.ReadDir snapshots can
+// be compared by assert.Equal directly.
+func direntNames(entries []os.DirEntry) []string {
+	names := make([]string, len(entries))
+	for i, e := range entries {
+		names[i] = e.Name()
+	}
+	return names
 }
 
 // TestWriteRejected_ByteIdenticalEvenWhenNotJSON proves config.md section
