@@ -13,6 +13,8 @@ import (
 
 var shaPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
+var profilePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
 // Checker runs every structural check over one document.
 type Checker struct {
 	schema schemaValidator
@@ -32,6 +34,7 @@ func (c *Checker) Check(doc *review.Document) []review.Diagnostic {
 	diagnostics = append(diagnostics, c.anchorRangeOrdered(doc)...)
 	diagnostics = append(diagnostics, c.anchorPathSafe(doc)...)
 	diagnostics = append(diagnostics, c.refFormat(doc)...)
+	diagnostics = append(diagnostics, c.profileFormat(doc)...)
 	covered := map[string]bool{}
 	for _, d := range diagnostics {
 		covered[d.Path] = true
@@ -164,6 +167,18 @@ func (c *Checker) refFormat(doc *review.Document) []review.Diagnostic {
 		Name:     "ref-format",
 		Path:     "/ref",
 		Message:  fmt.Sprintf("ref %q is not a 40-character lowercase commit SHA", doc.Ref.Value),
+	}}
+}
+
+func (c *Checker) profileFormat(doc *review.Document) []review.Diagnostic {
+	if !doc.Profile.OK || profilePattern.MatchString(doc.Profile.Value) {
+		return nil
+	}
+	return []review.Diagnostic{{
+		Severity: review.SeverityError,
+		Name:     "profile-format",
+		Path:     "/profile",
+		Message:  fmt.Sprintf("profile %q does not match ^[a-z0-9]+(-[a-z0-9]+)*$", doc.Profile.Value),
 	}}
 }
 

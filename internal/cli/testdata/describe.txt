@@ -37,6 +37,7 @@
         "anchor-range-ordered",
         "anchor-path-safe",
         "ref-format",
+        "profile-format",
         "verification-required",
         "ref-unknown",
         "anchor-file-missing",

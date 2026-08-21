@@ -304,8 +304,7 @@
       "body": "The name of the reviewer profile (cli.md §2.1.1) this review was written under, if any — the same NAME passed to `prime --profile=NAME`. Optional: omitted when the reviewer ran unprimed. Caller-authored and unverifiable, like id.",
       "example": "\"backend\"",
       "related": [
-        "id",
-        "ref"
+        "profile-format"
       ],
       "provider": "schema"
     }
@@ -474,6 +473,22 @@
       "related": [
         "ref",
         "ref-unknown"
+      ],
+      "provider": "checks"
+    }
+  ]
+}
+
+{
+  "entries": [
+    {
+      "name": "profile-format",
+      "namespace": "check",
+      "title": "Malformed profile",
+      "body": "Fires when the document profile is present but not lowercase letters, digits,\nand single hyphens between them — the same grammar the filename a profile\nresolves to already uses. This checks shape only, never whether the reviewer\nwas actually primed with that profile; profile is caller-authored and\nunverifiable, exactly like id.\n\nThe shape matters because collect-reviews builds each comment's qualified id\nas <profile>:<origin_id>, splitting on the first colon to recover origin_id\nlater. A profile containing a colon breaks that split for every comment it\nproduced, silently and downstream of this check.\n\n  before: \"arch:v2\"\n  after:  \"arch-v2\"",
+      "related": [
+        "profile",
+        "id"
       ],
       "provider": "checks"
     }

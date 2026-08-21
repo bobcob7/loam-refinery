@@ -127,5 +127,25 @@ holding a checkout already.
   after:  "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d"`,
 			Related: []string{"ref", "ref-unknown"},
 		},
+		{
+			Name:    "profile-format",
+			Tier:    review.TierStructural,
+			Summary: "profile must match ^[a-z0-9]+(-[a-z0-9]+)*$",
+			Title:   "Malformed profile",
+			Body: `Fires when the document profile is present but not lowercase letters, digits,
+and single hyphens between them — the same grammar the filename a profile
+resolves to already uses. This checks shape only, never whether the reviewer
+was actually primed with that profile; profile is caller-authored and
+unverifiable, exactly like id.
+
+The shape matters because collect-reviews builds each comment's qualified id
+as <profile>:<origin_id>, splitting on the first colon to recover origin_id
+later. A profile containing a colon breaks that split for every comment it
+produced, silently and downstream of this check.
+
+  before: "arch:v2"
+  after:  "arch-v2"`,
+			Related: []string{"profile", "id"},
+		},
 	}
 }

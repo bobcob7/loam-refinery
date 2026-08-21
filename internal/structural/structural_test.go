@@ -55,6 +55,16 @@ func TestChecksReportEveryStructuralFailure(t *testing.T) {
 			want:     []string{"ref-format"},
 			messages: []string{`ref "main" is not a 40-character lowercase commit SHA`},
 		},
+		{
+			name:     "a profile containing a colon",
+			file:     "profile-colon.json",
+			want:     []string{"profile-format"},
+			messages: []string{`profile "arch:v2" does not match ^[a-z0-9]+(-[a-z0-9]+)*$`},
+		},
+		{
+			name: "a profile matching the grammar raises nothing",
+			file: "profile-valid.json",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
