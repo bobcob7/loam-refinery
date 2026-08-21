@@ -1,0 +1,35 @@
+{
+  "version": "1",
+  "verdict": "comment",
+  "ref": "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d",
+  "summary": "This is outside my lens, but the retry loop drops the caller's deadline and that is worth fixing regardless of who merges this.",
+  "assessment": "weak",
+  "comments": [
+    {
+      "id": "dropped-context-1",
+      "priority": 9,
+      "category": "correctness",
+      "body": "The retry loop calls c.do(context.Background(), req) rather than passing the caller's ctx, so a cancelled request keeps retrying for the full backoff schedule.",
+      "anchors": [
+        {
+          "file": "internal/fetch/client.go",
+          "line": 88,
+          "end_line": 94
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Pass the caller's context straight through to c.do",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Deadlines propagate immediately"
+          ],
+          "cons": [
+            "Callers relying on the old behaviour see a change"
+          ]
+        }
+      ]
+    }
+  ]
+}

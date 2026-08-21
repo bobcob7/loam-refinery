@@ -19,6 +19,7 @@ func TestRecord_InsertsARow(t *testing.T) {
 		Digest:        "deadbeef",
 		ExitCode:      0,
 		Verdict:       "approve",
+		Assessment:    "strong",
 		NumComments:   intPtr(2),
 		ToolVersion:   "0.1.0",
 		SchemaVersion: "1",
@@ -29,6 +30,7 @@ func TestRecord_InsertsARow(t *testing.T) {
 	require.Len(t, reviews, 1)
 	assert.Equal(t, 1, total)
 	assert.Equal(t, "approve", reviews[0].Verdict)
+	assert.Equal(t, "strong", reviews[0].Assessment)
 	require.NotNil(t, reviews[0].Counts.Comments)
 	assert.Equal(t, 2, *reviews[0].Counts.Comments)
 }
@@ -43,6 +45,36 @@ func TestRecord_RejectsInvalidVerdict(t *testing.T) {
 		Verdict: "bogus", ToolVersion: "0.1.0", SchemaVersion: "1",
 	})
 	assert.Error(t, err)
+}
+
+// TestRecord_RejectsInvalidAssessment mirrors
+// TestRecord_RejectsInvalidVerdict for the database's CHECK constraint on
+// assessment (config.md section 4.5.2), added alongside the column.
+func TestRecord_RejectsInvalidAssessment(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	err := s.Record(t.Context(), RunInput{
+		Repo: "github.com/example/example", Digest: "d", ExitCode: 0,
+		Assessment: "bogus", ToolVersion: "0.1.0", SchemaVersion: "1",
+	})
+	assert.Error(t, err)
+}
+
+// TestRecord_OmittedAssessmentReadsBackAsAbsent proves an assessment left
+// unset stores as NULL and reads back as "" — absent, not an empty string
+// masquerading as a value that was actually recorded (RunInput's own doc
+// comment; mirrors verdict's same NULL-for-"" convention).
+func TestRecord_OmittedAssessmentReadsBackAsAbsent(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	require.NoError(t, s.Record(t.Context(), RunInput{
+		Repo: "github.com/example/example", Digest: "d", ExitCode: 0,
+		Verdict: "approve", ToolVersion: "0.1.0", SchemaVersion: "1",
+	}))
+	reviews, _, err := s.ListReviews(t.Context(), "github.com/example/example", "", 0)
+	require.NoError(t, err)
+	require.Len(t, reviews, 1)
+	assert.Equal(t, "", reviews[0].Assessment)
 }
 
 // TestRecord_UnrecognizedExitCodeInsertsWithoutMigration proves config.md

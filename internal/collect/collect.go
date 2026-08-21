@@ -76,6 +76,36 @@ type Comment struct {
 	Suggestions []Suggestion
 }
 
+// Severity is one submission's severity shape: the highest priority among
+// its comments, plus how many comments fall in each of the bands
+// docs/review-document.md section 8 defines — the same bands
+// priority-flat and priority-category-convention (internal/advisory)
+// already reason about, reused here rather than inventing a third
+// vocabulary for priority.
+//
+// Max is nil for a submission with no comments — an approve carrying
+// none, the one case the schema permits (review-document.md section 3) —
+// rather than 0, so "nothing filed" can never be read as "filed at
+// priority 0". A *int costs an allocation Field[int] does not, but this
+// type is not a parsed document field: it is computed, and Submission
+// already uses a nil *int for the same "no such value" case
+// (SupersededBy).
+type Severity struct {
+	// Max is the highest Priority among the submission's comments, nil
+	// when it has none.
+	Max *int
+	// MustFix counts comments at priority 9-10: must fix before merge.
+	MustFix int
+	// ShouldFix counts comments at priority 7-8: should fix before merge,
+	// a real defect.
+	ShouldFix int
+	// WorthFixing counts comments at priority 4-6: worth fixing, does not
+	// block.
+	WorthFixing int
+	// Optional counts comments at priority 1-3: preference or polish.
+	Optional int
+}
+
 // Submission is one distinct digest's contribution to the combined
 // output (sections 5.3 and 8.1).
 //
@@ -97,6 +127,16 @@ type Submission struct {
 	Profile string
 	Verdict string
 	Summary string
+	// Assessment is the reviewer's quality grade (review-document.md
+	// §3), nil when the document never set the field. Unlike Verdict,
+	// which submissionOf reads unconditionally because every review has
+	// to carry one, Assessment is genuinely optional — omitting it is a
+	// real state, not the tool's absence of an opinion, and collapsing a
+	// nil here to "" or to some default level would silently invent a
+	// grade the reviewer declined to give. A *string, not a plain
+	// string, for the identical reason SupersededBy below is a pointer:
+	// nil is the only shape that cannot be confused with a real value.
+	Assessment *string
 	// SupersededBy names the Ordinal of the current submission for this
 	// submission's profile, nil when this submission is current (or
 	// unprofiled, which has no supersession axis at all).
@@ -109,6 +149,10 @@ type Submission struct {
 	// to the qualified id this package assigned it among Result.Comments
 	// — also carried for refinery-uyb.10, not rendered directly.
 	QualifiedIDs map[string]string
+	// Severity is this submission's severity shape, computed from
+	// Document.Comments at assembly time — not reconstructed downstream
+	// from qualified ids, which section 6.1 owns the formatting of.
+	Severity Severity
 }
 
 // Result is everything Assemble determined for one repo and ref: the
@@ -242,8 +286,81 @@ func submissionOf(item parsed, ordinal int) Submission {
 		Profile:      item.profile,
 		Verdict:      item.doc.Verdict.Value,
 		Summary:      item.doc.Summary.Value,
+		Assessment:   assessmentOf(item.doc),
 		Document:     item.doc,
 		QualifiedIDs: map[string]string{},
+		Severity:     severityOf(item.doc),
+	}
+}
+
+// assessmentOf reads a document's own claimed assessment, nil when the
+// field was absent or not a string — the same absent-means-unset reading
+// claimedProfile gives Profile, but returned as a pointer rather than
+// collapsed to "": unlike Profile, Assessment has no natural empty value
+// to fall back to, and this package has to be able to tell "the document
+// set assessment to some value" apart from "the document never set it"
+// all the way through rendering (section 8.1). A well-typed but
+// out-of-enum string still comes through here — this function only
+// answers "did the document set the field", the same structural
+// question claimedProfile answers for Profile; enum membership is a
+// schema-validation concern this package does not re-check.
+func assessmentOf(doc *review.Document) *string {
+	if doc.Assessment.Present && doc.Assessment.OK {
+		value := doc.Assessment.Value
+		return &value
+	}
+	return nil
+}
+
+// severityOf computes one submission's Severity from its document's own
+// comments, before qualified ids exist — the qualified id is a rendering
+// concern (section 6.1) this computation never needs. A document with no
+// comments leaves Max nil, the absent case Severity documents.
+//
+// A comment whose priority did not parse as an integer (Field.OK false —
+// absent, or the wrong JSON type) is excluded entirely, matching
+// review-document.md section 11.4's table: "wrong type... skipped by
+// priority-based checks", the same rule priority-category-convention
+// applies (internal/advisory). A submission whose comments are all
+// unusable this way ends up indistinguishable from one with none, which
+// is the correct read: no usable severity data exists either way.
+func severityOf(doc *review.Document) Severity {
+	var sev Severity
+	for _, c := range doc.Comments {
+		if !c.Priority.OK {
+			continue
+		}
+		priority := c.Priority.Value
+		if sev.Max == nil || priority > *sev.Max {
+			max := priority
+			sev.Max = &max
+		}
+		bandOf(priority, &sev)
+	}
+	return sev
+}
+
+// bandOf increments the Severity band priority falls in, per the scale
+// docs/review-document.md section 8 defines: 9-10 must fix before merge,
+// 7-8 should fix before merge, 4-6 worth fixing, 1-3 optional. Callers
+// only ever pass a priority whose Field was OK — see severityOf — so
+// what reaches here is always a real integer, but not necessarily one
+// review-document.md section 3's schema would accept: table §11.4 says a
+// well-typed, out-of-range priority such as 12 still runs through
+// priority-based reasoning rather than being discarded, so 12 counts as
+// MustFix (>= 9) and a sub-1 value, which the schema also forbids but a
+// lenient parse does not, falls to Optional rather than being dropped
+// uncounted.
+func bandOf(priority int, sev *Severity) {
+	switch {
+	case priority >= 9:
+		sev.MustFix++
+	case priority >= 7:
+		sev.ShouldFix++
+	case priority >= 4:
+		sev.WorthFixing++
+	default:
+		sev.Optional++
 	}
 }
 

@@ -3,9 +3,7 @@
   "index": [
     {
       "namespace": "field",
-      "names": [
-        "priority"
-      ]
+      "names": ["priority"]
     }
   ]
 }

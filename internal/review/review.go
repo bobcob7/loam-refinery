@@ -30,14 +30,15 @@ type Field[T any] struct {
 // Document is a parsed review document. Every field is optional and every field
 // may be ill-typed; the parser records what it found rather than refusing it.
 type Document struct {
-	Root     any
-	Object   map[string]any
-	Version  Field[string]
-	Verdict  Field[string]
-	Summary  Field[string]
-	Ref      Field[string]
-	Profile  Field[string]
-	Comments []Comment
+	Root       any
+	Object     map[string]any
+	Version    Field[string]
+	Verdict    Field[string]
+	Summary    Field[string]
+	Ref        Field[string]
+	Profile    Field[string]
+	Assessment Field[string]
+	Comments   []Comment
 	// CommentsPresent reports that the key exists, CommentsArray that it holds
 	// an array, and CommentsWellTyped that every element is an object.
 	CommentsPresent   bool
@@ -128,13 +129,14 @@ func Parse(data []byte) (*Document, error) {
 		return nil, errNotObject
 	}
 	doc := &Document{
-		Root:    root,
-		Object:  obj,
-		Version: stringField(obj, "version"),
-		Verdict: stringField(obj, "verdict"),
-		Summary: stringField(obj, "summary"),
-		Ref:     stringField(obj, "ref"),
-		Profile: stringField(obj, "profile"),
+		Root:       root,
+		Object:     obj,
+		Version:    stringField(obj, "version"),
+		Verdict:    stringField(obj, "verdict"),
+		Summary:    stringField(obj, "summary"),
+		Ref:        stringField(obj, "ref"),
+		Profile:    stringField(obj, "profile"),
+		Assessment: stringField(obj, "assessment"),
 	}
 	raw, present := obj["comments"]
 	doc.CommentsPresent = present

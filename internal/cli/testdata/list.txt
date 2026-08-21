@@ -2,72 +2,15 @@
   "index": [
     {
       "namespace": "field",
-      "names": [
-        "anchors",
-        "body",
-        "category",
-        "comments",
-        "comments.code",
-        "comments.suggestions.code",
-        "comments.suggestions.summary",
-        "cons",
-        "effort",
-        "end_line",
-        "field:summary",
-        "file",
-        "id",
-        "line",
-        "priority",
-        "profile",
-        "pros",
-        "ref",
-        "scope",
-        "suggestions",
-        "verdict",
-        "version"
-      ]
+      "names": ["anchors", "assessment", "body", "category", "comments", "comments.code", "comments.suggestions.code", "comments.suggestions.summary", "cons", "effort", "end_line", "field:summary", "file", "id", "line", "priority", "profile", "pros", "ref", "scope", "suggestions", "verdict", "version"]
     },
     {
       "namespace": "check",
-      "names": [
-        "document-unparseable",
-        "schema",
-        "id-unique",
-        "anchor-range-ordered",
-        "anchor-path-safe",
-        "ref-format",
-        "profile-format",
-        "verification-required",
-        "ref-unknown",
-        "anchor-file-missing",
-        "anchor-line-out-of-range",
-        "anchor-worktree-diverged",
-        "id-grouping",
-        "body-thin",
-        "vacuous-body",
-        "suggestion-absent",
-        "suggestion-no-cons",
-        "suggestion-no-pros",
-        "broad-scope-alone",
-        "broad-scope-no-cons",
-        "summary-thin",
-        "priority-category-convention",
-        "priority-flat",
-        "duplicate-anchor",
-        "duplicate-body",
-        "comment-flood"
-      ]
+      "names": ["document-unparseable", "schema", "id-unique", "anchor-range-ordered", "anchor-path-safe", "ref-format", "profile-format", "verification-required", "ref-unknown", "anchor-file-missing", "anchor-line-out-of-range", "anchor-worktree-diverged", "id-grouping", "body-thin", "vacuous-body", "suggestion-absent", "suggestion-no-cons", "suggestion-no-pros", "broad-scope-alone", "broad-scope-no-cons", "summary-thin", "priority-category-convention", "priority-flat", "assessment-priority-mismatch", "duplicate-anchor", "duplicate-body", "comment-flood"]
     },
     {
       "namespace": "topic",
-      "names": [
-        "collect-reviews",
-        "effort-vs-scope",
-        "ids",
-        "store",
-        "tiers",
-        "verification"
-      ]
+      "names": ["collect-reviews", "effort-vs-scope", "ids", "store", "tiers", "verification"]
     }
   ]
 }

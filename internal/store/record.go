@@ -14,18 +14,19 @@ import (
 // in UTC, matching the schema's comment.
 const atLayout = time.RFC3339
 
-// RunInput is one run's row, per config.md section 4.5.1. Ref and Verdict
-// are "" for NULL — a ref is always 40 hex characters and a verdict is
-// always one of three non-empty words when either is present, so an empty
-// string is unambiguous. The counters are pointers so a caller can record
-// an explicit zero and leave the rest NULL, for a run that got far enough
-// to count some things but not others.
+// RunInput is one run's row, per config.md section 4.5.1. Ref, Verdict, and
+// Assessment are "" for NULL — a ref is always 40 hex characters, and a
+// verdict or an assessment is always one of its own non-empty words when
+// present, so an empty string is unambiguous. The counters are pointers so
+// a caller can record an explicit zero and leave the rest NULL, for a run
+// that got far enough to count some things but not others.
 type RunInput struct {
 	Repo          string
 	Ref           string
 	Digest        string
 	ExitCode      int
 	Verdict       string
+	Assessment    string
 	NumComments   *int
 	NumErrors     *int
 	NumAdvisories *int
@@ -46,6 +47,7 @@ func (s *Store) Record(ctx context.Context, in RunInput) error {
 		Digest:        in.Digest,
 		ExitCode:      int64(in.ExitCode),
 		Verdict:       nullString(in.Verdict),
+		Assessment:    nullString(in.Assessment),
 		NumComments:   nullInt(in.NumComments),
 		NumErrors:     nullInt(in.NumErrors),
 		NumAdvisories: nullInt(in.NumAdvisories),

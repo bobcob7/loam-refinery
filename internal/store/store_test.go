@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +41,22 @@ func TestOpen_SchemaConstraints(t *testing.T) {
 		_, err := db.ExecContext(t.Context(),
 			"INSERT INTO runs (at, repo, digest, exit_code, verdict, tool_version, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
 			"2026-08-19T00:00:00Z", "repo", "digest-null-verdict", 0, nil, "v1", "v1")
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects an invalid assessment", func(t *testing.T) {
+		t.Parallel()
+		_, err := db.ExecContext(t.Context(),
+			"INSERT INTO runs (at, repo, digest, exit_code, assessment, tool_version, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			"2026-08-19T00:00:00Z", "repo", "digest-assessment", 0, "bogus", "v1", "v1")
+		assert.Error(t, err)
+	})
+
+	t.Run("accepts a NULL assessment", func(t *testing.T) {
+		t.Parallel()
+		_, err := db.ExecContext(t.Context(),
+			"INSERT INTO runs (at, repo, digest, exit_code, assessment, tool_version, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			"2026-08-19T00:00:00Z", "repo", "digest-null-assessment", 0, nil, "v1", "v1")
 		assert.NoError(t, err)
 	})
 
@@ -203,13 +220,23 @@ func TestOpen_PathWithQuestionMarkStaysInsideDirectory(t *testing.T) {
 	}
 }
 
-// TestOpen_RunsTableIsExactlyTheThirteenDocumentedColumns pins
+// TestOpen_RunsTableIsExactlyTheFourteenDocumentedColumns pins
 // docs/config.md §4.5.1's schema: PRAGMA table_info(runs) must report
-// exactly these thirteen columns, in this order, and no others. A
-// fourteenth column — the concrete regression refinery-a96.23 names —
-// changes nothing any existing test checks, since every other test here
-// asks about one column or one constraint rather than the whole set.
-func TestOpen_RunsTableIsExactlyTheThirteenDocumentedColumns(t *testing.T) {
+// exactly these fourteen columns, in this order, and no others. An
+// unexpected extra column — the concrete regression refinery-a96.23 names,
+// against the thirteen columns that predated assessment — changes nothing
+// any existing test checks, since every other test here asks about one
+// column or one constraint rather than the whole set.
+//
+// This pins a freshly created database only. A database migrate() carries
+// forward from schema version 1 has assessment last rather than eighth,
+// because SQLite's ALTER TABLE ADD COLUMN always appends (sql/migrations/
+// 0002_assessment.sql) — a deliberate, separately pinned divergence, not
+// an oversight: see TestMigrate_FromSchemaVersion1AddsAssessmentColumn's
+// own column-order assertion. Every query that reads assessment names an
+// explicit column list rather than relying on table order (query.sql), so
+// nothing downstream of either shape depends on this order matching.
+func TestOpen_RunsTableIsExactlyTheFourteenDocumentedColumns(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	db, err := Open(t.Context(), filepath.Join(dir, "store.db"))
@@ -228,11 +255,11 @@ func TestOpen_RunsTableIsExactlyTheThirteenDocumentedColumns(t *testing.T) {
 	}
 	require.NoError(t, rows.Err())
 	want := []string{
-		"id", "at", "repo", "ref", "digest", "exit_code", "verdict",
+		"id", "at", "repo", "ref", "digest", "exit_code", "verdict", "assessment",
 		"num_comments", "num_errors", "num_advisories", "num_skipped",
 		"tool_version", "schema_version",
 	}
-	assert.Equal(t, want, got, "docs/config.md §4.5.1: runs has exactly these thirteen columns, in this order")
+	assert.Equal(t, want, got, "docs/config.md §4.5.1: runs has exactly these fourteen columns, in this order")
 }
 
 // TestOpen_RunsTableHasExactlyItsThreeDocumentedIndexes pins the other half
@@ -292,4 +319,120 @@ func TestOpen_ReopeningAnExistingDatabaseSucceeds(t *testing.T) {
 	var version int
 	require.NoError(t, second.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version))
 	assert.Equal(t, schemaVersion, version)
+}
+
+// schemaVersion1 is the runs table exactly as it shipped before
+// refinery-dbk.6 added assessment (schema version 1, thirteen columns, no
+// assessment column or CHECK) — kept here only to build a database at that
+// version, so TestMigrate_FromSchemaVersion1AddsAssessmentColumn exercises
+// migrate's version-1-to-2 path against a database a previous version of
+// this binary actually would have written, per config.md §4.5.4's "tested
+// against a database written by the previous version".
+const schemaVersion1 = `
+CREATE TABLE runs (
+  id             INTEGER PRIMARY KEY,
+  at             TEXT    NOT NULL,
+  repo           TEXT    NOT NULL,
+  ref            TEXT,
+  digest         TEXT    NOT NULL,
+  exit_code      INTEGER NOT NULL,
+  verdict        TEXT             CHECK (verdict IN ('approve', 'request_changes', 'comment')),
+  num_comments   INTEGER,
+  num_errors     INTEGER,
+  num_advisories INTEGER,
+  num_skipped    INTEGER,
+  tool_version   TEXT    NOT NULL,
+  schema_version TEXT    NOT NULL
+) STRICT;
+
+CREATE INDEX runs_repo_ref ON runs(repo, ref);
+CREATE INDEX runs_repo_at  ON runs(repo, at DESC);
+CREATE INDEX runs_digest   ON runs(digest);
+`
+
+// TestMigrate_FromSchemaVersion1AddsAssessmentColumn builds a database at
+// schema version 1 by hand, with a row already in it, then opens it through
+// this package's own Open and checks migrate carried it to schemaVersion
+// (2): the assessment column exists, at the end of the column order rather
+// than eighth (see TestOpen_RunsTableIsExactlyTheFourteenDocumentedColumns's
+// doc comment for why that is pinned deliberately, not left to drift), the
+// CHECK on it is live, and the row that predates the column survives with
+// assessment reading back NULL — not an empty string masquerading as one.
+func TestMigrate_FromSchemaVersion1AddsAssessmentColumn(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "store.db")
+	raw, err := sql.Open("sqlite", storeDSN(path, "_pragma=busy_timeout(5000)&_txlock=immediate"))
+	require.NoError(t, err)
+	_, err = raw.ExecContext(t.Context(), schemaVersion1)
+	require.NoError(t, err)
+	_, err = raw.ExecContext(t.Context(), "PRAGMA user_version = 1")
+	require.NoError(t, err)
+	_, err = raw.ExecContext(t.Context(),
+		"INSERT INTO runs (at, repo, digest, exit_code, verdict, tool_version, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"2026-08-19T00:00:00Z", "repo", "digest-pre-migration", 0, "approve", "v1", "v1")
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	var version int
+	require.NoError(t, db.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version))
+	assert.Equal(t, schemaVersion, version, "migrate must leave a version-1 database stamped at the current schemaVersion")
+
+	rows, err := db.QueryContext(t.Context(), "PRAGMA table_info(runs)")
+	require.NoError(t, err)
+	names := []string{}
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, ctype string
+		var dflt any
+		require.NoError(t, rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk))
+		names = append(names, name)
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+	wantMigratedOrder := []string{
+		"id", "at", "repo", "ref", "digest", "exit_code", "verdict",
+		"num_comments", "num_errors", "num_advisories", "num_skipped",
+		"tool_version", "schema_version", "assessment",
+	}
+	assert.Equal(t, wantMigratedOrder, names,
+		"migrating from schema version 1 must add assessment, appended last (ALTER TABLE ADD COLUMN's own behavior) rather than in the fresh-schema position")
+
+	var verdict string
+	var assessment sql.NullString
+	require.NoError(t, db.QueryRowContext(t.Context(), "SELECT verdict, assessment FROM runs WHERE digest = ?", "digest-pre-migration").Scan(&verdict, &assessment))
+	assert.Equal(t, "approve", verdict, "the pre-migration row's existing data must survive the migration")
+	assert.False(t, assessment.Valid, "a pre-migration row has no assessment; the added column must read back NULL, not empty string")
+
+	_, err = db.ExecContext(t.Context(),
+		"INSERT INTO runs (at, repo, digest, exit_code, assessment, tool_version, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"2026-08-19T00:00:00Z", "repo", "digest-post-migration", 0, "bogus", "v1", "v1")
+	assert.Error(t, err, "the migrated database's assessment CHECK must reject an invalid value")
+}
+
+// TestOpen_RefusesADatabaseNewerThanThisBinaryKnows exercises migrate's
+// downgrade branch (version > schemaVersion) — reworded by this branch
+// while no test in the suite ever took it. A database stamped with a
+// schema version ahead of what this binary embeds is the shape a newer
+// binary's Open would leave behind; an older binary opening it for writing
+// must refuse rather than silently reinterpret an unknown layout as one it
+// understands.
+func TestOpen_RefusesADatabaseNewerThanThisBinaryKnows(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "store.db")
+	db, err := Open(t.Context(), path)
+	require.NoError(t, err)
+	_, err = db.ExecContext(t.Context(), fmt.Sprintf("PRAGMA user_version = %d", schemaVersion+1))
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	_, err = Open(t.Context(), path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), fmt.Sprintf("schema version %d", schemaVersion+1))
+	assert.Contains(t, err.Error(), fmt.Sprintf("this binary knows %d", schemaVersion))
 }

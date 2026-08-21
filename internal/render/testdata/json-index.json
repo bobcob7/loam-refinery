@@ -2,16 +2,11 @@
   "index": [
     {
       "namespace": "field",
-      "names": [
-        "priority",
-        "category"
-      ]
+      "names": ["priority", "category"]
     },
     {
       "namespace": "check",
-      "names": [
-        "id-unique"
-      ]
+      "names": ["id-unique"]
     }
   ]
 }

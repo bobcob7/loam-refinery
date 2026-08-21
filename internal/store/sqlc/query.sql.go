@@ -53,15 +53,15 @@ func (q *Queries) CountReviews(ctx context.Context, arg CountReviewsParams) (int
 
 const insertRun = `-- name: InsertRun :one
 INSERT INTO runs (
-  at, repo, ref, digest, exit_code, verdict,
+  at, repo, ref, digest, exit_code, verdict, assessment,
   num_comments, num_errors, num_advisories, num_skipped,
   tool_version, schema_version
 ) VALUES (
-  ?1, ?2, ?3, ?4, ?5, ?6,
-  ?7, ?8, ?9, ?10,
-  ?11, ?12
+  ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+  ?8, ?9, ?10, ?11,
+  ?12, ?13
 )
-RETURNING id, at, repo, ref, digest, exit_code, verdict,
+RETURNING id, at, repo, ref, digest, exit_code, verdict, assessment,
   num_comments, num_errors, num_advisories, num_skipped,
   tool_version, schema_version
 `
@@ -73,6 +73,7 @@ type InsertRunParams struct {
 	Digest        string
 	ExitCode      int64
 	Verdict       sql.NullString
+	Assessment    sql.NullString
 	NumComments   sql.NullInt64
 	NumErrors     sql.NullInt64
 	NumAdvisories sql.NullInt64
@@ -89,6 +90,7 @@ func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (Run, erro
 		arg.Digest,
 		arg.ExitCode,
 		arg.Verdict,
+		arg.Assessment,
 		arg.NumComments,
 		arg.NumErrors,
 		arg.NumAdvisories,
@@ -105,6 +107,7 @@ func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (Run, erro
 		&i.Digest,
 		&i.ExitCode,
 		&i.Verdict,
+		&i.Assessment,
 		&i.NumComments,
 		&i.NumErrors,
 		&i.NumAdvisories,
@@ -163,7 +166,7 @@ func (q *Queries) ListDistinctDigests(ctx context.Context, arg ListDistinctDiges
 }
 
 const listFailedRuns = `-- name: ListFailedRuns :many
-SELECT id, at, repo, ref, digest, exit_code, verdict, num_comments, num_errors, num_advisories, num_skipped, tool_version, schema_version FROM runs
+SELECT id, at, repo, ref, digest, exit_code, verdict, assessment, num_comments, num_errors, num_advisories, num_skipped, tool_version, schema_version FROM runs
 WHERE repo = ?1
   AND exit_code != 0
   AND (?2 IS NULL OR ref = ?2)
@@ -187,6 +190,80 @@ func (q *Queries) ListFailedRuns(ctx context.Context, arg ListFailedRunsParams) 
 	var items []Run
 	for rows.Next() {
 		var i Run
+		if err := rows.Scan(
+			&i.ID,
+			&i.At,
+			&i.Repo,
+			&i.Ref,
+			&i.Digest,
+			&i.ExitCode,
+			&i.Verdict,
+			&i.Assessment,
+			&i.NumComments,
+			&i.NumErrors,
+			&i.NumAdvisories,
+			&i.NumSkipped,
+			&i.ToolVersion,
+			&i.SchemaVersion,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFailedRunsLegacy = `-- name: ListFailedRunsLegacy :many
+SELECT id, at, repo, ref, digest, exit_code, verdict,
+  num_comments, num_errors, num_advisories, num_skipped,
+  tool_version, schema_version
+FROM runs
+WHERE repo = ?1
+  AND exit_code != 0
+  AND (?2 IS NULL OR ref = ?2)
+ORDER BY at DESC
+LIMIT ?3
+`
+
+type ListFailedRunsLegacyParams struct {
+	Repo  string
+	Ref   interface{}
+	Limit int64
+}
+
+type ListFailedRunsLegacyRow struct {
+	ID            int64
+	At            string
+	Repo          string
+	Ref           sql.NullString
+	Digest        string
+	ExitCode      int64
+	Verdict       sql.NullString
+	NumComments   sql.NullInt64
+	NumErrors     sql.NullInt64
+	NumAdvisories sql.NullInt64
+	NumSkipped    sql.NullInt64
+	ToolVersion   string
+	SchemaVersion string
+}
+
+// Same rows as ListFailedRuns, for a store still at schema version 1. See
+// ListReviewsLegacy.
+func (q *Queries) ListFailedRunsLegacy(ctx context.Context, arg ListFailedRunsLegacyParams) ([]ListFailedRunsLegacyRow, error) {
+	rows, err := q.db.QueryContext(ctx, listFailedRunsLegacy, arg.Repo, arg.Ref, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFailedRunsLegacyRow
+	for rows.Next() {
+		var i ListFailedRunsLegacyRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.At,
@@ -257,7 +334,7 @@ func (q *Queries) ListRepoCounts(ctx context.Context) ([]ListRepoCountsRow, erro
 }
 
 const listReviews = `-- name: ListReviews :many
-SELECT id, at, repo, ref, digest, exit_code, verdict, num_comments, num_errors, num_advisories, num_skipped, tool_version, schema_version FROM runs
+SELECT id, at, repo, ref, digest, exit_code, verdict, assessment, num_comments, num_errors, num_advisories, num_skipped, tool_version, schema_version FROM runs
 WHERE repo = ?1
   AND exit_code = 0
   AND (?2 IS NULL OR ref = ?2)
@@ -282,6 +359,84 @@ func (q *Queries) ListReviews(ctx context.Context, arg ListReviewsParams) ([]Run
 	var items []Run
 	for rows.Next() {
 		var i Run
+		if err := rows.Scan(
+			&i.ID,
+			&i.At,
+			&i.Repo,
+			&i.Ref,
+			&i.Digest,
+			&i.ExitCode,
+			&i.Verdict,
+			&i.Assessment,
+			&i.NumComments,
+			&i.NumErrors,
+			&i.NumAdvisories,
+			&i.NumSkipped,
+			&i.ToolVersion,
+			&i.SchemaVersion,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReviewsLegacy = `-- name: ListReviewsLegacy :many
+SELECT id, at, repo, ref, digest, exit_code, verdict,
+  num_comments, num_errors, num_advisories, num_skipped,
+  tool_version, schema_version
+FROM runs
+WHERE repo = ?1
+  AND exit_code = 0
+  AND (?2 IS NULL OR ref = ?2)
+ORDER BY at DESC
+LIMIT ?3
+`
+
+type ListReviewsLegacyParams struct {
+	Repo  string
+	Ref   interface{}
+	Limit int64
+}
+
+type ListReviewsLegacyRow struct {
+	ID            int64
+	At            string
+	Repo          string
+	Ref           sql.NullString
+	Digest        string
+	ExitCode      int64
+	Verdict       sql.NullString
+	NumComments   sql.NullInt64
+	NumErrors     sql.NullInt64
+	NumAdvisories sql.NullInt64
+	NumSkipped    sql.NullInt64
+	ToolVersion   string
+	SchemaVersion string
+}
+
+// Same rows as ListReviews, for a store still at schema version 1 (before
+// migration0002 added assessment): the column list omits assessment
+// because it does not exist yet. Callers report assessment as absent for
+// every row this returns (refinery-xij) rather than erroring, the same way
+// an absent assessment is already represented everywhere else in this
+// feature.
+func (q *Queries) ListReviewsLegacy(ctx context.Context, arg ListReviewsLegacyParams) ([]ListReviewsLegacyRow, error) {
+	rows, err := q.db.QueryContext(ctx, listReviewsLegacy, arg.Repo, arg.Ref, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListReviewsLegacyRow
+	for rows.Next() {
+		var i ListReviewsLegacyRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.At,

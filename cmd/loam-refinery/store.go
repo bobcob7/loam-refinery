@@ -65,6 +65,7 @@ func (a *storeAdapter) Save(ctx context.Context, in cli.StoreInput) error {
 		Digest:        digest,
 		ExitCode:      exitCode,
 		Verdict:       validVerdict(in.Verdict),
+		Assessment:    validAssessment(in.Assessment),
 		NumComments:   &in.Comments,
 		NumErrors:     &in.Errors,
 		NumAdvisories: &in.Advisories,
@@ -118,6 +119,22 @@ func validRef(ref string) string {
 func validVerdict(verdict string) string {
 	if slices.Contains(store.Verdicts(), verdict) {
 		return verdict
+	}
+	return ""
+}
+
+// validAssessment reports assessment only when it is one of
+// store.Assessments() — the runs table's CHECK constraint (docs/config.md
+// §4.5.2) and review.schema.json's assessment enum both name the same four
+// words, and store.Assessments() is the single place this package spells
+// them out rather than retyping them here too. Anything else — absent,
+// ill-typed, or simply not one of those words — is left out rather than
+// sent to a column that would reject it, mirroring validVerdict exactly:
+// assessment is optional, so an absent one is the ordinary case, not an
+// error.
+func validAssessment(assessment string) string {
+	if slices.Contains(store.Assessments(), assessment) {
+		return assessment
 	}
 	return ""
 }

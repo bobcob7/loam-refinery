@@ -84,12 +84,41 @@ type collectReviewsDivergedJSON struct {
 	Message string `json:"message"`
 }
 
+// collectReviewsSubmissionJSON's Assessment is *string, not string, and
+// carries omitempty, the same treatment SupersededBy and Severity.Max
+// get, for a related but distinct reason: those two are absent because
+// they are computed and nothing was there to compute from, while
+// Assessment is absent because the reviewer who wrote the document chose
+// not to grade the work. Either way, nil is the one shape that cannot be
+// misread as a value — a bare "" would collide with no real assessment
+// level, but omitting the key entirely is the only rendering that can
+// never be mistaken for "the reviewer graded this at some level" (§8.1).
 type collectReviewsSubmissionJSON struct {
-	Ordinal      int    `json:"ordinal"`
-	Profile      string `json:"profile,omitempty"`
-	Verdict      string `json:"verdict"`
-	Summary      string `json:"summary"`
-	SupersededBy *int   `json:"superseded_by,omitempty"`
+	Ordinal      int                        `json:"ordinal"`
+	Profile      string                     `json:"profile,omitempty"`
+	Verdict      string                     `json:"verdict"`
+	Summary      string                     `json:"summary"`
+	Assessment   *string                    `json:"assessment,omitempty"`
+	Severity     collectReviewsSeverityJSON `json:"severity"`
+	SupersededBy *int                       `json:"superseded_by,omitempty"`
+}
+
+// collectReviewsSeverityJSON is one submission's severity shape (§8.1):
+// the highest priority among its own comments, plus a count in each of
+// the four bands review-document.md §8 defines. Max is *int, not int, and
+// carries the same omitempty treatment SupersededBy above gets, for the
+// identical reason: a submission with no comments — an approve carrying
+// none is the one case the schema permits — has no maximum, and a bare
+// 0 would silently claim it filed something at priority 0, a value the
+// schema itself rejects. The band counts are plain ints with no
+// omitempty: an empty band is a real fact about the submission, not a
+// missing one, so it always renders, even at 0.
+type collectReviewsSeverityJSON struct {
+	Max         *int `json:"max,omitempty"`
+	MustFix     int  `json:"must_fix"`
+	ShouldFix   int  `json:"should_fix"`
+	WorthFixing int  `json:"worth_fixing"`
+	Optional    int  `json:"optional"`
 }
 
 type collectReviewsCommentJSON struct {
@@ -148,10 +177,18 @@ func (j *JSON) CollectReviews(w io.Writer, envelope CollectReviewsEnvelope) erro
 	}
 	for _, s := range envelope.Result.Submissions {
 		payload.Submissions = append(payload.Submissions, collectReviewsSubmissionJSON{
-			Ordinal:      s.Ordinal,
-			Profile:      s.Profile,
-			Verdict:      s.Verdict,
-			Summary:      s.Summary,
+			Ordinal:    s.Ordinal,
+			Profile:    s.Profile,
+			Verdict:    s.Verdict,
+			Summary:    s.Summary,
+			Assessment: s.Assessment,
+			Severity: collectReviewsSeverityJSON{
+				Max:         s.Severity.Max,
+				MustFix:     s.Severity.MustFix,
+				ShouldFix:   s.Severity.ShouldFix,
+				WorthFixing: s.Severity.WorthFixing,
+				Optional:    s.Severity.Optional,
+			},
 			SupersededBy: s.SupersededBy,
 		})
 	}

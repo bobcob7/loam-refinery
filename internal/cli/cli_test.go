@@ -378,7 +378,7 @@ func TestValidateNeverStoresOnAWiringFailure(t *testing.T) {
 // there, so a document missing either still stores cleanly.
 func TestValidateSendsRefAndVerdictToTheStore(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t, `{"version":"1","verdict":"approve","ref":"4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f","comments":[]}`)
+	h := newHarness(t, `{"version":"1","verdict":"approve","assessment":"strong","ref":"4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f","comments":[]}`)
 	h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
 		return &review.Result{Valid: true, Comments: 2}, nil
 	}
@@ -388,6 +388,7 @@ func TestValidateSendsRefAndVerdictToTheStore(t *testing.T) {
 	assert.True(t, in.Valid)
 	assert.Equal(t, "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", in.Ref)
 	assert.Equal(t, "approve", in.Verdict)
+	assert.Equal(t, "strong", in.Assessment)
 	assert.Equal(t, 2, in.Comments)
 	assert.NotEmpty(t, in.Dir, "repository identity is resolved from the working directory")
 }
@@ -430,6 +431,7 @@ func TestValidateSendsNoRefOrVerdictForAnUnparseableDocument(t *testing.T) {
 	assert.False(t, in.Valid)
 	assert.Empty(t, in.Ref)
 	assert.Empty(t, in.Verdict)
+	assert.Empty(t, in.Assessment)
 	assert.Equal(t, []byte("nonsense"), in.Source)
 }
 

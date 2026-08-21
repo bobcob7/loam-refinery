@@ -67,10 +67,11 @@ func (a *App) submitReview(ctx context.Context, args []string) int {
 }
 
 // storeInput builds what documentStore needs to place and record this run
-// (docs/config.md §5). Ref and Verdict are not on result — re-parsing source
-// is what reads them, which is cheap and safe because Parse is pure: it
-// already succeeded once inside the validator for every result reaching
-// this call, or it fails again the same way and leaves both empty.
+// (docs/config.md §5). Ref, Verdict, and Assessment are not on result —
+// re-parsing source is what reads them, which is cheap and safe because
+// Parse is pure: it already succeeded once inside the validator for every
+// result reaching this call, or it fails again the same way and leaves all
+// three empty.
 func (a *App) storeInput(source []byte, result *review.Result) StoreInput {
 	in := StoreInput{
 		Dir:           a.dir,
@@ -93,6 +94,9 @@ func (a *App) storeInput(source []byte, result *review.Result) StoreInput {
 	}
 	if doc.Verdict.OK {
 		in.Verdict = doc.Verdict.Value
+	}
+	if doc.Assessment.OK {
+		in.Assessment = doc.Assessment.Value
 	}
 	return in
 }

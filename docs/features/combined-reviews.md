@@ -953,6 +953,48 @@ attribution rather than verification. `profile` is the attribution
 channel; the qualifier and `superseded_by` are the currency channel; they
 do not share a field.
 
+**`assessment` on a submission is the reviewer's own quality grade
+([../review-document.md §3](../review-document.md#3-root-object)),
+carried straight through and reported only when the document set it.**
+Unlike `severity` below, `assessment` genuinely is reviewer-authored — a
+person or model chose the word — but unlike `summary`, it is drawn from a
+closed four-value enum (`strong`, `sound`, `mixed`, `weak`) the schema
+validates before a document is ever stored, the identical guarantee that
+lets `verdict` sit in the structurally-constrained set
+([§8.3.2](#832-escaping-and-fencing-caller-authored-text) says which of
+the two reasons applies to which field). `assessment` is orthogonal to
+`verdict` by design — [../review-document.md
+§3](../review-document.md#3-root-object) is explicit that neither axis
+constrains the other — and this envelope reports both without implying a
+relationship between them. It is **absent, not a default
+level, when the document never set the field** — the key is omitted from
+the submission object entirely, the same treatment `superseded_by` gets,
+and for the same reason: a review that declined to grade the work is not
+the same fact as a review that graded it in the middle, and a caller
+reading `submissions[i].assessment == "mixed"` must never have to wonder
+whether that came from the reviewer or from this envelope inventing a
+value nobody wrote. A caller that wants to know whether a submission was
+graded at all checks for the key's presence, not for a placeholder string.
+
+**`severity` on a submission is derived, not authored — the highest
+priority among its own comments, plus a count in each of the four bands
+[../review-document.md §8](../review-document.md#8-priority) already
+defines.** It answers the question a reader otherwise has to open every
+comment to answer: which of several identical-looking verdicts is actually
+alarming. `max` is a JSON integer when the submission filed at least one
+comment, and is **absent** — never `0` — when it filed none: `approve`
+carrying no comments is the one case the schema permits
+([../review-document.md §3](../review-document.md#3-root-object)), and a
+`0` would silently claim it filed something at priority `0`, a value the
+schema itself rejects. `must_fix`, `should_fix`, `worth_fixing`, and
+`optional` are always present, even at `0` — an empty band is a real fact
+about the submission, not a missing one — and count comments the same way
+[§8](../review-document.md#8-priority)'s own table does: `9`–`10`,
+`7`–`8`, `4`–`6`, and `1`–`3`. Nothing here is reviewer-controlled prose;
+every value is an integer computed from already-validated `priority`
+fields, which is exactly why [§8.3.2](#832-escaping-and-fencing-caller-authored-text)
+places it with `ordinal` and `verdict` rather than with `summary`.
+
 This is a materially weaker guarantee than a digest gave, and it has to be
 said plainly rather than left implied. A digest is content-derived and
 permanent — once assigned, nothing that happens later to the store changes
@@ -982,7 +1024,9 @@ put.
       "ordinal": 1,
       "profile": "backend",
       "verdict": "request_changes",
-      "summary": "…"
+      "summary": "…",
+      "assessment": "mixed",
+      "severity": { "max": 9, "must_fix": 1, "should_fix": 0, "worth_fixing": 0, "optional": 0 }
     }
   ],
   "comments": [
@@ -1004,10 +1048,14 @@ example in [§12](#12-worked-example) — see [§9](#9-empty-and-failure-cases)
 for when it appears and what it counts. `summary` sits beside `verdict` in
 `submissions[]` deliberately, and is the one field this revision keeps that
 an earlier list also proposed removing: of everything a submission could
-carry at that level, `verdict` and `summary` are the only two that are the
-reviewer's own prose and judgment rather than storage provenance, and both
-stay for that reason — content, not metadata, which is exactly the
-distinction the rest of this section draws for everything it removes.
+carry at that level, `verdict` and `summary` are the reviewer's own prose
+and judgment rather than storage provenance, and both stay for that
+reason — content, not metadata, which is exactly the distinction the rest
+of this section draws for everything it removes. `assessment`, added
+later, is the reviewer's own judgment too, though not prose — it is
+constrained to a four-value enum rather than free text — and it stays
+absent, never a placeholder value, on every submission whose document
+never set it.
 
 **Ordering.** `submissions` is ordered by `profile` name, alphabetically,
 for every submission that carries one — every submission sharing a profile
@@ -1106,20 +1154,38 @@ renderers are downstream of its return value, never of the store directly.
 originated from one of two places, and they get different treatment.
 
 **Structurally-constrained fields** — `id`, `profile`, `ordinal`,
-`verdict`, `category`, `effort`, `scope` — are already safe by
-construction. `id` is always `<qualifier>:<origin_id>`
+`verdict`, `assessment`, `category`, `effort`, `scope`, and `severity`
+(`max`, `must_fix`, `should_fix`, `worth_fixing`, `optional`) — are
+already safe by construction. `id` is always `<qualifier>:<origin_id>`
 ([§6.1](#61-the-qualified-id)), and both halves are individually
 constrained: the qualifier is either a `profile-format`-shaped
 ([../review-document.md §11.1](../review-document.md#111-structural-checks--hard))
 name or `#` followed by a plain integer `ordinal`, and `origin_id` matches
 `^[a-z][a-z0-9]*(-[a-z0-9]+)*-[1-9][0-9]*$`
 ([../review-document.md §4](../review-document.md#comment-ids)); enums are
-closed sets; `ordinal` is a JSON integer. None of these character sets
-contain a markdown special character, so none need escaping to appear as
-heading text or table cells — and `#`, the one non-alphanumeric character
-`id` can carry, is not even a valid ATX heading marker mid-string, since
-CommonMark requires a space after a heading `#` and `#3` has none. This is
-also why the *historical* bug `§5.1` describes — "an author-supplied
+closed sets; `ordinal` is a JSON integer.
+
+This set actually collects two different reasons a field is safe, and
+`verdict`, `assessment`, and `severity` illustrate both. `verdict` and
+`assessment` belong here because they are **enum-constrained**: each is
+reviewer-authored — a real choice a person or model made — but each is
+drawn from a closed set of words the schema validates before a document
+is ever stored, so there is no room in either one for anything but its
+own handful of known values, no matter how hostile the reviewer. `severity`
+belongs here for the *other* reason: it is not merely shape-constrained
+input, it is not reviewer input at all. Every one of its fields is an
+integer [§8.1](#81-shape) already documents as *derived* — computed by
+`collect-reviews` itself from already-validated `priority` values, never
+read off anything a reviewer wrote — so there is no caller-authored string
+here for a hostile reviewer to forge in the first place, and nothing to
+escape. `verdict` and `assessment` are safe because a hostile reviewer has
+no freedom left to exploit; `severity` is safe because there is no
+reviewer in that path at all. None of these character sets contain a
+markdown special character, so none need escaping to appear as heading
+text or table cells — and `#`, the one non-alphanumeric character `id`
+can carry, is not even a valid ATX heading marker mid-string, since
+CommonMark requires a space after a heading `#` and `#3` has none. This
+is also why the *historical* bug `§5.1` describes — "an author-supplied
 comment id forge diagnostic lines" — cannot recur through `id` today the
 way it evidently once could: the id grammar is already locked down
 structurally, independent of this feature. What is not locked down is
@@ -1509,13 +1575,15 @@ returns:
       "ordinal": 1,
       "profile": "backend",
       "verdict": "request_changes",
-      "summary": "The retry loop is sound, but the context deadline is not propagated to the downstream call."
+      "summary": "The retry loop is sound, but the context deadline is not propagated to the downstream call.",
+      "severity": { "max": 9, "must_fix": 1, "should_fix": 0, "worth_fixing": 0, "optional": 0 }
     },
     {
       "ordinal": 2,
       "profile": "security",
       "verdict": "comment",
-      "summary": "One low-severity logging concern; nothing blocking."
+      "summary": "One low-severity logging concern; nothing blocking.",
+      "severity": { "max": 3, "must_fix": 0, "should_fix": 0, "worth_fixing": 0, "optional": 1 }
     }
   ],
   "comments": [
@@ -1686,18 +1754,21 @@ unprofiled `D3` follows, `ordinal: 3`:
       "profile": "backend",
       "verdict": "request_changes",
       "summary": "Cache invalidation is missing on the write path.",
+      "severity": { "max": 6, "must_fix": 0, "should_fix": 0, "worth_fixing": 1, "optional": 0 },
       "superseded_by": 2
     },
     {
       "ordinal": 2,
       "profile": "backend",
       "verdict": "request_changes",
-      "summary": "Cache invalidation is missing on two write paths, not one."
+      "summary": "Cache invalidation is missing on two write paths, not one.",
+      "severity": { "max": 8, "must_fix": 0, "should_fix": 2, "worth_fixing": 0, "optional": 0 }
     },
     {
       "ordinal": 3,
       "verdict": "comment",
-      "summary": "One stray TODO; nothing blocking."
+      "summary": "One stray TODO; nothing blocking.",
+      "severity": { "max": 2, "must_fix": 0, "should_fix": 0, "worth_fixing": 0, "optional": 1 }
     }
   ],
   "comments": [

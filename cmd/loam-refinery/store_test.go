@@ -307,6 +307,15 @@ func TestValidVerdict(t *testing.T) {
 	assert.Empty(t, validVerdict("bogus"))
 }
 
+func TestValidAssessment(t *testing.T) {
+	t.Parallel()
+	for _, a := range store.Assessments() {
+		assert.Equal(t, a, validAssessment(a))
+	}
+	assert.Empty(t, validAssessment(""))
+	assert.Empty(t, validAssessment("bogus"))
+}
+
 func TestValidateRepoOverrides(t *testing.T) {
 	t.Parallel()
 	assert.NoError(t, validateRepoOverrides(nil))

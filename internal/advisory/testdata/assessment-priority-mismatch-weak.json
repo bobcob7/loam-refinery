@@ -1,0 +1,59 @@
+{
+  "version": "1",
+  "verdict": "approve",
+  "ref": "4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d",
+  "summary": "Small change, a couple of style notes, nothing that needed fixing.",
+  "assessment": "weak",
+  "comments": [
+    {
+      "id": "naming-nit-1",
+      "priority": 2,
+      "category": "style",
+      "body": "fetchClient would read more clearly as client; the package name already says fetch.",
+      "anchors": [
+        {
+          "file": "internal/fetch/client.go",
+          "line": 10
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Rename fetchClient to client",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Drops the redundant package-name prefix"
+          ],
+          "cons": [
+            "Touches every reference to the type"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "comment-typo-1",
+      "priority": 1,
+      "category": "documentation",
+      "body": "The comment above Fetch says 'recieves' where it means 'receives'.",
+      "anchors": [
+        {
+          "file": "internal/fetch/client.go",
+          "line": 40
+        }
+      ],
+      "suggestions": [
+        {
+          "summary": "Fix the typo",
+          "effort": "trivial",
+          "scope": "line",
+          "pros": [
+            "Removes a misspelling"
+          ],
+          "cons": [
+            "None; the comment is already wrong"
+          ]
+        }
+      ]
+    }
+  ]
+}

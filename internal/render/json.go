@@ -1,9 +1,11 @@
 package render
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/bobcob7/loam-refinery/internal/entry"
 	"github.com/bobcob7/loam-refinery/internal/profile"
@@ -155,8 +157,15 @@ func (j *JSON) Entries(w io.Writer, entries []entry.Entry) error {
 
 // jsonGroup is one namespace of the index. The index is a list rather than an
 // object because the registry orders its namespaces deliberately — fields
-// first, then checks, then topics — and an object would let the encoder sort
-// them alphabetically instead.
+// first, then checks, then topics — and a map serializes in whatever order
+// Go feels like, alphabetical or otherwise; writeIndexGroups below walks
+// this slice in order and writes namespace before names on every group, so
+// nothing gets a chance to reorder it. The struct tags are never read by an
+// encoder on the hand-built path writeIndexGroups takes, but they stay: this
+// is still the type's wire shape, and a future caller that reaches for
+// json.Marshal on a jsonGroup — reasonable, for an unexported render type —
+// gets the same "namespace"/"names" keys instead of silently capitalized
+// ones.
 type jsonGroup struct {
 	Namespace string   `json:"namespace"`
 	Names     []string `json:"names"`
@@ -170,20 +179,83 @@ func groupIndex(groups []entry.Group) []jsonGroup {
 	return out
 }
 
+// marshalCompact returns v's JSON encoding without the trailing newline
+// json.Encoder normally appends, using this package's own escaping
+// convention rather than json.Marshal's: HTML characters are left alone, the
+// same reason Write below turns escaping off — describe's own summary
+// carries a literal "<40 hex>" placeholder that must survive verbatim for a
+// caller to copy.
+func marshalCompact(v any) (string, error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(v); err != nil {
+		return "", fmt.Errorf("marshalling %T: %w", v, err)
+	}
+	return strings.TrimSuffix(buf.String(), "\n"), nil
+}
+
+// writeIndexGroups writes groups as the body of a JSON array whose "[" and
+// "]" the caller has already written, one group per line at indent, each
+// group's own fields one level deeper. Every group's names render as a
+// single inline array rather than the standard encoder's one name per line:
+// the array holds nothing but short, already-namespaced identifiers, so
+// per-element indentation buys no readability and only spends tokens
+// against describe's budget (docs/cli.md §6.1).
+func writeIndexGroups(b *strings.Builder, groups []jsonGroup, indent string) error {
+	inner := indent + "  "
+	for i, group := range groups {
+		namespace, err := marshalCompact(group.Namespace)
+		if err != nil {
+			return err
+		}
+		names := make([]string, len(group.Names))
+		for ni, name := range group.Names {
+			encoded, err := marshalCompact(name)
+			if err != nil {
+				return err
+			}
+			names[ni] = encoded
+		}
+		b.WriteString(indent + "{\n")
+		b.WriteString(inner + "\"namespace\": " + namespace + ",\n")
+		b.WriteString(inner + "\"names\": [" + strings.Join(names, ", ") + "]\n")
+		b.WriteString(indent + "}")
+		if i < len(groups)-1 {
+			b.WriteString(",")
+		}
+		b.WriteString("\n")
+	}
+	return nil
+}
+
 // Index writes the lens index, no bodies.
 func (j *JSON) Index(w io.Writer, groups []entry.Group) error {
-	return Write(w, struct {
-		Index []jsonGroup `json:"index"`
-	}{Index: groupIndex(groups)})
+	var b strings.Builder
+	b.WriteString("{\n  \"index\": [\n")
+	if err := writeIndexGroups(&b, groupIndex(groups), "    "); err != nil {
+		return err
+	}
+	b.WriteString("  ]\n}\n")
+	_, err := io.WriteString(w, b.String())
+	return err
 }
 
 // Summary writes the document-shape prose and the lens index together, which
 // is what describe with no arguments has to say.
 func (j *JSON) Summary(w io.Writer, text string, groups []entry.Group) error {
-	return Write(w, struct {
-		Summary string      `json:"summary"`
-		Index   []jsonGroup `json:"index"`
-	}{Summary: text, Index: groupIndex(groups)})
+	summary, err := marshalCompact(text)
+	if err != nil {
+		return err
+	}
+	var b strings.Builder
+	b.WriteString("{\n  \"summary\": " + summary + ",\n  \"index\": [\n")
+	if err := writeIndexGroups(&b, groupIndex(groups), "    "); err != nil {
+		return err
+	}
+	b.WriteString("  ]\n}\n")
+	_, err = io.WriteString(w, b.String())
+	return err
 }
 
 // jsonProfile is one row of prime --list: name and description, no body
@@ -209,12 +281,20 @@ func (j *JSON) Profiles(w io.Writer, profiles []profile.Profile) error {
 
 // Write encodes payload to w with this package's JSON conventions:
 // two-space indent, and HTML escaping off so a path or a digest is never
-// rewritten. Every renderer method in this package calls it, and it is
-// exported so a caller outside this package that must emit JSON in the
-// same shape - internal/cli's reviews command, whose payload types are not
-// review.Result, entry.Entry, or any other type this package already
-// knows - calls it instead of keeping a second copy of the same encoder
-// configuration.
+// rewritten. Result, Entries, and Profiles call it for their whole-object
+// payloads. Index and Summary do not: their array-of-groups shape needs
+// each group's "names" rendered as one inline array rather than
+// json.Encoder's one-element-per-line indent, so they hand-build that text
+// themselves and call marshalCompact per value instead - a second encoder
+// configuration, but a deliberate one, since a compact per-value encoding
+// and json.Encoder's own top-down indentation cannot produce the same
+// output. Both configurations keep HTML escaping off for the same reason:
+// describe's own summary carries a literal "<40 hex>" placeholder that must
+// survive verbatim. Write is exported so a caller outside this package that
+// must emit JSON in the same whole-object shape - internal/cli's reviews
+// command, whose payload types are not review.Result, entry.Entry, or any
+// other type this package already knows - calls it instead of keeping a
+// second copy of that configuration.
 func Write(w io.Writer, payload any) error {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")

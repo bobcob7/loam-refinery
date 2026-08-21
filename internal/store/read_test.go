@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -260,4 +262,94 @@ func TestDistinctDigests_ExcludesOtherRepoOrRef(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, digests, 1)
 	assert.Equal(t, "target", digests[0].Digest)
+}
+
+// TestNewReadOnly_SchemaVersion1StoreStaysReadable is the refinery-xij
+// regression test: it drives NewReadOnly, the mode=ro path every read
+// command actually takes, against a database built by hand at schema
+// version 1 — the shape main's own binary wrote, entirely lacking the
+// assessment column ListReviews and ListFailedRuns otherwise name
+// unconditionally. TestMigrate_FromSchemaVersion1AddsAssessmentColumn
+// drives Open instead, which always migrates first, so it never exercised
+// this connection; that gap is exactly why the P0 shipped. Both ListReviews
+// and reviews --failed's ListFailedRuns must succeed here, reporting every
+// row's assessment as absent rather than erroring.
+func TestNewReadOnly_SchemaVersion1StoreStaysReadable(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "store.db")
+	raw, err := sql.Open("sqlite", storeDSN(path, "_pragma=busy_timeout(5000)&_txlock=immediate"))
+	require.NoError(t, err)
+	_, err = raw.ExecContext(t.Context(), schemaVersion1)
+	require.NoError(t, err)
+	_, err = raw.ExecContext(t.Context(), "PRAGMA user_version = 1")
+	require.NoError(t, err)
+	const repo, ref = "github.com/example/example", "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"
+	_, err = raw.ExecContext(t.Context(),
+		"INSERT INTO runs (at, repo, ref, digest, exit_code, verdict, tool_version, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		"2026-08-19T00:00:00Z", repo, ref, "digest-passing", 0, "approve", "v1", "1")
+	require.NoError(t, err)
+	_, err = raw.ExecContext(t.Context(),
+		"INSERT INTO runs (at, repo, ref, digest, exit_code, tool_version, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"2026-08-19T00:01:00Z", repo, ref, "digest-failing", 1, "v1", "1")
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	s, err := NewReadOnly(t.Context(), dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+
+	reviews, total, err := s.ListReviews(t.Context(), repo, "", 0)
+	require.NoError(t, err, "a version-1 store must stay readable, not fail with \"no such column: assessment\"")
+	assert.Equal(t, 1, total)
+	require.Len(t, reviews, 1)
+	assert.Equal(t, "digest-passing", reviews[0].Digest)
+	assert.Equal(t, "approve", reviews[0].Verdict)
+	assert.Empty(t, reviews[0].Assessment, "a version-1 row has no assessment column at all; it must report absent, not error")
+
+	failed, total, err := s.ListFailedRuns(t.Context(), repo, "", 0)
+	require.NoError(t, err, "reviews --failed must stay readable against a version-1 store too")
+	assert.Equal(t, 1, total)
+	require.Len(t, failed, 1)
+	assert.Equal(t, 1, failed[0].ExitCode)
+	assert.Equal(t, ref, failed[0].Ref)
+}
+
+// TestNewReadOnly_StoreEnabledFalseNeverMigratesButStaysReadable proves the
+// worst case refinery-xij names: a store written entirely by
+// store.enabled: false runs, or a directory reviews cannot write to, opens
+// through Open once to seed schema version 1 by hand (the shape a version
+// that predates assessment left behind), then is read exclusively through
+// NewReadOnly from then on — the connection never takes a write lock and
+// so can never migrate the file, meaning it stays at schema version 1
+// forever. It must still answer both queries instead of failing every read
+// permanently, contradicting docs/features/combined-reviews.md section 9.
+func TestNewReadOnly_StoreEnabledFalseNeverMigratesButStaysReadable(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "store.db")
+	raw, err := sql.Open("sqlite", storeDSN(path, "_pragma=busy_timeout(5000)&_txlock=immediate"))
+	require.NoError(t, err)
+	_, err = raw.ExecContext(t.Context(), schemaVersion1)
+	require.NoError(t, err)
+	_, err = raw.ExecContext(t.Context(), "PRAGMA user_version = 1")
+	require.NoError(t, err)
+	require.NoError(t, raw.Close())
+
+	for range 3 {
+		s, err := NewReadOnly(t.Context(), dir)
+		require.NoError(t, err, "a store.enabled: false store can never migrate; NewReadOnly must succeed on every one of repeated calls, not just the first")
+		_, _, err = s.ListReviews(t.Context(), "github.com/example/example", "", 0)
+		assert.NoError(t, err)
+		_, _, err = s.ListFailedRuns(t.Context(), "github.com/example/example", "", 0)
+		assert.NoError(t, err)
+		require.NoError(t, s.Close())
+	}
+
+	var version int
+	raw, err = sql.Open("sqlite", storeDSN(path, "_pragma=busy_timeout(5000)"))
+	require.NoError(t, err)
+	defer raw.Close()
+	require.NoError(t, raw.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version))
+	assert.Equal(t, 1, version, "reading a store.enabled: false store must never migrate it")
 }

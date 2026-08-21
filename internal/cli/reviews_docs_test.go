@@ -25,7 +25,7 @@ func TestReviewsDefaultIndexMatchesDocumentedShape(t *testing.T) {
 	h.reviews.KnownFunc = func(context.Context, string) (bool, error) { return true, nil }
 	h.reviews.ListReviewsFunc = func(context.Context, string, string, int) ([]store.Review, int, error) {
 		return []store.Review{{
-			At: at, Ref: testRef, Digest: "deadbeef", Verdict: "request_changes",
+			At: at, Ref: testRef, Digest: "deadbeef", Verdict: "request_changes", Assessment: "mixed",
 			Counts: store.Counts{Comments: &comments, Errors: &errs, Advisories: &advisories, Skipped: &skipped},
 			Path:   "/tmp/x.json",
 		}}, 14, nil
