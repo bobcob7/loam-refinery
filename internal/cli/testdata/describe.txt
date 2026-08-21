@@ -7,7 +7,7 @@
     },
     {
       "namespace": "check",
-      "names": ["document-unparseable", "schema", "id-unique", "anchor-range-ordered", "anchor-path-safe", "ref-format", "profile-format", "verification-required", "ref-unknown", "anchor-file-missing", "anchor-line-out-of-range", "anchor-worktree-diverged", "id-grouping", "body-thin", "vacuous-body", "suggestion-absent", "suggestion-no-cons", "suggestion-no-pros", "broad-scope-alone", "broad-scope-no-cons", "summary-thin", "priority-category-convention", "priority-flat", "duplicate-anchor", "duplicate-body", "comment-flood"]
+      "names": ["document-unparseable", "schema", "id-unique", "anchor-range-ordered", "anchor-path-safe", "ref-format", "profile-format", "verification-required", "ref-unknown", "anchor-file-missing", "anchor-line-out-of-range", "anchor-worktree-diverged", "id-grouping", "body-thin", "vacuous-body", "suggestion-absent", "suggestion-no-cons", "suggestion-no-pros", "broad-scope-alone", "broad-scope-no-cons", "summary-thin", "priority-category-convention", "priority-flat", "assessment-priority-mismatch", "duplicate-anchor", "duplicate-body", "comment-flood"]
     },
     {
       "namespace": "topic",

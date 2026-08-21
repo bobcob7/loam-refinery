@@ -71,6 +71,35 @@ reported as skipped rather than answered.`,
 		},
 		{
 			Meta: review.Check{
+				Name:    "assessment-priority-mismatch",
+				Tier:    review.TierAdvisory,
+				Summary: "assessment is strong/sound with a priority 7+ comment, or weak with nothing above the optional band",
+				Title:   "Assessment out of step with priority",
+				Body: `Fires in either direction when the grade and the priorities describe
+different reviews. strong or sound with a comment at priority 7 or above
+claims nothing serious was found — sound gets the same test as strong,
+since it is the default a miscalibrated reviewer reaches for. weak with
+nothing above priority 3, or no comments at all, claims significant
+concerns while backing it with nothing.
+
+Same defect from opposite ends: assessment and priority describe the same
+findings, and when they disagree one is wrong about the document's own
+contents. An over-harsh weak is not the safer failure — it makes the field
+as useless as an all-strong reviewer does.
+
+  strong/sound + priority 9  -> mixed
+  weak + every comment 1-3   -> sound
+
+Never compares assessment to verdict — weak+comment and mixed+approve stay
+silent. mixed never fires; its anchor names no priority claim. Aggregate
+check: skipped, not guessed, on an unusable priority. Absent assessment
+never fires.`,
+				Related: []string{"assessment", "priority"},
+			},
+			Run: assessmentPriorityMismatch,
+		},
+		{
+			Meta: review.Check{
 				Name:    "duplicate-anchor",
 				Tier:    review.TierAdvisory,
 				Summary: "two comments anchor the identical file, line and end_line",
@@ -175,6 +204,86 @@ func priorityFlat(doc *review.Document) ([]review.Diagnostic, []review.Skipped) 
 	}
 	return []review.Diagnostic{documentDiagnostic("priority-flat", "",
 		fmt.Sprintf("all %s are priority %d; the scale is not being used", plural(len(doc.Comments), "comment"), first))}, nil
+}
+
+// assessmentSeriousFloor is the priority at which a finding counts as
+// "serious" for assessment-priority-mismatch's strong direction: the
+// ShouldFix and MustFix bands internal/collect's Severity computes (commit
+// cd1f914) — 7-8 should fix before merge, a real defect; 9-10 must fix
+// before merge.
+const assessmentSeriousFloor = 7
+
+// assessmentAboveOptionalFloor is the priority at which a finding counts as
+// more than "low-priority notes" for the weak direction: the WorthFixing
+// band and up, i.e. anything that is not merely Optional (1-3).
+const assessmentAboveOptionalFloor = 4
+
+// assessmentPriorityMismatch fires when a document's assessment and its own
+// filed priorities describe different reviews. It never fires when
+// assessment is absent, and it never reasons about verdict. strong and sound
+// share one priority test — both claim nothing serious was found — and weak
+// has the other; mixed carries no priority claim in its anchor and passes
+// through untouched.
+func assessmentPriorityMismatch(doc *review.Document) ([]review.Diagnostic, []review.Skipped) {
+	if !doc.Assessment.OK {
+		return nil, nil
+	}
+	assessment := doc.Assessment.Value
+	if assessment != "strong" && assessment != "sound" && assessment != "weak" {
+		return nil, nil
+	}
+	usable, reason := prioritiesUsable(doc)
+	if !usable {
+		return nil, skip(reason, "assessment-priority-mismatch")
+	}
+	worst, comment, found := worstUsableComment(doc)
+	if assessment == "weak" {
+		return weakWithNothingSerious(worst, found), nil
+	}
+	return claimsNothingSeriousFound(assessment, worst, comment, found), nil
+}
+
+// worstUsableComment returns the highest-priority comment among those whose
+// priority parsed, and whether any comment qualified at all.
+func worstUsableComment(doc *review.Document) (int, review.Comment, bool) {
+	var worst int
+	var worstComment review.Comment
+	found := false
+	for _, comment := range doc.Comments {
+		if !comment.Priority.OK {
+			continue
+		}
+		if !found || comment.Priority.Value > worst {
+			worst = comment.Priority.Value
+			worstComment = comment
+			found = true
+		}
+	}
+	return worst, worstComment, found
+}
+
+// claimsNothingSeriousFound handles strong and sound alike: both anchors
+// (docs/review-document.md section 3) say the same thing about seriousness —
+// strong because it is better than it had to be, sound because nothing was
+// distinctive in either direction — and disagree with a priority 7+ finding
+// the same way.
+func claimsNothingSeriousFound(assessment string, worst int, comment review.Comment, found bool) []review.Diagnostic {
+	if !found || worst < assessmentSeriousFloor {
+		return nil
+	}
+	return []review.Diagnostic{diagnostic("assessment-priority-mismatch", comment, comment.Path+"/priority",
+		fmt.Sprintf("assessment is %s but %s is filed at priority %d; %s claims nothing serious was found", assessment, commentLabel(comment), worst, assessment))}
+}
+
+func weakWithNothingSerious(worst int, found bool) []review.Diagnostic {
+	if found && worst >= assessmentAboveOptionalFloor {
+		return nil
+	}
+	message := "assessment is weak but the review files no comments; weak claims significant concerns"
+	if found {
+		message = fmt.Sprintf("assessment is weak but the highest filed priority is %d, no higher than the optional band; weak claims significant concerns", worst)
+	}
+	return []review.Diagnostic{documentDiagnostic("assessment-priority-mismatch", "/assessment", message)}
 }
 
 func duplicateAnchor(doc *review.Document) ([]review.Diagnostic, []review.Skipped) {

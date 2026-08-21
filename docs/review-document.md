@@ -695,6 +695,7 @@ findings — it is just no longer the only voice in the room.
 | --- | --- |
 | `priority-category-convention` | A `testing`, `maintainability`, `documentation`, or `style` comment filed at priority 9–10 — claiming the change must not merge. Conventionally those categories stay below the blocking band ([§8.1](#81-priority-and-category)). |
 | `priority-flat` | Four or more comments all at the same priority. Suggests the scale was not used. |
+| `assessment-priority-mismatch` | `assessment` `strong` or `sound` with a comment at priority ≥ 7, or `assessment` `weak` with nothing above priority 3 (or no comments at all). `sound` gets the same test as `strong` — it is the default a miscalibrated reviewer reaches for. The grade and the reviewer's own priorities describe different reviews. Never compares `assessment` to `verdict`; silent when `assessment` is absent, and `mixed` carries no priority test. |
 | `duplicate-anchor` | Two comments anchor the identical `file`, `line`, and `end_line`. Often one finding filed twice; if deliberate, consider one comment with two suggestions. |
 | `duplicate-body` | Two comments have identical bodies after normalization. |
 | `comment-flood` | More than 25 comments. Feedback at this volume is not actionable. |
