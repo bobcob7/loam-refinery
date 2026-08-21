@@ -1,17 +1,34 @@
-{{- /* internal/render/templates/finding.gohtml — one finding (§7.3):
-a <details> element whose id attribute is the qualified id, verbatim,
-no substitution, in either qualifier form (§8.1). Bead .1 seeds the
-minimal <details>/id/body shape a structurally complete page needs;
-bead .9 owns turning this into the real summary derivation (first
-sentence of body, truncated at a word boundary to a 140-rune cap),
-the priority-≥-7 open/closed default, the category/priority badges,
-the data-* filter attributes (§5.1, §5.4), the anchors row, the code
-excerpt ({{template "code"}}, bead .4's), and the suggestions
-({{template "suggestion"}}, bead .9's own). Dot is htmlFindingView
-(internal/render/html_view_finding.go). */ -}}
+{{- /* internal/render/templates/finding.gohtml — one finding (§7.3): a
+<details class="finding"> element whose id attribute is the qualified id,
+verbatim, no substitution, in either qualifier form (§8.1), and whose
+<summary> is headed by a derived headline — the first sentence of body,
+truncated at a word boundary to a 140-rune cap — never the id. The id
+survives as a small monospace chip beside the headline: still the anchor a
+copied link resolves to, via fragmentHref (bead .2, html_href.go), and
+still carrying the full qualified id in a title attribute. The profile is
+its own tag, never folded into the headline or the chip; an
+ordinal-qualified finding renders its own ordinal tag the same way. The
+collapse default (open when Priority >= 7) is computed server-side into
+htmlFindingView.Open (internal/render/html_view_finding.go) and rendered
+here as the open attribute — never decided by script. Every finding
+carries data-priority-css, data-category-css, and data-lens (§5.1),
+each a grammar-constrained enum token, never a byte of reviewer prose.
+Dot is htmlFindingView. */ -}}
 {{define "finding"}}
-<details class="finding" id="{{.ID}}">
-<summary><a href="#{{fragmentHref .ID}}">{{.ID}}</a></summary>
-<p>{{.Body}}</p>
+<details class="finding" id="{{.ID}}" data-priority-css="{{.DataPriorityCSS}}" data-category-css="{{.DataCategoryCSS}}" data-lens="{{.DataLens}}"{{if .Open}} open{{end}}>
+<summary>
+<span class="finding-headline">{{.Headline}}</span>
+<a class="finding-id" href="#{{fragmentHref .ID}}" title="{{.ID}}">{{.ChipText}}</a>
+{{if .HasProfile}}<span class="tag tag-profile">{{.Profile}}</span>{{end}}
+{{if .HasOrdinal}}<span class="tag tag-ordinal">{{.OrdinalTag}}</span>{{end}}
+<span class="tag {{.DataPriorityCSS}}">priority {{.Priority}}</span>
+<span class="tag {{.DataCategoryCSS}}">{{.Category}}</span>
+</summary>
+<div class="finding-body">
+<p class="anchors">{{if .Anchors}}{{range .Anchors}}<code class="tag anchor">{{.}}</code>{{end}}{{else}}(none){{end}}</p>
+<p class="body">{{.Body}}</p>
+{{if .HasCode}}{{template "code" .Code}}{{end}}
+{{if .Suggestions}}{{template "suggestion" .Suggestions}}{{end}}
+</div>
 </details>
 {{end}}
