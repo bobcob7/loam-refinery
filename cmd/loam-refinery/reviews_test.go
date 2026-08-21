@@ -165,6 +165,67 @@ func TestReviewsAdapter_ReadsFromAReadOnlyStoreDirectory(t *testing.T) {
 	assert.NotEmpty(t, content)
 }
 
+// DistinctDigests reads what Save wrote, the same way ListReviews does, and
+// answers empty rather than erroring for a repo or ref the store has never
+// heard of.
+func TestReviewsAdapter_DistinctDigestsReadsWhatWasStored(t *testing.T) {
+	homeFor(t)
+	writer := newStoreAdapter(quietLog())
+	dir := t.TempDir()
+	ref := "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"
+	require.NoError(t, writer.Save(t.Context(), cli.StoreInput{
+		Dir: dir, Source: []byte(`{"version":"1","verdict":"approve","ref":"` + ref + `","comments":[]}`),
+		Valid: true, Ref: ref, Verdict: "approve", ToolVersion: "test", SchemaVersion: "1",
+	}))
+	adapter := newReviewsAdapter(quietLog())
+	digests, err := adapter.DistinctDigests(t.Context(), "no-repo", ref)
+	require.NoError(t, err)
+	require.Len(t, digests, 1)
+	digests, err = adapter.DistinctDigests(t.Context(), "no-repo", "0000000000000000000000000000000000000000")
+	require.NoError(t, err)
+	assert.Empty(t, digests, "a ref the store has never heard of answers empty, not an error")
+}
+
+// ReviewPath resolves the same path WriteReview actually placed the file
+// at, so collect-reviews's own reader (composing ReviewPath and
+// ReadContent) can read what DistinctDigests just enumerated.
+func TestReviewsAdapter_ReviewPathMatchesWhereWriteReviewPlacedTheFile(t *testing.T) {
+	homeFor(t)
+	writer := newStoreAdapter(quietLog())
+	dir := t.TempDir()
+	ref := "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"
+	require.NoError(t, writer.Save(t.Context(), cli.StoreInput{
+		Dir: dir, Source: []byte(`{"version":"1","verdict":"approve","ref":"` + ref + `","comments":[]}`),
+		Valid: true, Ref: ref, Verdict: "approve", ToolVersion: "test", SchemaVersion: "1",
+	}))
+	adapter := newReviewsAdapter(quietLog())
+	digests, err := adapter.DistinctDigests(t.Context(), "no-repo", ref)
+	require.NoError(t, err)
+	require.Len(t, digests, 1)
+	path, err := adapter.ReviewPath(t.Context(), "no-repo", ref, digests[0].Digest)
+	require.NoError(t, err)
+	assert.FileExists(t, path)
+	content, err := adapter.ReadContent(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), ref)
+}
+
+// StoreEnabled reads store.enabled off config the same way storeAdapter.Save
+// does, and defaults to true (config.Load's own default) rather than
+// erroring on a machine with no config file at all.
+func TestReviewsAdapter_StoreEnabledReadsConfig(t *testing.T) {
+	home := homeFor(t)
+	adapter := newReviewsAdapter(quietLog())
+	enabled, err := adapter.StoreEnabled(t.Context())
+	require.NoError(t, err)
+	assert.True(t, enabled, "no config file at all defaults to enabled")
+	require.NoError(t, os.WriteFile(filepath.Join(home, "config.json"),
+		[]byte(`{"version":"1","store":{"enabled":false}}`), 0o600))
+	enabled, err = adapter.StoreEnabled(t.Context())
+	require.NoError(t, err)
+	assert.False(t, enabled, "an explicit store.enabled:false is read back, not overridden")
+}
+
 // A malformed store.repos override is a config error surfaced on a read
 // exactly as it is on a write, caught before any store filesystem lookup.
 func TestReviewsAdapter_BadRepoOverrideFailsBeforeAnyFilesystemLookup(t *testing.T) {

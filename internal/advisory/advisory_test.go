@@ -18,7 +18,7 @@ import (
 // same fixture each failing case is a mutation of.
 func TestCleanDocumentRaisesNothing(t *testing.T) {
 	t.Parallel()
-	diagnostics, skipped := run(t, "clean.json", nil)
+	diagnostics, skipped := run(t, "clean.json")
 	assert.Empty(t, diagnostics)
 	assert.Empty(t, skipped)
 }
@@ -48,7 +48,7 @@ func TestEveryAdvisoryFiresOnItsFixture(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			diagnostics, _ := run(t, test.name+".json", nil)
+			diagnostics, _ := run(t, test.name+".json")
 			names := []string{}
 			messages := map[string]string{}
 			for _, diagnostic := range diagnostics {
@@ -89,7 +89,7 @@ func TestAggregateChecksSkipRatherThanGuess(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			diagnostics, skipped := run(t, test.file, nil)
+			diagnostics, skipped := run(t, test.file)
 			reasons := map[string]string{}
 			for _, skip := range skipped {
 				reasons[skip.Name] = skip.Reason
@@ -107,14 +107,6 @@ func TestAggregateChecksSkipRatherThanGuess(t *testing.T) {
 	}
 }
 
-func TestDisabledAdvisoriesDoNotRun(t *testing.T) {
-	t.Parallel()
-	diagnostics, _ := run(t, "duplicate-body.json", map[string]bool{"duplicate-body": true})
-	for _, diagnostic := range diagnostics {
-		assert.NotEqual(t, "duplicate-body", diagnostic.Name)
-	}
-}
-
 func TestRegistryHoldsWhatItIsGiven(t *testing.T) {
 	t.Parallel()
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
@@ -126,7 +118,7 @@ func TestRegistryHoldsWhatItIsGiven(t *testing.T) {
 	}
 	require.Len(t, only, 1)
 	doc := parse(t, "duplicate-body.json")
-	diagnostics, _ := New(log, only).Run(doc, nil)
+	diagnostics, _ := New(log, only).Run(doc)
 	require.Len(t, diagnostics, 1)
 	assert.Equal(t, "duplicate-body", diagnostics[0].Name)
 }
@@ -141,10 +133,10 @@ func TestEveryAdvisoryIsExplainable(t *testing.T) {
 	}
 }
 
-func run(t *testing.T, file string, disabled map[string]bool) ([]review.Diagnostic, []review.Skipped) {
+func run(t *testing.T, file string) ([]review.Diagnostic, []review.Skipped) {
 	t.Helper()
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	return New(log, All()).Run(parse(t, file), disabled)
+	return New(log, All()).Run(parse(t, file))
 }
 
 func parse(t *testing.T, file string) *review.Document {

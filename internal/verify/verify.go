@@ -82,12 +82,12 @@ func (v *Verifier) Verify(ctx context.Context, doc *review.Document) ([]review.D
 		if verification.Anchors == 0 {
 			return []review.Diagnostic{diagnostic}, nil, verification
 		}
-		return []review.Diagnostic{diagnostic}, excusableSkips("the document ref does not resolve", "ref-unknown"), verification
+		return []review.Diagnostic{diagnostic}, skips("the document ref does not resolve"), verification
 	}
 	// HEAD is resolved once per run, the same way ref existence is: the
 	// working tree only ever matters when ref is the checked-out commit, and
 	// that is one fact about this run, not one fact per anchor.
-	isHEAD := v.refIsHEAD(ctx, ref)
+	isHEAD := v.RefIsHEAD(ctx, ref)
 	diagnostics := []review.Diagnostic{}
 	unusable, unreadable := 0, 0
 	for _, comment := range doc.Comments {
@@ -225,13 +225,21 @@ func (v *Verifier) checkAnchor(ctx context.Context, comment review.Comment, anch
 	return review.Diagnostic{}, verified
 }
 
-// refIsHEAD reports whether ref names the checked-out commit, resolved once
+// RefIsHEAD reports whether ref names the checked-out commit, resolved once
 // per run rather than once per anchor. A HEAD that cannot be resolved is not
 // a reason to fail verification — it only means the working tree has nothing
 // to say about ref, which is the same conclusion "ref is not HEAD" reaches,
 // so anchors fall through to being checked normally rather than being
 // silently skipped over a machine problem the caller never asked about.
-func (v *Verifier) refIsHEAD(ctx context.Context, ref string) bool {
+//
+// Exported for docs/features/combined-reviews.md §4.3.1's head_check: it is
+// the one fact about a document's ref that Verify's own return value cannot
+// answer on its own — Verification.Unverified is only ever populated when
+// this already holds, so an empty Unverified cannot tell "ref is HEAD and
+// nothing has drifted" from "ref is not HEAD" apart. A caller asking exactly
+// that question calls this directly rather than re-deriving it: two
+// implementations of "is ref HEAD" is one that will drift from the other.
+func (v *Verifier) RefIsHEAD(ctx context.Context, ref string) bool {
 	out, err := v.git.run(ctx, "rev-parse", "HEAD")
 	if err != nil {
 		v.log.Debug("HEAD lookup failed", "error", err)
@@ -373,16 +381,6 @@ func skips(reason string) []review.Skipped {
 	skipped := make([]review.Skipped, 0, len(anchorChecks))
 	for _, name := range anchorChecks {
 		skipped = append(skipped, review.Skipped{Name: name, Reason: reason})
-	}
-	return skipped
-}
-
-// excusableSkips reports the anchor checks as skipped by a condition the caller
-// can accept with --warn-only, naming the check that condition belongs to.
-func excusableSkips(reason, cause string) []review.Skipped {
-	skipped := skips(reason)
-	for i := range skipped {
-		skipped[i].Excuses = cause
 	}
 	return skipped
 }

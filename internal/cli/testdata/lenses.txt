@@ -298,6 +298,22 @@
 {
   "entries": [
     {
+      "name": "profile",
+      "namespace": "field",
+      "title": "Reviewer profile",
+      "body": "The name of the reviewer profile (cli.md §2.1.1) this review was written under, if any — the same NAME passed to `prime --profile=NAME`. Optional: omitted when the reviewer ran unprimed. Caller-authored and unverifiable, like id.",
+      "example": "\"backend\"",
+      "related": [
+        "profile-format"
+      ],
+      "provider": "schema"
+    }
+  ]
+}
+
+{
+  "entries": [
+    {
       "name": "ref",
       "namespace": "field",
       "title": "Reviewed commit",
@@ -370,7 +386,7 @@
       "name": "document-unparseable",
       "namespace": "check",
       "title": "Unparseable document",
-      "body": "Fires when the input never became a document: malformed JSON, a top-level\nvalue that is not an object, or a second value after the first. It is the one\nfailure that stops the run, because there is nothing left to check — every\nother check reports against a document, and here there is none.\n\nNo other diagnostic accompanies it. Do not read that quiet as approval of the\nrest: nothing else ran.\n\nThe usual causes are prose wrapped around the JSON, a fenced code block left\nin, and two documents concatenated into one stream. The message carries the\ndecoder's own complaint, which names the byte offset:\n\n  loam-refinery validate review.json\n  invalid character 'h' looking for beginning of value\n\nThis is a document to repair rather than a command line to fix, so it exits 1\nlike any other unusable document.",
+      "body": "Fires when the input never became a document: malformed JSON, a top-level\nvalue that is not an object, or a second value after the first. It is the one\nfailure that stops the run, because there is nothing left to check — every\nother check reports against a document, and here there is none.\n\nNo other diagnostic accompanies it. Do not read that quiet as approval of the\nrest: nothing else ran.\n\nThe usual causes are prose wrapped around the JSON, a fenced code block left\nin, and two documents concatenated into one stream. The message carries the\ndecoder's own complaint, which names the byte offset:\n\n  loam-refinery submit-review review.json\n  invalid character 'h' looking for beginning of value\n\nThis is a document to repair rather than a command line to fix, so it exits 1\nlike any other unusable document.",
       "related": [
         "schema",
         "tiers",
@@ -466,10 +482,26 @@
 {
   "entries": [
     {
+      "name": "profile-format",
+      "namespace": "check",
+      "title": "Malformed profile",
+      "body": "Fires when the document profile is present but not lowercase letters, digits,\nand single hyphens between them — the same grammar the filename a profile\nresolves to already uses. This checks shape only, never whether the reviewer\nwas actually primed with that profile; profile is caller-authored and\nunverifiable, exactly like id.\n\nThe shape matters because collect-reviews builds each comment's qualified id\nas <profile>:<origin_id>, splitting on the first colon to recover origin_id\nlater. A profile containing a colon breaks that split for every comment it\nproduced, silently and downstream of this check.\n\n  before: \"arch:v2\"\n  after:  \"arch-v2\"",
+      "related": [
+        "profile",
+        "id"
+      ],
+      "provider": "checks"
+    }
+  ]
+}
+
+{
+  "entries": [
+    {
       "name": "verification-required",
       "namespace": "check",
       "title": "Verification required but unavailable",
-      "body": "Fires only under --require-verification, and says one thing: nobody confirmed\nthese anchors. A repository that did not answer, a commit this checkout does\nnot have, a file git could not read — different causes, same answer.\n\nWithout the flag that is reported and the run passes, because a document is not\nwrong for being checked somewhere that could not check it. The flag is for the\ncaller who cannot accept that: a merge gate whose whole purpose is confirming\nthe line numbers are real, where a review nobody verified is worth no more than\nno review.\n\nThe verification block carries the cause: \"not a git repository\" means cd, and\nan unavailable source means the machine rather than the review. --warn-only on the\ncheck that explains the gap excuses it — ref-unknown for a commit this checkout\nnever had. Nothing excuses a file git could not read.",
+      "body": "Fires whenever an anchor claim went unchecked, for any of three reasons: no\nrepository, one that could not be asked, or a file git could not read. It runs\nunconditionally now — there is no flag to accept the gap, because nothing\nenters the store unverified. A document is not wrong for being checked\nsomewhere that could not check it, but the run still fails: a review nobody\nverified is worth no more than no review.\n\nThe verification block carries the cause. \"none\" means the run was outside a\nrepository: cd to the one the review names. \"unavailable\" means a repository\nexisted but could not answer — git missing, a bare repository, a checkout git\nrefuses on ownership grounds — and the reason is git's own words. A file git\ncould not read is rarer still.\n\nThe fix in every case is a repository that can actually answer — not a\ncommand-line option. A document with no anchors is never affected; there is\nnothing here for it to ask about.",
       "related": [
         "ref-unknown",
         "anchor-file-missing",
@@ -486,7 +518,7 @@
       "name": "ref-unknown",
       "namespace": "check",
       "title": "Unresolvable ref",
-      "body": "Fires when the document ref names no commit in the repository the tool was run\nin. Every anchor is read at that ref, so the whole review becomes a set of claims\nnobody can check — which is why it is reported once for the document rather than\nonce per anchor.\n\nThere are two ordinary causes. Either you are in the wrong repository, in which\ncase the SHA in the diagnostic will look foreign and the fix is to cd; or the\ncommit is genuinely absent — a shallow clone, or a branch deleted and garbage\ncollected since the review was written. That second case is what --warn-only is\nfor: it demotes the verification checks to advisories so a legitimate gap does\nnot fail the run.\n\nIf the ref is wrong rather than absent, take it from the checkout the review was\nperformed against: git rev-parse HEAD. Fetching the commit is the other fix;\nloam-refinery never touches the network itself.",
+      "body": "Fires when the document ref names no commit in the repository the tool was run\nin. Every anchor is read at that ref, so the whole review becomes a set of claims\nnobody can check — which is why it is reported once for the document rather than\nonce per anchor.\n\nThere are two ordinary causes. Either you are in the wrong repository, in which\ncase the SHA in the diagnostic will look foreign and the fix is to cd; or the\ncommit is genuinely absent — a shallow clone that never fetched it, or a branch\ndeleted and garbage collected since the review was written. That second case\nhas no flag to work around anymore: the fix is a deeper fetch, git fetch\n--deepen, or an unshallow clone, before resubmitting.\n\nIf the ref is wrong rather than absent, take it from the checkout the review was\nperformed against: git rev-parse HEAD. Fetching the commit is the other fix;\nloam-refinery never touches the network itself.",
       "related": [
         "ref",
         "ref-format",
@@ -537,7 +569,7 @@
       "name": "anchor-worktree-diverged",
       "namespace": "check",
       "title": "Anchored file diverged from ref",
-      "body": "Fires when ref is the checked-out commit, the anchored file exists there, a\nworking-tree copy exists too, and git says the two differ. The file the\nreviewer may have read is not the file at ref, so the anchor is reported\nunverified rather than checked against either copy.\n\nIt is the one verification check that is not an error by default:\nmonotonicity licenses consulting the working tree at all, and monotonicity\nmeans it can only withhold a verification, never grant one — firing this\ncheck removes an anchor from verified, never turns a passing document into a\nfailing one. An anchor it reports is never line-checked, so a file that has\nonly grown since ref does not also fail anchor-line-out-of-range.\n\nClear it by committing what was reviewed, so ref and the working tree agree\nagain, or by naming a ref that already contains it — git stash create makes a\nreal commit object without touching HEAD or the index. Under\n--require-verification this is a cause it fires on;\n--warn-only=anchor-worktree-diverged demotes only this gap.",
+      "body": "Fires when ref is the checked-out commit, an anchored file exists there, a\nworking-tree copy exists too, and git says the two differ — the ordinary\nstate of a checkout somebody is actively editing. It runs as a precondition,\nimmediately after parse and before anything else: before structural checks,\nbefore advisories, before any other anchor. One diagnostic covers the whole\ndocument, however many anchors diverged, and the run stops there at exit 3,\nnot exit 1.\n\nThe reviewed state is not a commit, and revising the document cannot fix\nthat. Commit what was reviewed — even to a throwaway branch — so ref and the\nworking tree agree again, or run git stash create: it builds a real commit\nobject out of the working tree and the index without touching either, giving\na resolvable SHA to submit against instead.\n\nThis is not a check to retry. Resubmitting the identical document against\nthe identical dirty tree cannot succeed — an agent that treats exit 3 like\nexit 1 and just resubmits will loop until something outside the review\nchanges.",
       "related": [
         "anchor-file-missing",
         "anchor-line-out-of-range",
@@ -826,7 +858,7 @@
       "name": "store",
       "namespace": "topic",
       "title": "The review store",
-      "body": "Every `validate` that reads a document writes it down. A clean review is\nstored as a review; an input that fails is stored as a rejected input — in\nseparate trees, never mixed, so the store can answer \"what was concluded\nabout this commit\" without a failure ever polluting it.\n\nStoring needs no flag and produces no output: it is simply what `validate`\ndoes, on every run with something to keep. The result object never mentions\nit — asking where a copy landed is `loam-refinery reviews`'s job, not\n`validate`'s.\n\n`store.enabled: false` in the config file is the only way to turn storing\noff. There is no per-run flag.\n\nIf the store cannot be created or written — a read-only home, a full disk, an\nunreachable `store.path` — the command exits 101, not 1 or 2. That code means\nthe machine is at fault, not the review or the invocation: revising the\nreview will not fix it, and neither will re-checking flags. Stop and report\nthe machine.\n\n`loam-refinery reviews` reads the store back: which reviews were stored for a\nrepository and commit, and, with `--failed`, which runs stored none.",
+      "body": "Every `submit-review` that reads a document writes it down: a clean review\nas a review, a failing input as a rejected input, in separate trees, never\nmixed, so the store can answer \"what was concluded about this commit\"\nwithout a failure polluting it. Exit 3 is the exception: the precondition it\nfails on runs before validation starts, so it records a row and writes no\nfile.\n\nStoring needs no flag and produces no output: it is simply what `submit-review`\ndoes, on every run. The result object never mentions it — asking where a\ncopy landed is `loam-refinery reviews`'s job, not `submit-review`'s.\n\n`store.enabled: false` in the config file is the only way to turn storing\noff. There is no per-run flag.\n\nIf the store cannot be created or written — a read-only home, a full disk,\nan unreachable `store.path` — the command exits 101: the machine is at\nfault, not the review or the invocation. Stop and report it; revising the\nreview or re-checking flags won't help.\n\n`loam-refinery reviews` reads the store back: which reviews were stored for a\nrepository and commit, and, with `--failed`, which runs stored none.",
       "related": [
         "exit-codes"
       ],
@@ -844,7 +876,7 @@
       "name": "tiers",
       "namespace": "topic",
       "title": "Check tiers and exit codes",
-      "body": "Checks come in three tiers answering different questions.\n\nStructural checks ask \"is this a document?\" — schema conformance, unique ids,\nsafe paths, well-formed refs. Always run, always hard.\n\nVerification checks ask \"is this about anything real?\" — does this path exist at\nthis ref, does the file have this many lines. Errors when a repository answers.\n--warn-only demotes them for one lacking the reviewed commit;\n--require-verification makes a skip an error.\n\nAdvisory checks ask \"is this a good review?\" — a thin body, a suggestion with no\nstated cost, every comment at priority 9. Always run, never fatal. --strict\npromotes them, --disable silences named ones.\n\nExit 0 is valid, exit 1 means revise the review, exit 2 means fix the\ninvocation. Only document-unparseable gates the rest; otherwise one run\nreports everything findable, and checks that cannot run are listed as\nskipped, not passed.",
+      "body": "Checks come in three tiers answering different questions.\n\nStructural checks ask \"is this a document?\" — schema conformance, unique ids,\nsafe paths, well-formed refs. Always run, always hard.\n\nVerification checks ask \"is this about anything real?\" — does this path exist at\nthis ref, does the file have this many lines. Always run, and cannot be\ndisabled or demoted: an anchor claim that goes unconfirmed fails the run.\n\nAdvisory checks ask \"is this a good review?\" — a thin body, a suggestion with no\nstated cost, every comment at priority 9. Always run, never fatal outright.\n--strict promotes them to errors; there is no flag to silence one.\n\nExit 0 is valid, exit 1 means revise the review, exit 2 means fix the\ninvocation, exit 3 means the reviewed state is not a commit — commit it, or\nrun `git stash create` and submit that SHA — and exit 101 means the tool\nfailed: stop and report the machine. Only document-unparseable gates the\nrest; every other run reports everything findable, skipped checks included.",
       "related": [
         "schema",
         "ref-unknown",
@@ -866,7 +898,7 @@
       "name": "verification",
       "namespace": "topic",
       "title": "Anchors as checkable claims",
-      "body": "An anchor says: this path, at this commit, has this line. That is a factual\nclaim, and the one an agent gets wrong most confidently: a hallucinated line\nnumber is well-formed, plausibly numbered, and wrong.\n\nSo the document carries a ref: a full 40-character commit SHA, never a branch.\nA branch names a moving target — an anchor recorded against main means whatever\nmain points at when someone looks, stale without ever changing.\n\nvalidate checks those claims against the repository it is run in, by default and\nwith no flag, by object lookup — a commit that is not checked out still\nresolves. With no repository the tier is skipped, and reported as skipped.\n\nloam-refinery confirms the anchor points somewhere; whether it points at\nthe right line is the reviewer's job. What the SHA buys is that anyone can\ncheck:\n\n  git show 4f2c1a9:internal/fetch/client.go | sed -n '88,94p'",
+      "body": "An anchor says: this path, at this commit, has this line. That is a factual\nclaim, and the one an agent gets wrong most confidently: a hallucinated line\nnumber is well-formed, plausibly numbered, and wrong.\n\nSo the document carries a ref: a full 40-character commit SHA, never a branch.\nA branch names a moving target — an anchor recorded against main means whatever\nmain points at when someone looks, stale without ever changing.\n\nvalidate checks those claims against the repository it is run in, by default and\nwith no flag, by object lookup — a commit that is not checked out still\nresolves. With no repository the tier is skipped and reported as skipped —\nbut not passed: any anchor still fails at exit 1 with nothing to confirm it.\nAn anchorless document passes either way.\n\nloam-refinery confirms the anchor points somewhere; whether it points at\nthe right line is the reviewer's job. What the SHA buys is that anyone can\ncheck:\n\n  git show 4f2c1a9:internal/fetch/client.go | sed -n '88,94p'",
       "related": [
         "anchors",
         "file",

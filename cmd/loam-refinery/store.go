@@ -77,13 +77,23 @@ func (a *storeAdapter) Save(ctx context.Context, in cli.StoreInput) error {
 // write places in.Source in the tree its exit code names — reviews/ for a
 // passing run, rejected/ for a failing one — and returns the exit code
 // alongside the digest the row records (docs/config.md §5, §4.4, §4.4.1).
+// The precondition (docs/cli.md §2.3.1) fires before a document is
+// examined, so exit 3 places nothing in either tree: it is not a rejected
+// input, because rejected/ holds documents that were examined and did not
+// hold up, and this one never reached that. store.Digest supplies the row's
+// digest without writing a file for it — runs.digest is TEXT NOT NULL
+// (docs/config.md §4.5.1).
 func (a *storeAdapter) write(st *store.Store, repo string, in cli.StoreInput) (exitCode int, digest string, err error) {
-	if in.Valid {
+	switch {
+	case in.Precondition:
+		return cli.ExitPrecondition, store.Digest(in.Source), nil
+	case in.Valid:
 		digest, _, err = st.WriteReview(repo, in.Ref, in.Source)
-		return 0, digest, err
+		return cli.ExitValid, digest, err
+	default:
+		digest, _, err = st.WriteRejected(repo, in.Source)
+		return cli.ExitInvalid, digest, err
 	}
-	digest, _, err = st.WriteRejected(repo, in.Source)
-	return 1, digest, err
 }
 
 // validRef reports ref only when it fits docs/config.md §4.3's shape, so a

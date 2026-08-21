@@ -16,7 +16,7 @@ import (
 const document = `{"version":"1","verdict":"comment","summary":"a summary long enough for the schema to accept it","comments":[]}`
 
 // anchored carries one anchor, because a document with nothing to verify is not
-// a document verification can be required of.
+// a document verification can require anything of.
 const anchored = `{"version":"1","verdict":"comment","summary":"a summary long enough for the schema to accept it",` +
 	`"comments":[{"id":"a-1","priority":5,"category":"correctness","body":"a body long enough for the schema to accept it",` +
 	`"anchors":[{"file":"a.go","line":1}],"suggestions":[]}]}`
@@ -30,7 +30,7 @@ func TestNoTierGatesAnother(t *testing.T) {
 		return []review.Diagnostic{{Severity: review.SeverityError, Name: "anchor-file-missing", Message: "gone"}},
 			nil, review.Verification{Source: "repo", Anchors: 1}
 	}}
-	advisories := &advisoryRunnerMock{RunFunc: func(*review.Document, map[string]bool) ([]review.Diagnostic, []review.Skipped) {
+	advisories := &advisoryRunnerMock{RunFunc: func(*review.Document) ([]review.Diagnostic, []review.Skipped) {
 		return []review.Diagnostic{{Severity: review.SeverityAdvisory, Name: "body-thin", Message: "thin"}},
 			[]review.Skipped{{Name: "priority-flat", Reason: "1 comment has unusable priority"}}
 	}}
@@ -61,7 +61,7 @@ func TestVerificationSkipsAreReportedNotPassed(t *testing.T) {
 		assert.Equal(t, "not a git repository", skipped.Reason)
 	}
 	assert.Equal(t, []string{"ref-unknown", "anchor-file-missing", "anchor-line-out-of-range"}, names)
-	assert.True(t, result.Valid, "a skipped tier does not make a document invalid")
+	assert.True(t, result.Valid, "a document with no anchors is never unverified")
 }
 
 // Being outside a repository is ordinary. A repository that could not be asked
@@ -92,7 +92,8 @@ func TestAnUnreachableRepositoryIsReportedNotConfusedWithAbsence(t *testing.T) {
 
 // The two unverified sources must stay distinguishable, which is the whole
 // point of separating them: identical output would let a caller read a run that
-// checked nothing as a run that had nothing to check.
+// checked nothing as a run that had nothing to check. Neither source fails a
+// document with no anchors — there is nothing for either of them to withhold.
 func TestAbsenceAndUnavailabilityAreDifferentSources(t *testing.T) {
 	t.Parallel()
 	absent := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
@@ -108,27 +109,13 @@ func TestAbsenceAndUnavailabilityAreDifferentSources(t *testing.T) {
 	assert.Equal(t, "none", outside.Verification.Source)
 	assert.Equal(t, "unavailable", unreachable.Verification.Source)
 	assert.NotEqual(t, outside.Verification.Reason, unreachable.Verification.Reason)
-	assert.True(t, outside.Valid, "a document is not wrong because there was no repository")
+	assert.True(t, outside.Valid, "a document with no anchors is not wrong because there was no repository")
 	assert.True(t, unreachable.Valid, "nor because git refused to answer")
-}
-
-func TestWarnOnlyDemotesVerificationFailures(t *testing.T) {
-	t.Parallel()
-	verifier := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
-		return []review.Diagnostic{{Severity: review.SeverityError, Name: "ref-unknown", Message: "absent"}},
-			nil, review.Verification{Source: "repo"}
-	}}
-	options := Options{WarnOnly: map[string]bool{"ref-unknown": true}}
-	result, err := validator(passing(), quiet(), finder(verifier)).Validate(t.Context(), []byte(document), options)
-	require.NoError(t, err)
-	assert.Zero(t, result.Errors())
-	assert.Equal(t, 1, result.Advisories())
-	assert.True(t, result.Valid)
 }
 
 func TestStrictMakesAdvisoriesGate(t *testing.T) {
 	t.Parallel()
-	advisories := &advisoryRunnerMock{RunFunc: func(*review.Document, map[string]bool) ([]review.Diagnostic, []review.Skipped) {
+	advisories := &advisoryRunnerMock{RunFunc: func(*review.Document) ([]review.Diagnostic, []review.Skipped) {
 		return []review.Diagnostic{{Severity: review.SeverityAdvisory, Name: "body-thin"}}, nil
 	}}
 	relaxed, err := validator(passing(), advisories, finder(nil)).Validate(t.Context(), []byte(document), Options{})
@@ -138,16 +125,6 @@ func TestStrictMakesAdvisoriesGate(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, strict.Valid)
 	assert.True(t, strict.Strict)
-}
-
-func TestDisabledAdvisoriesArePassedThrough(t *testing.T) {
-	t.Parallel()
-	advisories := quiet()
-	_, err := validator(passing(), advisories, finder(nil)).Validate(t.Context(), []byte(document),
-		Options{Disabled: map[string]bool{"body-thin": true}})
-	require.NoError(t, err)
-	require.Len(t, advisories.RunCalls(), 1)
-	assert.True(t, advisories.RunCalls()[0].Disabled["body-thin"])
 }
 
 func TestMalformedJSONIsTheOnlyTrueStop(t *testing.T) {
@@ -177,15 +154,15 @@ func passing() *structuralCheckerMock {
 }
 
 func quiet() *advisoryRunnerMock {
-	return &advisoryRunnerMock{RunFunc: func(*review.Document, map[string]bool) ([]review.Diagnostic, []review.Skipped) {
+	return &advisoryRunnerMock{RunFunc: func(*review.Document) ([]review.Diagnostic, []review.Skipped) {
 		return nil, nil
 	}}
 }
 
-// --require-verification answers one question: were the anchor claims actually
-// checked? Off, the run passes whatever the answer; on, an unchecked document
-// fails. Nothing about it changes what the document itself is.
-func TestRequireVerificationFailsOnlyWhenNothingWasChecked(t *testing.T) {
+// Verification is unconditional now: an anchor claim that went unchecked
+// fails the run regardless of how the gap happened, and the diagnostic names
+// why nothing was checked.
+func TestVerificationFailsOnlyWhenNothingWasChecked(t *testing.T) {
 	t.Parallel()
 	checked := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
 		return nil, nil, review.Verification{Source: "repo", Anchors: 1, Verified: 1}
@@ -198,27 +175,19 @@ func TestRequireVerificationFailsOnlyWhenNothingWasChecked(t *testing.T) {
 		return nil, verify.ErrNoRepository
 	}}
 	tests := []struct {
-		name    string
-		finder  *repositoryFinderMock
-		require bool
-		valid   bool
-		reason  string
+		name   string
+		finder *repositoryFinderMock
+		valid  bool
+		reason string
 	}{
-		{name: "checked, not required", finder: finder(checked), valid: true},
-		{name: "checked, required", finder: finder(checked), require: true, valid: true},
-		{name: "no repository, not required", finder: absent, valid: true},
-		{name: "no repository, required", finder: absent, require: true, reason: "not a git repository"},
-		{name: "some anchors unread, not required", finder: finder(partly), valid: true},
-		{
-			name: "some anchors unread, required", finder: finder(partly), require: true,
-			reason: "git could not read the file for 1 anchor",
-		},
+		{name: "every anchor checked", finder: finder(checked), valid: true},
+		{name: "no repository", finder: absent, reason: "not a git repository"},
+		{name: "some anchors unread", finder: finder(partly), reason: "git could not read the file for 1 anchor"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			options := Options{RequireVerification: test.require}
-			result, err := validator(passing(), quiet(), test.finder).Validate(t.Context(), []byte(anchored), options)
+			result, err := validator(passing(), quiet(), test.finder).Validate(t.Context(), []byte(anchored), Options{})
 			require.NoError(t, err)
 			assert.Equal(t, test.valid, result.Valid)
 			if test.valid {
@@ -233,25 +202,12 @@ func TestRequireVerificationFailsOnlyWhenNothingWasChecked(t *testing.T) {
 	}
 }
 
-// The flag is a verification check like any other, so --warn-only reaches it.
-// Asking for both is contradictory, but visibly so on the command line.
-func TestWarnOnlyDemotesTheVerificationRequirement(t *testing.T) {
-	t.Parallel()
-	absent := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
-		return nil, verify.ErrNoRepository
-	}}
-	options := Options{RequireVerification: true, WarnOnly: map[string]bool{"verification-required": true}}
-	result, err := validator(passing(), quiet(), absent).Validate(t.Context(), []byte(anchored), options)
-	require.NoError(t, err)
-	assert.Zero(t, result.Errors())
-	assert.Equal(t, 1, result.Advisories())
-	assert.True(t, result.Valid)
-}
-
 // A document with nothing to verify must get the same answer wherever it is
 // validated. Deciding on Source alone made one file pass inside a repository
-// and fail outside it, over anchors that do not exist either way.
-func TestRequireVerificationIgnoresADocumentWithNoAnchors(t *testing.T) {
+// and fail outside it, over anchors that do not exist either way — and
+// verification-required must never start firing on a document with no
+// anchors just because no repository could be found.
+func TestVerificationIgnoresADocumentWithNoAnchors(t *testing.T) {
 	t.Parallel()
 	inside := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
 		return nil, nil, review.Verification{Source: "repo"}
@@ -259,41 +215,12 @@ func TestRequireVerificationIgnoresADocumentWithNoAnchors(t *testing.T) {
 	outside := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
 		return nil, verify.ErrNoRepository
 	}}
-	options := Options{RequireVerification: true}
-	within, err := validator(passing(), quiet(), finder(inside)).Validate(t.Context(), []byte(document), options)
+	within, err := validator(passing(), quiet(), finder(inside)).Validate(t.Context(), []byte(document), Options{})
 	require.NoError(t, err)
-	without, err := validator(passing(), quiet(), outside).Validate(t.Context(), []byte(document), options)
+	without, err := validator(passing(), quiet(), outside).Validate(t.Context(), []byte(document), Options{})
 	require.NoError(t, err)
 	assert.True(t, within.Valid)
 	assert.True(t, without.Valid, "the same document cannot be valid in one directory and not in another")
-}
-
-// --warn-only names a condition the caller accepts. The anchor checks it skips
-// are that same condition reported again, so requiring verification must not
-// fail on them — otherwise the two flags can never be combined.
-func TestRequireVerificationRespectsAnExcusedCondition(t *testing.T) {
-	t.Parallel()
-	lacking := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
-		return []review.Diagnostic{{Severity: review.SeverityError, Name: "ref-unknown", Message: "absent"}},
-			[]review.Skipped{{Name: "anchor-file-missing", Reason: "the document ref does not resolve", Excuses: "ref-unknown"}},
-			review.Verification{Source: "repo", Anchors: 1}
-	}}
-	options := Options{RequireVerification: true, WarnOnly: map[string]bool{"ref-unknown": true}}
-	result, err := validator(passing(), quiet(), finder(lacking)).Validate(t.Context(), []byte(anchored), options)
-	require.NoError(t, err)
-	assert.Zero(t, result.Errors(), "a commit the caller knows is gone was already excused")
-	assert.True(t, result.Valid)
-	t.Run("but an unexcused gap still fails", func(t *testing.T) {
-		t.Parallel()
-		absent := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
-			return nil, verify.ErrNoRepository
-		}}
-		options := Options{RequireVerification: true, WarnOnly: map[string]bool{"ref-unknown": true}}
-		result, err := validator(passing(), quiet(), absent).Validate(t.Context(), []byte(anchored), options)
-		require.NoError(t, err)
-		assert.Equal(t, 1, result.Errors(),
-			"demoting one check does not excuse there being no repository at all")
-	})
 }
 
 // The diagnostic names every distinct cause, so a document-side skip reported
@@ -306,8 +233,7 @@ func TestTheVerificationRequirementNamesEveryCause(t *testing.T) {
 			{Name: "anchor-file-missing", Reason: "git could not read the file for 1 anchor"},
 		}, review.Verification{Source: "repo", Anchors: 2}
 	}}
-	options := Options{RequireVerification: true}
-	result, err := validator(passing(), quiet(), finder(mixed)).Validate(t.Context(), []byte(anchored), options)
+	result, err := validator(passing(), quiet(), finder(mixed)).Validate(t.Context(), []byte(anchored), Options{})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.Errors())
 	assert.Contains(t, result.Diagnostics[0].Message, "unusable field on 1 anchor")
@@ -315,107 +241,97 @@ func TestTheVerificationRequirementNamesEveryCause(t *testing.T) {
 		"a broken object store must not be hidden behind a malformed field")
 }
 
-// --warn-only excuses the repository, never the machine. Demoting a check must
-// not wave through anchors that went unchecked because git could not read them:
-// the caller accepted a commit being absent, not a disk being bad.
-func TestAnExcusedConditionNeverCoversABrokenMachine(t *testing.T) {
-	t.Parallel()
-	broken := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
-		return []review.Diagnostic{{Severity: review.SeverityError, Name: "anchor-file-missing", Message: "gone"}},
-			[]review.Skipped{{
-				Name:   "anchor-line-out-of-range",
-				Reason: "git could not read the file for 1 anchor",
-			}},
-			review.Verification{Source: "repo", Anchors: 2}
-	}}
-	options := Options{RequireVerification: true, WarnOnly: map[string]bool{"anchor-file-missing": true}}
-	result, err := validator(passing(), quiet(), finder(broken)).Validate(t.Context(), []byte(anchored), options)
-	require.NoError(t, err)
-	require.Equal(t, 1, result.Errors(), "a demoted check does not excuse an unreadable object store")
-	assert.Equal(t, "verification-required", result.Diagnostics[0].Name)
-}
+// anchor-worktree-diverged used to be folded into verification-required,
+// exit 1, once the ordinary per-anchor pass reached it. docs/cli.md §2.3.1
+// now makes it a precondition instead: refinery-uyb.6 replaces this test
+// with the ones below, which pin the precondition firing before structural
+// checks or advisories run, once for the document, and only when ref is
+// HEAD.
 
-// anchor-worktree-diverged is the one verification check that is not an
-// error by default: monotonicity means it can only remove an anchor from
-// verified, never turn a passing document into a failing one.
-func TestADivergedAnchorDoesNotFailByDefault(t *testing.T) {
+// The precondition: any anchor verify reports diverged, with Source "repo",
+// stops the run before structural checks or advisories ever execute, and
+// reports exactly one diagnostic naming anchor-worktree-diverged — never
+// verification-required, which is a different check for a different cause
+// (docs/cli.md §2.3.1, §4).
+func TestWorktreeDivergedIsAPreconditionBeforeEverythingElse(t *testing.T) {
 	t.Parallel()
 	diverged := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
 		return nil, nil, review.Verification{Source: "repo", Anchors: 1, Verified: 0, Unverified: []review.Unverified{
-			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from ref in the working tree"},
+			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from 4f2c1a9 in the working tree"},
+		}}
+	}}
+	structural := &structuralCheckerMock{CheckFunc: func(*review.Document) []review.Diagnostic {
+		t.Fatal("structural checks must not run once the precondition has fired")
+		return nil
+	}}
+	advisories := &advisoryRunnerMock{RunFunc: func(*review.Document) ([]review.Diagnostic, []review.Skipped) {
+		t.Fatal("advisories must not run once the precondition has fired")
+		return nil, nil
+	}}
+	result, err := validator(structural, advisories, finder(diverged)).Validate(t.Context(), []byte(anchored), Options{})
+	require.NoError(t, err)
+	assert.Empty(t, structural.CheckCalls(), "the precondition must run before the structural tier")
+	assert.Empty(t, advisories.RunCalls(), "the precondition must run before advisories")
+	require.True(t, result.Precondition)
+	assert.False(t, result.Valid)
+	require.Len(t, result.Diagnostics, 1, "one diagnostic for the whole document, not one per anchor")
+	assert.Equal(t, "anchor-worktree-diverged", result.Diagnostics[0].Name)
+	assert.Equal(t, review.SeverityError, result.Diagnostics[0].Severity)
+	assert.Contains(t, result.Diagnostics[0].Message, "a.go differs from 4f2c1a9 in the working tree")
+	assert.Contains(t, result.Diagnostics[0].Message, "the reviewed state is not a commit")
+	assert.Contains(t, result.Diagnostics[0].Message, `git stash create`)
+	assert.Contains(t, result.Diagnostics[0].Message, "do not retry against this ref")
+}
+
+// Several diverged anchors, even across several files, still cost one
+// diagnostic — the flat cost docs/cli.md §6.1 documents, replacing the old
+// per-anchor row.
+func TestWorktreeDivergedReportsOneDiagnosticForSeveralAnchors(t *testing.T) {
+	t.Parallel()
+	diverged := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return nil, nil, review.Verification{Source: "repo", Anchors: 3, Verified: 0, Unverified: []review.Unverified{
+			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from 4f2c1a9 in the working tree"},
+			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/1", Message: "b.go differs from 4f2c1a9 in the working tree"},
+			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/2", Message: "c.go differs from 4f2c1a9 in the working tree"},
 		}}
 	}}
 	result, err := validator(passing(), quiet(), finder(diverged)).Validate(t.Context(), []byte(anchored), Options{})
 	require.NoError(t, err)
-	assert.Zero(t, result.Errors())
-	assert.True(t, result.Valid, "a diverged anchor withholds a verification, it does not fail the document")
-	require.Len(t, result.Verification.Unverified, 1, "the diverged anchor is carried through to the result")
-	assert.Equal(t, "anchor-worktree-diverged", result.Verification.Unverified[0].Name)
+	require.Len(t, result.Diagnostics, 1, "one diagnostic per document, never one per diverged anchor")
+	assert.Contains(t, result.Diagnostics[0].Message, "a.go", "the first diverged anchor names the diagnostic")
 }
 
-// --require-verification fires on a diverged anchor too: it is a member of
-// "the anchor claims went unchecked" the same way an unreadable file is.
-func TestRequireVerificationFiresOnADivergedAnchor(t *testing.T) {
+// Mutation guard: the precondition must key off Source == "repo", the same
+// signal that guarantees it never fires for a ref other than HEAD
+// (internal/verify/verify.go only populates Unverified when isHEAD is
+// true) — a broader trigger, such as any non-empty Unverified regardless of
+// source, would be wrong, since "none" and "unavailable" never carry one.
+func TestWorktreeDivergedNeverFiresOutsideARepository(t *testing.T) {
 	t.Parallel()
-	diverged := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
-		return nil, nil, review.Verification{Source: "repo", Anchors: 1, Verified: 0, Unverified: []review.Unverified{
-			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from ref in the working tree"},
-		}}
+	outside := &repositoryFinderMock{FindFunc: func(context.Context, string) (verifier, error) {
+		return nil, verify.ErrNoRepository
 	}}
-	options := Options{RequireVerification: true}
-	result, err := validator(passing(), quiet(), finder(diverged)).Validate(t.Context(), []byte(anchored), options)
+	result, err := validator(passing(), quiet(), outside).Validate(t.Context(), []byte(anchored), Options{})
 	require.NoError(t, err)
-	require.Equal(t, 1, result.Errors())
-	assert.Equal(t, "verification-required", result.Diagnostics[0].Name)
-	assert.Contains(t, result.Diagnostics[0].Message, "diverged")
-	assert.False(t, result.Valid)
+	assert.False(t, result.Precondition)
 }
 
-// --warn-only=anchor-worktree-diverged excuses only this gap: a caller under
-// --require-verification can accept a dirty checkout without also waving
-// through an unrelated reason nothing was checked.
-func TestWarnOnlyExcusesOnlyTheDivergedGap(t *testing.T) {
+// Mutation guard: a ref that is not HEAD never diverges, because
+// internal/verify never consults the working tree for it — reported here as
+// Source "repo" with an empty Unverified, exactly as a non-HEAD ref
+// resolves today. The precondition must not fire on it, and the run must
+// fall through to the ordinary structural-then-advisory path.
+func TestWorktreeDivergedNeverFiresWhenRefIsNotHEAD(t *testing.T) {
 	t.Parallel()
-	diverged := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
-		return nil, nil, review.Verification{Source: "repo", Anchors: 1, Verified: 0, Unverified: []review.Unverified{
-			{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from ref in the working tree"},
-		}}
+	notHEAD := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
+		return nil, nil, review.Verification{Source: "repo", Anchors: 1, Verified: 1}
 	}}
-	options := Options{RequireVerification: true, WarnOnly: map[string]bool{"anchor-worktree-diverged": true}}
-	result, err := validator(passing(), quiet(), finder(diverged)).Validate(t.Context(), []byte(anchored), options)
+	structural := &structuralCheckerMock{CheckFunc: func(*review.Document) []review.Diagnostic { return nil }}
+	advisories := &advisoryRunnerMock{RunFunc: func(*review.Document) ([]review.Diagnostic, []review.Skipped) { return nil, nil }}
+	result, err := validator(structural, advisories, finder(notHEAD)).Validate(t.Context(), []byte(anchored), Options{})
 	require.NoError(t, err)
-	assert.Zero(t, result.Errors())
+	assert.False(t, result.Precondition)
+	assert.Len(t, structural.CheckCalls(), 1, "the ordinary path still runs the structural tier")
+	assert.Len(t, advisories.RunCalls(), 1, "the ordinary path still runs advisories")
 	assert.True(t, result.Valid)
-	t.Run("but does not excuse an unrelated gap", func(t *testing.T) {
-		t.Parallel()
-		mixed := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
-			return nil, []review.Skipped{{Name: "anchor-file-missing", Reason: "git could not read the file for 1 anchor"}},
-				review.Verification{Source: "repo", Anchors: 2, Verified: 0, Unverified: []review.Unverified{
-					{Name: "anchor-worktree-diverged", Comment: "a-1", Path: "/comments/0/anchors/0", Message: "a.go differs from ref in the working tree"},
-				}}
-		}}
-		options := Options{RequireVerification: true, WarnOnly: map[string]bool{"anchor-worktree-diverged": true}}
-		result, err := validator(passing(), quiet(), finder(mixed)).Validate(t.Context(), []byte(anchored), options)
-		require.NoError(t, err)
-		require.Equal(t, 1, result.Errors(), "demoting the diverged gap does not excuse an unreadable object store")
-		assert.Contains(t, result.Diagnostics[0].Message, "git could not read the file for 1 anchor")
-	})
-}
-
-// Demoting one check excuses the gap that check explains, and no other. The
-// earlier rule asked only whether every diagnostic was demoted, so an unrelated
-// demotion waved through anchors nothing had looked at.
-func TestOnlyTheExcusedConditionIsExcused(t *testing.T) {
-	t.Parallel()
-	mixed := &verifierMock{VerifyFunc: func(context.Context, *review.Document) ([]review.Diagnostic, []review.Skipped, review.Verification) {
-		return []review.Diagnostic{{Severity: review.SeverityError, Name: "anchor-file-missing", Message: "gone"}},
-			[]review.Skipped{{Name: "anchor-line-out-of-range", Reason: "unusable field on 1 anchor"}},
-			review.Verification{Source: "repo", Anchors: 2}
-	}}
-	options := Options{RequireVerification: true, WarnOnly: map[string]bool{"anchor-file-missing": true}}
-	result, err := validator(passing(), quiet(), finder(mixed)).Validate(t.Context(), []byte(anchored), options)
-	require.NoError(t, err)
-	require.Equal(t, 1, result.Errors(),
-		"demoting one check does not excuse a skip that check does not explain")
-	assert.Equal(t, "verification-required", result.Diagnostics[0].Name)
 }

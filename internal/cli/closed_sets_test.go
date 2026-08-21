@@ -38,29 +38,42 @@ func flagNames(t *testing.T, command string) []string {
 	return names
 }
 
-// TestReviewsFlagSetIsExactlyTheSevenDocumentedFlags pins docs/config.md
-// §6's flag table: reviews accepts --repo, --ref, --limit, --content,
-// --failed, --list, and --format, and nothing else. Individually testing
-// that each of the seven works — internal/cli/reviews_test.go already
-// does — does not notice an eighth flag added beside them; walking the
-// actual FlagSet and comparing the whole set does.
-func TestReviewsFlagSetIsExactlyTheSevenDocumentedFlags(t *testing.T) {
+// TestReviewsFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's flag
+// table: reviews accepts --repo, --ref, --limit, --content, --failed, and
+// --list, and nothing else — --format is gone (refinery-uyb.4;
+// docs/cli.md §5.1). Individually testing that each flag works —
+// internal/cli/reviews_test.go already does — does not notice an extra
+// flag added beside them; walking the actual FlagSet and comparing the
+// whole set does.
+func TestReviewsFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
 	t.Parallel()
-	want := []string{"content", "failed", "format", "limit", "list", "ref", "repo"}
+	want := []string{"content", "failed", "limit", "list", "ref", "repo"}
 	sort.Strings(want)
-	assert.Equal(t, want, flagNames(t, "reviews"), "docs/config.md §6: reviews accepts exactly these seven flags")
+	assert.Equal(t, want, flagNames(t, "reviews"), "docs/cli.md §3: reviews accepts exactly these six flags")
 }
 
-// TestValidateFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's
-// table for validate: --strict, --warn-only, --disable,
-// --require-verification, and --format — the same five whether read from
-// §3's table or from §2.3's prose, and, per §2.3, "no flag for it" about
-// storing: nothing here names a store setting.
-func TestValidateFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
+// TestSubmitReviewFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's
+// table for submit-review: --strict alone. refinery-uyb.5 dropped
+// --warn-only, --disable, and --require-verification (docs/cli.md §2.3.1,
+// §3; docs/features/combined-reviews.md §3.3, "No disable, no warn-only");
+// refinery-uyb.4 dropped --format, the flag's only remaining companion
+// (docs/cli.md §5.1, "--format exists where there is a format to
+// choose").
+func TestSubmitReviewFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
 	t.Parallel()
-	want := []string{"disable", "format", "require-verification", "strict", "warn-only"}
+	want := []string{"strict"}
+	assert.Equal(t, want, flagNames(t, "submit-review"), "docs/cli.md §3: submit-review accepts exactly --strict, and nothing about storing or format")
+}
+
+// TestDescribeFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's
+// table for describe: --lens and --list, and nothing else — no --format
+// (refinery-uyb.4; docs/cli.md §5.1), the same removal made to
+// submit-review and reviews.
+func TestDescribeFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
+	t.Parallel()
+	want := []string{"lens", "list"}
 	sort.Strings(want)
-	assert.Equal(t, want, flagNames(t, "validate"), "docs/cli.md §3: validate accepts exactly these five flags, and none about storing")
+	assert.Equal(t, want, flagNames(t, "describe"), "docs/cli.md §3: describe accepts exactly --lens and --list")
 }
 
 // TestPrimeFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's table
@@ -71,4 +84,17 @@ func TestPrimeFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
 	want := []string{"list", "profile"}
 	sort.Strings(want)
 	assert.Equal(t, want, flagNames(t, "prime"), "docs/cli.md §3: prime accepts exactly --profile and --list")
+}
+
+// TestCollectReviewsFlagSetIsExactlyTheDocumentedFlags pins
+// docs/features/combined-reviews.md §2.2's flag table: --ref, --repo, and
+// --format, and nothing else — collect-reviews does not inherit reviews's
+// --limit, --content, --failed, or --list, since it answers a
+// submit-review-shaped question about one commit, not a reviews-shaped
+// question about the store as a log (§2).
+func TestCollectReviewsFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
+	t.Parallel()
+	want := []string{"format", "ref", "repo"}
+	sort.Strings(want)
+	assert.Equal(t, want, flagNames(t, "collect-reviews"), "docs/features/combined-reviews.md §2.2: collect-reviews accepts exactly --ref, --repo, and --format")
 }

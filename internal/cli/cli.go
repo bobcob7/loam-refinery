@@ -19,6 +19,18 @@ const (
 	ExitValid   = 0
 	ExitInvalid = 1
 	ExitUsage   = 2
+	// ExitPrecondition marks the precondition-failure band: the review is
+	// not wrong and the invocation is not wrong, but something about the
+	// reviewed state itself is, and no amount of revising the document or
+	// the command line fixes it (docs/cli.md §4). submit-review's one
+	// precondition (docs/cli.md §2.3.1) is the reviewed state not being a
+	// commit — ref names the repository's HEAD and at least one anchored
+	// file's working-tree copy has since diverged from it — reported once
+	// for the document, before structural checks, verification, or
+	// advisories run. The run still records a row, with no file
+	// (docs/config.md §5). Codes 3-9 are reserved for this band, the same
+	// way 101-125 is reserved for ExitTool's; only 3 is assigned today.
+	ExitPrecondition = 3
 	// ExitTool marks the tool-error band: the tool's own state could not be
 	// read or written, and neither revising the review nor fixing the
 	// command line will help. It covers a config file that could not be
@@ -37,8 +49,8 @@ type Build struct {
 	Schema  string
 }
 
-// CheckNames are the registered check names, by tier, for validating
-// --disable and --warn-only.
+// CheckNames are the registered check names, by tier — used to enumerate
+// every check as skipped when a document never parsed (see unparseable).
 type CheckNames struct {
 	Structural   []string
 	Verification []string
@@ -53,6 +65,7 @@ type App struct {
 	profiles    profileSource
 	registry    entryRegistry
 	renderer    renderer
+	headChecker headChecker
 	names       CheckNames
 	build       Build
 	dir         string
@@ -71,6 +84,7 @@ func New(
 	profiles profileSource,
 	registry entryRegistry,
 	structured renderer,
+	headChecker headChecker,
 	names CheckNames,
 	build Build,
 	schemaText func(annotated bool) ([]byte, error),
@@ -86,6 +100,7 @@ func New(
 		profiles:    profiles,
 		registry:    registry,
 		renderer:    structured,
+		headChecker: headChecker,
 		names:       names,
 		build:       build,
 		schemaText:  schemaText,
@@ -101,12 +116,13 @@ const usage = `loam-refinery — check a review document
 
   loam-refinery prime [--profile=NAME] [--list]  the workflow, in one small call
   loam-refinery describe [--lens=NAME,...]       the contract, disclosed on demand
-  loam-refinery validate [path]                  check a review (- or omitted: stdin)
-  loam-refinery reviews [--repo=NAME]            what an earlier validate stored
+  loam-refinery submit-review [path]             check a review (- or omitted: stdin)
+  loam-refinery reviews [--repo=NAME]            what an earlier submit-review stored
+  loam-refinery collect-reviews --ref=SHA        every stored review for one commit, combined
   loam-refinery schema [--annotated]             JSON Schema, for machines
   loam-refinery version
 
-exit 0 valid, 1 revise the review, 2 fix the invocation, 101 the tool failed
+exit 0 valid, 1 revise the review, 2 fix the invocation, 3 escalate: not a commit, 101 the tool failed
 `
 
 // Run dispatches one invocation and returns its exit code.
@@ -121,10 +137,12 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return a.prime(rest)
 	case "describe":
 		return a.describe(rest)
-	case "validate":
-		return a.validate(ctx, rest)
+	case "submit-review":
+		return a.submitReview(ctx, rest)
 	case "reviews":
 		return a.reviews(ctx, rest)
+	case "collect-reviews":
+		return a.collectReviews(ctx, rest)
 	case "schema":
 		return a.schema(rest)
 	case "version":
@@ -153,28 +171,14 @@ func (a *App) fail(err error) {
 	fmt.Fprintf(a.stderr, "loam-refinery: %v\n", err)
 }
 
-// checkFormat accepts the one format there is. The flag outlived the choice it
-// used to make: keeping it means every caller already passing --format=json
-// keeps working, and a caller passing --format=text is told what happened
-// rather than being handed an unknown-flag error to guess at.
-func (a *App) checkFormat(format string) error {
-	if format == "json" {
-		return nil
-	}
-	if format == "text" {
-		return fmt.Errorf("the text format is gone; json is the only format, and --format=json or no flag at all selects it")
-	}
-	return fmt.Errorf("unknown format %q: json is the only format", format)
-}
-
 // errNoNames marks a flag given with nothing in it, which each caller names in
 // its own vocabulary. An empty element inside a list is a different mistake and
 // keeps its own message.
 var errNoNames = errors.New("the list is empty")
 
 // parseAnywhere parses flags that appear after the positional argument, which
-// the flag package otherwise stops at. "validate review.json --strict" is the
-// order a person writes, and rejecting it teaches nothing.
+// the flag package otherwise stops at. "submit-review review.json --strict" is
+// the order a person writes, and rejecting it teaches nothing.
 func parseAnywhere(set *flag.FlagSet, args []string) ([]string, error) {
 	positional := []string{}
 	for {
@@ -204,13 +208,4 @@ func splitNames(value string) ([]string, error) {
 		names = append(names, trimmed)
 	}
 	return names, nil
-}
-
-func contains(names []string, name string) bool {
-	for _, candidate := range names {
-		if candidate == name {
-			return true
-		}
-	}
-	return false
 }

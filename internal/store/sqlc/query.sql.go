@@ -115,6 +115,53 @@ func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (Run, erro
 	return i, err
 }
 
+const listDistinctDigests = `-- name: ListDistinctDigests :many
+SELECT digest, CAST(min(at) AS TEXT) AS at FROM runs
+WHERE repo = ?1
+  AND ref = ?2
+  AND exit_code = 0
+GROUP BY digest
+ORDER BY at ASC
+`
+
+type ListDistinctDigestsParams struct {
+	Repo string
+	Ref  sql.NullString
+}
+
+type ListDistinctDigestsRow struct {
+	Digest string
+	At     string
+}
+
+// Distinct digests among passing runs for one repo and ref, each paired
+// with the earliest at among the rows that share it (combined-reviews.md
+// section 5.3.1). Reads the index config.md section 4.5.1 already builds
+// for repo+ref (runs_repo_ref) and digest (runs_digest). Ordered oldest
+// first.
+func (q *Queries) ListDistinctDigests(ctx context.Context, arg ListDistinctDigestsParams) ([]ListDistinctDigestsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDistinctDigests, arg.Repo, arg.Ref)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDistinctDigestsRow
+	for rows.Next() {
+		var i ListDistinctDigestsRow
+		if err := rows.Scan(&i.Digest, &i.At); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFailedRuns = `-- name: ListFailedRuns :many
 SELECT id, at, repo, ref, digest, exit_code, verdict, num_comments, num_errors, num_advisories, num_skipped, tool_version, schema_version FROM runs
 WHERE repo = ?1

@@ -25,13 +25,14 @@ import (
 )
 
 type harness struct {
-	app       *App
-	validator *documentValidatorMock
-	store     *documentStoreMock
-	reviews   *reviewStoreMock
-	profiles  *profileSourceMock
-	stdout    *bytes.Buffer
-	stderr    *bytes.Buffer
+	app         *App
+	validator   *documentValidatorMock
+	store       *documentStoreMock
+	reviews     *reviewStoreMock
+	profiles    *profileSourceMock
+	headChecker *headCheckerMock
+	stdout      *bytes.Buffer
+	stderr      *bytes.Buffer
 }
 
 func newHarness(t *testing.T, stdin string) *harness {
@@ -47,6 +48,7 @@ func newHarness(t *testing.T, stdin string) *harness {
 	}
 	reviewsMock := noopReviewStore()
 	profilesMock := panickyProfileSource()
+	headCheckerMock := noopHeadChecker()
 	app := New(
 		validator,
 		storeMock,
@@ -54,6 +56,7 @@ func newHarness(t *testing.T, stdin string) *harness {
 		profilesMock,
 		testRegistry(t),
 		render.NewJSON(),
+		headCheckerMock,
 		CheckNames{
 			Structural:   []string{"id-unique"},
 			Verification: []string{"ref-unknown"},
@@ -72,7 +75,7 @@ func newHarness(t *testing.T, stdin string) *harness {
 		stderr,
 		slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	)
-	return &harness{app: app, validator: validator, store: storeMock, reviews: reviewsMock, profiles: profilesMock, stdout: stdout, stderr: stderr}
+	return &harness{app: app, validator: validator, store: storeMock, reviews: reviewsMock, profiles: profilesMock, headChecker: headCheckerMock, stdout: stdout, stderr: stderr}
 }
 
 // panickyProfileSource stands in for profileSource wherever a test drives a
@@ -107,6 +110,24 @@ func noopReviewStore() *reviewStoreMock {
 		ReadContentFunc: func(string) ([]byte, error) {
 			return nil, errors.New("noopReviewStore: no content")
 		},
+		DistinctDigestsFunc: func(context.Context, string, string) ([]store.DigestRow, error) {
+			return nil, nil
+		},
+		ReviewPathFunc: func(context.Context, string, string, string) (string, error) {
+			return "", errors.New("noopReviewStore: no path")
+		},
+		StoreEnabledFunc: func(context.Context) (bool, error) { return false, nil },
+	}
+}
+
+// noopHeadChecker stands in for headChecker wherever a test drives a command
+// other than collect-reviews: it reports "none" and never errors, the same
+// answer CheckDivergence gives outside a repository.
+func noopHeadChecker() *headCheckerMock {
+	return &headCheckerMock{
+		CheckDivergenceFunc: func(context.Context, string, *review.Document, map[string]string) (string, bool, []DivergedAnchor, error) {
+			return "none", false, nil, nil
+		},
 	}
 }
 
@@ -121,13 +142,14 @@ func TestRunDispatches(t *testing.T) {
 	}{
 		{name: "no arguments print usage", args: nil, code: ExitUsage, stderr: "loam-refinery — check a review document"},
 		{name: "an unknown command", args: []string{"lint"}, code: ExitUsage, stderr: `unknown command "lint"`},
-		{name: "help", args: []string{"--help"}, code: ExitValid, stdout: "loam-refinery validate"},
+		{name: "the old command name is unknown, not aliased", args: []string{"validate"}, code: ExitUsage, stderr: `unknown command "validate"`},
+		{name: "help", args: []string{"--help"}, code: ExitValid, stdout: "loam-refinery submit-review"},
 		{name: "prime", args: []string{"prime"}, code: ExitValid, stdout: "loam-refinery describe --lens="},
 		{name: "version", args: []string{"version"}, code: ExitValid, stdout: "loam-refinery 1.2.3\ncommit abc\nschema 1\n"},
 		{name: "schema", args: []string{"schema"}, code: ExitValid, stdout: "minimal\n"},
 		{name: "annotated schema", args: []string{"schema", "--annotated"}, code: ExitValid, stdout: "annotated\n"},
-		{name: "a bad flag", args: []string{"validate", "--nope"}, code: ExitUsage},
-		{name: "an unknown format", args: []string{"describe", "--format=yaml"}, code: ExitUsage, stderr: `unknown format "yaml"`},
+		{name: "a bad flag", args: []string{"submit-review", "--nope"}, code: ExitUsage},
+		{name: "format is not a flag anymore", args: []string{"describe", "--format=yaml"}, code: ExitUsage, stderr: "flag provided but not defined: -format"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -138,6 +160,13 @@ func TestRunDispatches(t *testing.T) {
 			assert.Contains(t, h.stderr.String(), test.stderr)
 		})
 	}
+}
+
+func TestExitPreconditionIsTheReservedPreconditionBand(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, 3, ExitPrecondition)
+	assert.NotEqual(t, ExitInvalid, ExitPrecondition, "a review that is wrong must not share a code with a state that is not")
+	assert.NotEqual(t, ExitUsage, ExitPrecondition, "a caller-typed mistake must not share a code with a precondition failure")
 }
 
 func TestExitToolIsTheReservedToolErrorBand(t *testing.T) {
@@ -155,7 +184,7 @@ func TestUsageBannerNamesEveryExitCode(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, "")
 	h.app.Run(t.Context(), nil)
-	for _, code := range []string{"0", "1", "2", "101"} {
+	for _, code := range []string{"0", "1", "2", "3", "101"} {
 		assert.Contains(t, h.stderr.String(), code, "the usage banner must name exit %s", code)
 	}
 }
@@ -244,6 +273,7 @@ func TestValidateExitCodes(t *testing.T) {
 	}{
 		{name: "valid", result: &review.Result{Valid: true}, code: ExitValid},
 		{name: "invalid", result: &review.Result{}, code: ExitInvalid},
+		{name: "precondition", result: &review.Result{Precondition: true}, code: ExitPrecondition},
 		{name: "unparseable document", err: parseError(t), code: ExitInvalid},
 		{name: "wiring failure", err: errors.New("no repository finder"), code: ExitUsage},
 	}
@@ -254,7 +284,7 @@ func TestValidateExitCodes(t *testing.T) {
 			h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
 				return test.result, test.err
 			}
-			assert.Equal(t, test.code, h.app.Run(t.Context(), []string{"validate"}))
+			assert.Equal(t, test.code, h.app.Run(t.Context(), []string{"submit-review"}))
 		})
 	}
 }
@@ -281,7 +311,7 @@ func TestStoreFailureExitsToolWithEmptyStdout(t *testing.T) {
 			h.store.SaveFunc = func(context.Context, StoreInput) error {
 				return errors.New("read-only home directory")
 			}
-			assert.Equal(t, ExitTool, h.app.Run(t.Context(), []string{"validate"}))
+			assert.Equal(t, ExitTool, h.app.Run(t.Context(), []string{"submit-review"}))
 			assert.Empty(t, h.stdout.String())
 			assert.Contains(t, h.stderr.String(), "read-only home directory")
 		})
@@ -297,8 +327,8 @@ func TestValidateNeverStoresWithoutReadingADocument(t *testing.T) {
 		name string
 		args []string
 	}{
-		{name: "a bad flag", args: []string{"validate", "--nope"}},
-		{name: "an unreadable path", args: []string{"validate", "/nope/review.json"}},
+		{name: "a bad flag", args: []string{"submit-review", "--nope"}},
+		{name: "an unreadable path", args: []string{"submit-review", "/nope/review.json"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -318,7 +348,7 @@ func TestValidateNeverStoresOnAWiringFailure(t *testing.T) {
 	h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
 		return nil, errors.New("no repository finder")
 	}
-	require.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"validate"}))
+	require.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"submit-review"}))
 	assert.Empty(t, h.store.SaveCalls())
 }
 
@@ -331,7 +361,7 @@ func TestValidateSendsRefAndVerdictToTheStore(t *testing.T) {
 	h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
 		return &review.Result{Valid: true, Comments: 2}, nil
 	}
-	require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"validate"}))
+	require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"submit-review"}))
 	require.Len(t, h.store.SaveCalls(), 1)
 	in := h.store.SaveCalls()[0].In
 	assert.True(t, in.Valid)
@@ -339,6 +369,29 @@ func TestValidateSendsRefAndVerdictToTheStore(t *testing.T) {
 	assert.Equal(t, "approve", in.Verdict)
 	assert.Equal(t, 2, in.Comments)
 	assert.NotEmpty(t, in.Dir, "repository identity is resolved from the working directory")
+}
+
+// A precondition result reaches the store with Precondition set, so
+// documentStore knows to record a row and write no file (docs/config.md
+// §5) rather than reaching for WriteRejected because Valid happens to be
+// false too.
+func TestValidateSendsPreconditionToTheStore(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, `{"version":"1","ref":"4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"}`)
+	h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
+		return &review.Result{
+			Precondition: true,
+			Diagnostics: []review.Diagnostic{{
+				Severity: review.SeverityError, Name: "anchor-worktree-diverged", Message: "a.go differs",
+			}},
+		}, nil
+	}
+	require.Equal(t, ExitPrecondition, h.app.Run(t.Context(), []string{"submit-review"}))
+	require.Len(t, h.store.SaveCalls(), 1)
+	in := h.store.SaveCalls()[0].In
+	assert.False(t, in.Valid)
+	assert.True(t, in.Precondition)
+	assert.Equal(t, "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", in.Ref, "the ref is still read off the document that was submitted")
 }
 
 // An unparseable document never yields a ref or a verdict — there is no
@@ -350,7 +403,7 @@ func TestValidateSendsNoRefOrVerdictForAnUnparseableDocument(t *testing.T) {
 	h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
 		return nil, parseError(t)
 	}
-	require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"validate"}))
+	require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"submit-review"}))
 	require.Len(t, h.store.SaveCalls(), 1)
 	in := h.store.SaveCalls()[0].In
 	assert.False(t, in.Valid)
@@ -364,13 +417,13 @@ func TestValidateReadsStdinOrAPath(t *testing.T) {
 	t.Run("stdin when the path is omitted", func(t *testing.T) {
 		t.Parallel()
 		h := newHarness(t, `{"from":"stdin"}`)
-		require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"validate"}))
+		require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"submit-review"}))
 		assert.Equal(t, `{"from":"stdin"}`, string(h.validator.ValidateCalls()[0].Source))
 	})
 	t.Run("stdin for a dash", func(t *testing.T) {
 		t.Parallel()
 		h := newHarness(t, `{"from":"dash"}`)
-		require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"validate", "-"}))
+		require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"submit-review", "-"}))
 		assert.Equal(t, `{"from":"dash"}`, string(h.validator.ValidateCalls()[0].Source))
 	})
 	t.Run("a file", func(t *testing.T) {
@@ -378,37 +431,29 @@ func TestValidateReadsStdinOrAPath(t *testing.T) {
 		h := newHarness(t, "")
 		path := filepath.Join(t.TempDir(), "review.json")
 		require.NoError(t, os.WriteFile(path, []byte(`{"from":"file"}`), 0o644))
-		require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"validate", path}))
+		require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"submit-review", path}))
 		assert.Equal(t, `{"from":"file"}`, string(h.validator.ValidateCalls()[0].Source))
 	})
 	t.Run("an unreadable path is a usage error", func(t *testing.T) {
 		t.Parallel()
 		h := newHarness(t, "")
-		assert.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"validate", "/nope/review.json"}))
+		assert.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"submit-review", "/nope/review.json"}))
 		assert.Contains(t, h.stderr.String(), "reading /nope/review.json")
 	})
 }
 
-func TestValidateRejectsCheckNamesThatCannotBeUsed(t *testing.T) {
+// --disable, --warn-only, and --require-verification are gone: submit-review
+// no longer registers them, so the flag package's own "flag provided but not
+// defined" error is what a caller gets, the same as any other typo.
+func TestRemovedFlagsAreUnknownOnSubmitReview(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name   string
-		args   []string
-		stderr string
-	}{
-		{name: "an unknown advisory", args: []string{"--disable=nope"}, stderr: `--disable: unknown check "nope"`},
-		{name: "a structural check", args: []string{"--disable=id-unique"}, stderr: "structural checks cannot be disabled"},
-		{name: "a verification check in --disable", args: []string{"--disable=ref-unknown"}, stderr: "use --warn-only to demote it"},
-		{name: "an advisory in --warn-only", args: []string{"--warn-only=body-thin"}, stderr: "advisories never fail a run"},
-		{name: "an empty list", args: []string{"--disable="}, stderr: "--disable needs at least one check name"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for _, flag := range []string{"--disable=body-thin", "--warn-only=ref-unknown", "--require-verification"} {
+		t.Run(flag, func(t *testing.T) {
 			t.Parallel()
 			h := newHarness(t, "{}")
-			assert.Equal(t, ExitUsage, h.app.Run(t.Context(), append([]string{"validate"}, test.args...)))
-			assert.Contains(t, h.stderr.String(), test.stderr)
-			assert.Empty(t, h.validator.ValidateCalls(), "a typo surfaces before any work is done")
+			assert.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"submit-review", flag}))
+			assert.Contains(t, h.stderr.String(), "flag provided but not defined")
+			assert.Empty(t, h.validator.ValidateCalls(), "an unknown flag surfaces before any work is done")
 		})
 	}
 }
@@ -416,12 +461,9 @@ func TestValidateRejectsCheckNamesThatCannotBeUsed(t *testing.T) {
 func TestValidatePassesFlagsThrough(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, "{}")
-	require.Equal(t, ExitValid, h.app.Run(t.Context(),
-		[]string{"validate", "--strict", "--disable=body-thin", "--warn-only=ref-unknown"}))
+	require.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"submit-review", "--strict"}))
 	options := h.validator.ValidateCalls()[0].Options
 	assert.True(t, options.Strict)
-	assert.True(t, options.Disabled["body-thin"])
-	assert.True(t, options.WarnOnly["ref-unknown"])
 	assert.NotEmpty(t, options.Dir, "verification starts from the working directory")
 }
 
@@ -468,7 +510,7 @@ func TestFlagsMayFollowThePath(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "review.json")
 	require.NoError(t, os.WriteFile(path, []byte(`{"version":"1"}`), 0o644))
-	assert.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"validate", path, "--strict"}))
+	assert.Equal(t, ExitValid, h.app.Run(t.Context(), []string{"submit-review", path, "--strict"}))
 	assert.True(t, got.Strict, "a flag written after the path is still a flag")
 }
 
@@ -490,15 +532,15 @@ func TestSubcommandsRejectStrayArguments(t *testing.T) {
 
 func TestAnEmptyElementIsNotReportedAsAnEmptyList(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t, `{"version":"1"}`)
-	assert.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"validate", "--disable=body-thin,,vacuous-body"}))
+	h := newHarness(t, "")
+	assert.Equal(t, ExitUsage, h.app.Run(t.Context(), []string{"describe", "--lens=priority,,id-unique"}))
 	assert.Contains(t, h.stderr.String(), "empty name")
 }
 
-// Exit 1 has to mean the same thing in both formats. Writing the failure past
-// the renderer left --format=json exiting 1 with an empty stdout, which reads
-// to a caller unmarshalling it as a crashed tool rather than as a document to
-// repair.
+// Exit 1 has to mean the same thing in the one format there is. Writing the
+// failure past the renderer left submit-review exiting 1 with an empty
+// stdout, which reads to a caller unmarshalling it as a crashed tool rather
+// than as a document to repair.
 func TestAnUnparseableDocumentIsRenderedInTheChosenFormat(t *testing.T) {
 	t.Parallel()
 	t.Run("the failure is a document, not prose", func(t *testing.T) {
@@ -507,7 +549,7 @@ func TestAnUnparseableDocumentIsRenderedInTheChosenFormat(t *testing.T) {
 		h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
 			return nil, parseError(t)
 		}
-		require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"validate", "--format=json"}))
+		require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"submit-review"}))
 		var payload struct {
 			Valid       bool `json:"valid"`
 			Diagnostics []struct {
@@ -529,7 +571,7 @@ func TestAnUnparseableDocumentIsRenderedInTheChosenFormat(t *testing.T) {
 		h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
 			return nil, parseError(t)
 		}
-		require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"validate"}))
+		require.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"submit-review"}))
 		var payload struct {
 			Lenses []string `json:"lenses"`
 		}
@@ -552,61 +594,80 @@ func TestTheUnparseableCheckNameIsTheRegisteredOne(t *testing.T) {
 		"the name the CLI reports must be a check describe --lens can open")
 }
 
-// The flag has to reach the validator, and has to be off unless asked for.
-// Nothing else in the suite would notice it defaulting to true.
-func TestRequireVerificationReachesTheValidatorAndDefaultsOff(t *testing.T) {
+// Verification is unconditional now: a document with any anchor, run where
+// no repository can answer it, exits 1 — this was previously an ordinary,
+// passing case (docs/cli.md §2.3.1, before its own amendment). Both ways a
+// repository can fail to answer — standing outside one entirely ("none") and
+// finding one git cannot ask ("unavailable") — must fail the same way, so
+// this is asserted for the validator's real, unmocked wiring: the exact
+// regression this bead exists to prevent is a mock that agrees with itself
+// while the real path still exits 0.
+func TestUnverifiedAnchorsFailOutsideARepository(t *testing.T) {
 	t.Parallel()
-	for _, test := range []struct {
-		name string
-		args []string
-		want bool
-	}{
-		{name: "absent by default", args: []string{"validate"}},
-		{name: "given", args: []string{"validate", "--require-verification"}, want: true},
-		{name: "given as false", args: []string{"validate", "--require-verification=false"}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
+	dir := t.TempDir()
+	anchoredDoc := `{"version":"1","verdict":"comment","summary":"a summary long enough for the schema to accept it",` +
+		`"comments":[{"id":"a-1","priority":5,"category":"correctness","body":"a body long enough for the schema to accept it",` +
+		`"anchors":[{"file":"a.go","line":1}],"suggestions":[]}]}`
+	out, code := runValidate(t, dir, anchoredDoc)
+	assert.Equal(t, ExitInvalid, code, out)
+	assert.Contains(t, out, "verification-required")
+}
+
+// A document naming no anchors has nothing for verification to withhold, so
+// it must keep exiting 0 in the same no-repository circumstance the anchored
+// case above now fails in — verification-required must never start firing on
+// nothing to verify.
+func TestZeroAnchorDocumentStillPassesOutsideARepository(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	clean := `{"version":"1","verdict":"approve","summary":"a summary long enough for the schema to accept it",` +
+		`"ref":"4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f","comments":[]}`
+	out, code := runValidate(t, dir, clean)
+	assert.Equal(t, ExitValid, code, out)
+}
+
+// The "none" and "unavailable" verification sources must fail the same way:
+// a repository git could not even ask must not read as though nothing had
+// to answer. This is asserted at the wiring level — the validator's own
+// account of Source is trusted, and the CLI's job is only to turn a result
+// it reports invalid into exit 1, whichever source produced it.
+func TestUnverifiedAnchorsFailWhicheverSourceCouldNotAnswer(t *testing.T) {
+	t.Parallel()
+	for _, source := range []string{"none", "unavailable"} {
+		t.Run(source, func(t *testing.T) {
 			t.Parallel()
 			h := newHarness(t, `{"version":"1"}`)
-			var got validate.Options
-			h.validator.ValidateFunc = func(_ context.Context, _ []byte, options validate.Options) (*review.Result, error) {
-				got = options
-				return &review.Result{Valid: true}, nil
+			h.validator.ValidateFunc = func(context.Context, []byte, validate.Options) (*review.Result, error) {
+				return &review.Result{
+					Valid: false,
+					Diagnostics: []review.Diagnostic{{
+						Severity: review.SeverityError,
+						Name:     "verification-required",
+						Message:  "the anchors were not verified: no repository answered",
+					}},
+					Verification: review.Verification{Source: source, Anchors: 1},
+				}, nil
 			}
-			require.Equal(t, ExitValid, h.app.Run(t.Context(), test.args))
-			assert.Equal(t, test.want, got.RequireVerification)
+			assert.Equal(t, ExitInvalid, h.app.Run(t.Context(), []string{"submit-review"}))
 		})
 	}
 }
 
-// The one format left is still a decision, and a wrong --format has to fail the
-// same way on both commands that take it. Nothing else in the suite would
-// notice the flag being ignored entirely.
-func TestFormatAcceptsOnlyJSON(t *testing.T) {
+// TestFormatIsAnUnknownFlagEverywhereItUsedToBeAccepted pins docs/cli.md
+// §5.1: submit-review, describe, and reviews carry no --format flag at all
+// (refinery-uyb.4), so passing it is an ordinary unknown-flag mistake, not
+// a recognized-but-rejected value — the flag package's own error, not a
+// hand-rolled "format is gone" message, which is collect-reviews's framing
+// to use, not these three's.
+func TestFormatIsAnUnknownFlagEverywhereItUsedToBeAccepted(t *testing.T) {
 	t.Parallel()
-	for _, command := range []string{"validate", "describe"} {
-		for _, test := range []struct {
-			name   string
-			value  string
-			code   int
-			stderr string
-		}{
-			{name: "json", value: "json", code: -1},
-			{name: "text says where it went", value: "text", code: ExitUsage, stderr: "the text format is gone"},
-			{name: "another format is unknown", value: "yaml", code: ExitUsage, stderr: `unknown format "yaml"`},
-			{name: "empty is unknown", value: "", code: ExitUsage, stderr: `unknown format ""`},
-		} {
-			t.Run(command+"/"+test.name, func(t *testing.T) {
-				t.Parallel()
-				h := newHarness(t, `{"version":"1"}`)
-				code := h.app.Run(t.Context(), []string{command, "--format=" + test.value})
-				if test.code == -1 {
-					assert.NotEqual(t, ExitUsage, code, "json is the format that works")
-					return
-				}
-				assert.Equal(t, test.code, code)
-				assert.Contains(t, h.stderr.String(), test.stderr)
-			})
-		}
+	for _, command := range []string{"submit-review", "describe", "reviews"} {
+		t.Run(command, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, `{"version":"1"}`)
+			code := h.app.Run(t.Context(), []string{command, "--format=json"})
+			assert.Equal(t, ExitUsage, code)
+			assert.Contains(t, h.stderr.String(), "flag provided but not defined: -format")
+		})
 	}
 }

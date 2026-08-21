@@ -47,13 +47,6 @@ func (d Diagnostic) LensName() string {
 type Skipped struct {
 	Name   string
 	Reason string
-	// Excuses names the check whose demotion accounts for this skip, and is
-	// empty when nothing does. --warn-only=ref-unknown says a repository
-	// lacking the reviewed commit is acceptable, and the anchor checks that
-	// absence skipped are the same fact again; a disk that could not be read,
-	// or a field too malformed to check, is not that fact and is nobody's to
-	// excuse.
-	Excuses string
 }
 
 // Verification records whether anchors were checked, and against what.
@@ -96,6 +89,14 @@ type Result struct {
 	Verification Verification
 	Diagnostics  []Diagnostic
 	Skipped      []Skipped
+	// Precondition is true when the run stopped on the precondition
+	// (docs/cli.md §2.3.1) rather than being examined: ref names HEAD and
+	// an anchored file's working-tree copy has diverged from it. Valid is
+	// always false alongside it, and Diagnostics carries exactly one entry
+	// naming anchor-worktree-diverged once for the document. A caller maps
+	// this to exit 3, not exit 1 — docs/cli.md §4 argues why that is its
+	// own code — and stores a row with no file (docs/config.md §5).
+	Precondition bool
 }
 
 // Errors counts diagnostics that make the document unusable.

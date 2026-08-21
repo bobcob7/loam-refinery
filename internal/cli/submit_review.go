@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,39 +10,23 @@ import (
 	"github.com/bobcob7/loam-refinery/internal/validate"
 )
 
-const validateUsage = `usage: loam-refinery validate [path] [--strict] [--require-verification] [--warn-only=NAME,...] [--disable=NAME,...] [--format json]
+const submitReviewUsage = `usage: loam-refinery submit-review [path] [--strict]
 `
 
-// validate checks one review document. Every check runs: a failure in one tier
-// never gates the next, so one call reports everything findable.
-func (a *App) validate(ctx context.Context, args []string) int {
-	set := a.flagSet("validate", validateUsage)
+// submitReview checks one review document. Every check runs: a failure in one
+// tier never gates the next, so one call reports everything findable.
+func (a *App) submitReview(ctx context.Context, args []string) int {
+	set := a.flagSet("submit-review", submitReviewUsage)
 	strict := set.Bool("strict", false, "treat advisories as errors")
-	warnOnly := set.String("warn-only", "", "demote the named verification checks")
-	disable := set.String("disable", "", "skip the named advisories")
-	require := set.Bool("require-verification", false, "fail if the anchors were not checked")
-	format := set.String("format", "json", "output format: json")
 	paths, err := parseAnywhere(set, args)
 	if err != nil {
 		return usageOrHelp(err)
 	}
-	if err := a.checkFormat(*format); err != nil {
-		a.fail(err)
-		return ExitUsage
-	}
 	if len(paths) > 1 {
-		a.fail(fmt.Errorf("validate takes at most one path, got %d", len(paths)))
+		a.fail(fmt.Errorf("submit-review takes at most one path, got %d", len(paths)))
 		return ExitUsage
 	}
-	options := validate.Options{Strict: *strict, RequireVerification: *require, Dir: a.dir}
-	if options.Disabled, err = a.checkNames(*disable, "--disable", a.names.Advisory, isSet(set, "disable")); err != nil {
-		a.fail(err)
-		return ExitUsage
-	}
-	if options.WarnOnly, err = a.checkNames(*warnOnly, "--warn-only", a.names.Verification, isSet(set, "warn-only")); err != nil {
-		a.fail(err)
-		return ExitUsage
-	}
+	options := validate.Options{Strict: *strict, Dir: a.dir}
 	path := ""
 	if len(paths) == 1 {
 		path = paths[0]
@@ -73,10 +56,14 @@ func (a *App) validate(ctx context.Context, args []string) int {
 		a.fail(err)
 		return ExitUsage
 	}
-	if result.Valid {
+	switch {
+	case result.Valid:
 		return ExitValid
+	case result.Precondition:
+		return ExitPrecondition
+	default:
+		return ExitInvalid
 	}
-	return ExitInvalid
 }
 
 // storeInput builds what documentStore needs to place and record this run
@@ -89,6 +76,7 @@ func (a *App) storeInput(source []byte, result *review.Result) StoreInput {
 		Dir:           a.dir,
 		Source:        source,
 		Valid:         result.Valid,
+		Precondition:  result.Precondition,
 		Comments:      result.Comments,
 		Errors:        result.Errors(),
 		Advisories:    result.Advisories(),
@@ -117,7 +105,7 @@ const checkDocumentUnparseable = "document-unparseable"
 
 // unparseable turns a document that never parsed into a result the renderer can
 // express. The alternative is prose written past the renderer, which leaves
-// --format=json exiting 1 with nothing on stdout: a caller unmarshalling that
+// submit-review exiting 1 with nothing on stdout: a caller unmarshalling that
 // sees a crashed tool rather than a document to repair. Going through the
 // renderer also keeps the promise prime makes, that an exit 1 names a check and
 // hands back the describe command for it.
@@ -144,37 +132,6 @@ func (a *App) unparseable(err error, strict bool) *review.Result {
 		}
 	}
 	return result
-}
-
-// checkNames validates a comma-separated list of check names against the tier
-// that accepts them. A typo is a usage error rather than a silent no-op.
-func (a *App) checkNames(value, flagName string, allowed []string, given bool) (map[string]bool, error) {
-	if !given {
-		return nil, nil
-	}
-	names, err := splitNames(value)
-	if errors.Is(err, errNoNames) {
-		return nil, fmt.Errorf("%s needs at least one check name", flagName)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", flagName, err)
-	}
-	selected := map[string]bool{}
-	for _, name := range names {
-		switch {
-		case contains(allowed, name):
-			selected[name] = true
-		case contains(a.names.Structural, name):
-			return nil, fmt.Errorf("%s: structural checks cannot be disabled or demoted (%s)", flagName, name)
-		case contains(a.names.Advisory, name):
-			return nil, fmt.Errorf("%s: %s is an advisory; advisories never fail a run, use --disable to silence it", flagName, name)
-		case contains(a.names.Verification, name):
-			return nil, fmt.Errorf("%s: %s is a verification check; it cannot be disabled, use --warn-only to demote it", flagName, name)
-		default:
-			return nil, fmt.Errorf("%s: unknown check %q", flagName, name)
-		}
-	}
-	return selected, nil
 }
 
 // read takes the document from a path, or from stdin for "-" and no path.

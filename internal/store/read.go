@@ -63,6 +63,14 @@ type RepoCount struct {
 	Failed  int
 }
 
+// DigestRow is one distinct digest for a repo and ref, per
+// combined-reviews.md section 5.3.1: At is the earliest at among every row
+// that shares the digest, not any one row's own timestamp.
+type DigestRow struct {
+	Digest string
+	At     time.Time
+}
+
 // ListReviews returns up to limit passing runs for repo, newest first, and
 // the total number matching before limit was applied (config.md section
 // 6.1). ref, when non-empty, restricts the result to that commit; limit of
@@ -96,6 +104,26 @@ func (s *Store) ListReviews(ctx context.Context, repo, ref string, limit int) ([
 	return reviews, int(total), nil
 }
 
+// DistinctDigests returns one row per distinct digest among passing runs
+// for repo and ref, oldest first, each row's At the earliest at among
+// every row sharing that digest (combined-reviews.md section 5.3.1). A
+// repo and ref with no matching rows returns an empty slice and no error.
+func (s *Store) DistinctDigests(ctx context.Context, repo, ref string) ([]DigestRow, error) {
+	rows, err := s.queries.ListDistinctDigests(ctx, sqlc.ListDistinctDigestsParams{Repo: repo, Ref: nullString(ref)})
+	if err != nil {
+		return nil, fmt.Errorf("listing distinct digests: %w", err)
+	}
+	digests := make([]DigestRow, 0, len(rows))
+	for _, row := range rows {
+		at, err := time.Parse(atLayout, row.At)
+		if err != nil {
+			return nil, fmt.Errorf("parsing digest %s's timestamp: %w", row.Digest, err)
+		}
+		digests = append(digests, DigestRow{Digest: row.Digest, At: at})
+	}
+	return digests, nil
+}
+
 // ListFailedRuns returns up to limit runs for repo that stored no review,
 // newest first, and the total number matching before limit was applied.
 // ref and limit behave as in ListReviews.
@@ -118,10 +146,10 @@ func (s *Store) ListFailedRuns(ctx context.Context, repo, ref string, limit int)
 		// Every rejected input is now kept, truncated to its first 1 MiB
 		// when it was larger (config.md section 4.4.1), so an exit-1 row
 		// always has a file and Path is always computed for it — no stat
-		// needed to decide whether to omit it. A future exit code that
-		// records a row without ever writing a file (config.md section
-		// 4.5.2) would fall through this guard with an empty Path, same as
-		// today.
+		// needed to decide whether to omit it. Exit 3 is exactly such a row
+		// (config.md section 4.5.1): its precondition fires before a
+		// document is examined, so there is nothing to point at, and it
+		// falls through this guard with an empty Path, same as today.
 		path := ""
 		if row.ExitCode == 1 {
 			path = s.RejectedPath(repo, row.Digest)

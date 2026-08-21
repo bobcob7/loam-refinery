@@ -6,19 +6,20 @@ import (
 
 	"github.com/bobcob7/loam-refinery/internal/entry"
 	"github.com/bobcob7/loam-refinery/internal/profile"
+	"github.com/bobcob7/loam-refinery/internal/render"
 	"github.com/bobcob7/loam-refinery/internal/review"
 	"github.com/bobcob7/loam-refinery/internal/store"
 	"github.com/bobcob7/loam-refinery/internal/validate"
 )
 
-//go:generate moq -out moq_test.go . documentValidator renderer entryRegistry documentStore reviewStore profileSource
+//go:generate moq -out moq_test.go . documentValidator renderer entryRegistry documentStore reviewStore profileSource headChecker
 
 // documentValidator runs every check tier over one document.
 type documentValidator interface {
 	Validate(ctx context.Context, source []byte, options validate.Options) (*review.Result, error)
 }
 
-// StoreInput is what validate has learned about one run by the time storing
+// StoreInput is what submit-review has learned about one run by the time storing
 // happens (docs/config.md §5). Ref and Verdict are read straight off the
 // submitted document, unvalidated — a documentStore applies whatever rules
 // keep them safe to record, the same way it applies docs/config.md §4.8 to
@@ -30,8 +31,15 @@ type StoreInput struct {
 	// Source is the exact bytes submitted, addressed and stored verbatim.
 	Source []byte
 	// Valid says whether this run exits 0 or 1 — which tree, if either,
-	// keeps the bytes (docs/config.md §5).
+	// keeps the bytes (docs/config.md §5). Meaningless when Precondition is
+	// true: exit 3 keeps neither tree regardless of what Valid says, and a
+	// documentStore must check Precondition first.
 	Valid bool
+	// Precondition says this run exits 3: the precondition (docs/cli.md
+	// §2.3.1) fired before the document was examined, so there is nothing
+	// to keep in either tree — a documentStore still records a row, with
+	// no file (docs/config.md §5).
+	Precondition bool
 	// Ref and Verdict come from the document as submitted; both are "" when
 	// the field was absent or not a string.
 	Ref     string
@@ -48,12 +56,14 @@ type StoreInput struct {
 }
 
 // documentStore persists one run per docs/config.md §5: exit 0 keeps the
-// review, exit 1 keeps the input unless it is oversized, and every call
-// records a row. A nil error covers both a run that stored something and one
-// with nothing to keep — store.enabled:false, most likely — so validate
-// cannot tell the two apart and does not need to. A non-nil error means the
-// store could not be established, written, or recorded to; the caller exits
-// ExitTool with nothing on stdout (docs/config.md §5.1).
+// review, exit 1 keeps the input unless it is oversized, exit 3 keeps
+// neither — the precondition (docs/cli.md §2.3.1) fires before the document
+// is examined, so there is nothing yet to keep — and every call records a
+// row regardless. A nil error covers both a run that stored something and
+// one with nothing to keep — store.enabled:false, most likely — so
+// submit-review cannot tell the two apart and does not need to. A non-nil
+// error means the store could not be established, written, or recorded to;
+// the caller exits ExitTool with nothing on stdout (docs/config.md §5.1).
 type documentStore interface {
 	Save(ctx context.Context, in StoreInput) error
 }
@@ -71,6 +81,16 @@ type renderer interface {
 	// a non-nil empty slice renders "profiles":[] rather than null - the
 	// same empty-directory guarantee internal/profile.Reader.List makes.
 	Profiles(w io.Writer, profiles []profile.Profile) error
+	// CollectReviews writes collect-reviews's JSON envelope
+	// (docs/features/combined-reviews.md §8.1) — the one function that
+	// decides what collect-reviews found (§8.3.1). Unlike every other
+	// method here, its own value type lives in internal/render rather than
+	// a domain package: internal/collect deliberately does not know about
+	// repo, store.enabled, or head_check (internal/collect's own package
+	// doc), so there is no third, lower package for both this interface
+	// and internal/render to share it from the way review.Result serves
+	// Result above.
+	CollectReviews(w io.Writer, envelope render.CollectReviewsEnvelope) error
 }
 
 // entryRegistry resolves lens names to entries.
@@ -107,6 +127,29 @@ type reviewStore interface {
 	// ReadContent reads the file at path, as named by a Review's or
 	// FailedRun's Path (docs/config.md §6.1, --content).
 	ReadContent(path string) ([]byte, error)
+	// DistinctDigests returns one row per distinct digest among passing
+	// runs for repo and ref, oldest first — the enumeration
+	// collect-reviews's own reader loops over
+	// (docs/features/combined-reviews.md §5.3.1), mirroring
+	// internal/store.Store.DistinctDigests. An empty slice and a nil error
+	// answer a repo or ref the store has never heard of, the same
+	// answered-as-empty posture every other method here already has.
+	DistinctDigests(ctx context.Context, repo, ref string) ([]store.DigestRow, error)
+	// ReviewPath resolves one distinct digest to the stored file it names
+	// (docs/features/combined-reviews.md notes on refinery-uyb.11: "digest
+	// to path is not on the reviewStore interface" until now), so
+	// collect-reviews can turn DistinctDigests's rows into ReadContent
+	// calls without collect-reviews knowing the store's own directory
+	// layout. Mirrors internal/store.Store.ReviewPath's formula exactly;
+	// unlike that method it can fail, because computing it here still
+	// means resolving the store root from config first.
+	ReviewPath(ctx context.Context, repo, ref, digest string) (string, error)
+	// StoreEnabled reports store.enabled, read from the same config
+	// submit-review's storing does (docs/config.md §3) — collect-reviews's
+	// own store.enabled field (docs/features/combined-reviews.md §8.1),
+	// reported rather than gated on, since disabling storing never gates
+	// reading (§9).
+	StoreEnabled(ctx context.Context) (bool, error)
 }
 
 // profileSource reads reviewer profiles for prime --profile and prime
@@ -129,4 +172,46 @@ type profileSource interface {
 	// resolved or read - the tool's own state, routed to ExitTool - and
 	// broken is not populated alongside one.
 	List() (profiles []profile.Profile, broken []string, err error)
+}
+
+// DivergedAnchor is one entry in collect-reviews's head_check.diverged
+// (docs/features/combined-reviews.md §4.3.1): one anchor a stored review
+// verified once, at submission, that a headChecker's recheck at collection
+// time found has since drifted from ref in the working tree. Comment is the
+// qualified id (§6.1), never the origin id the underlying verification pass
+// itself reports. File is the anchored path directly, never the JSON
+// Pointer verify.Verifier's own Unverified type carries: a pointer only
+// ever made sense into the one document submit-review was checking, and
+// there is no single document here for one to point into.
+type DivergedAnchor struct {
+	Name    string
+	Comment string
+	File    string
+	Message string
+}
+
+// headChecker answers docs/features/combined-reviews.md §4.3's head_check
+// question for one parsed submission: has an anchor already confirmed at
+// submission time drifted from ref in the working tree since. It is the one
+// place this package asks anything about git at all, and per §4.3.2's
+// routes 2+3, it must not pull internal/verify into this package to do it -
+// the concrete implementation lives in cmd/loam-refinery, which is already
+// free to import internal/verify the way its reviewsAdapter does for
+// verify.Discover.
+type headChecker interface {
+	// CheckDivergence re-runs anchor-worktree-diverged against every anchor
+	// doc carries, fresh, and reports whether ref names HEAD along with
+	// which anchors have drifted since submission. qualifiedIDs maps doc's
+	// own origin comment ids to the qualified id the combined output
+	// assigned them - only the collect-assemble bead's code knows that
+	// mapping, so it is supplied rather than re-derived here.
+	//
+	// source is "repo", "none", or "unavailable", the same three values
+	// verification.source uses. isHead is meaningful only when
+	// source == "repo". diverged is non-nil - an empty slice when nothing
+	// has drifted - only when isHead is also true, and nil otherwise: the
+	// check does not apply to a non-HEAD ref, or outside a repository, so
+	// there is nothing to report, and a caller must be able to tell that
+	// apart from "checked, found nothing" (§4.3.1).
+	CheckDivergence(ctx context.Context, dir string, doc *review.Document, qualifiedIDs map[string]string) (source string, isHead bool, diverged []DivergedAnchor, err error)
 }

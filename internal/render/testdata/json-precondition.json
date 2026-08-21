@@ -1,0 +1,26 @@
+{
+  "valid": false,
+  "strict": false,
+  "verification": {
+    "source": "repo",
+    "anchors": 4,
+    "verified": 0
+  },
+  "counts": {
+    "comments": 1,
+    "errors": 1,
+    "advisories": 0,
+    "skipped": 0
+  },
+  "skipped": [],
+  "diagnostics": [
+    {
+      "severity": "error",
+      "name": "anchor-worktree-diverged",
+      "message": "internal/fetch/client.go differs from 4f2c1a9 in the working tree; the reviewed state is not a commit. Commit what was reviewed, or run \"git stash create\" and resubmit against that SHA — do not retry against this ref."
+    }
+  ],
+  "lenses": [
+    "anchor-worktree-diverged"
+  ]
+}

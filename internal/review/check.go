@@ -14,8 +14,8 @@ const (
 )
 
 // Check is one named check and the explanation describe renders for it. Check
-// names are API: they appear in diagnostics, in --disable and --warn-only
-// arguments, and in the lenses a caller reads and opens.
+// names are API: they appear in diagnostics and in the lenses a caller reads
+// and opens.
 type Check struct {
 	Name    string
 	Tier    Tier

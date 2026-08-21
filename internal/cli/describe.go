@@ -25,7 +25,7 @@ func isSet(set *flag.FlagSet, name string) bool {
 //go:embed describe.txt
 var describeText string
 
-const describeUsage = `usage: loam-refinery describe [--lens=NAME,...] [--list] [--format json]
+const describeUsage = `usage: loam-refinery describe [--lens=NAME,...] [--list]
 `
 
 // describe explains the contract, disclosed progressively: the summary, one
@@ -34,13 +34,8 @@ func (a *App) describe(args []string) int {
 	set := a.flagSet("describe", describeUsage)
 	lens := set.String("lens", "", "open one entry in full, comma separated")
 	list := set.Bool("list", false, "print the lens index, no bodies")
-	format := set.String("format", "json", "output format: json")
 	if err := set.Parse(args); err != nil {
 		return usageOrHelp(err)
-	}
-	if err := a.checkFormat(*format); err != nil {
-		a.fail(err)
-		return ExitUsage
 	}
 	if set.NArg() > 0 {
 		a.fail(fmt.Errorf("describe takes no arguments; did you mean --lens=%s?", set.Arg(0)))

@@ -46,6 +46,14 @@
       "$comment": "related: id, priority, anchors, suggestions",
       "type": "array",
       "items": { "$ref": "#/$defs/comment" }
+    },
+    "profile": {
+      "title": "Reviewer profile",
+      "description": "The name of the reviewer profile (cli.md §2.1.1) this review was written under, if any — the same NAME passed to `prime --profile=NAME`. Optional: omitted when the reviewer ran unprimed. Caller-authored and unverifiable, like id.",
+      "$comment": "related: profile-format",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "examples": ["backend"]
     }
   },
   "if": {
@@ -134,7 +142,7 @@
           "$comment": "related: line, ref, anchor-path-safe",
           "type": "string",
           "minLength": 1,
-          "pattern": "^[^/\\\\][^\\\\]*$",
+          "pattern": "^[^/\\\\\\n\\r][^\\\\\\n\\r]*$",
           "examples": ["internal/fetch/client.go"]
         },
         "line": {

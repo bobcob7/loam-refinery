@@ -99,52 +99,36 @@ func TestValidateStaysWithinBudget(t *testing.T) {
 		"each diagnostic costs about %d tokens; the ceiling is %d", perDiagnostic, perDiagnosticBudget)
 }
 
-// docs/cli.md §6.1's dirty-checkout row was carried over from the
-// per-diagnostic cost and marked "not yet measured" — this measures it
-// against the real binary the way every other row is, and the way
-// TestReviewsStaysWithinBudgetPerRow measures a per-row cost: two sample
-// sizes, so the marginal cost of one more unverified anchor is what gets
-// checked against the ceiling rather than a single noisy sample.
-func TestValidateUnverifiedAnchorStaysWithinBudget(t *testing.T) {
+// TestValidateWorktreeDivergedStaysWithinBudget measures docs/cli.md §6.1's
+// "submit-review, uncommitted work (exit 3)" row, left "not yet measured"
+// there on purpose: the old per-anchor figure (once carried by
+// TestValidateUnverifiedAnchorStaysWithinBudget, deleted by refinery-uyb.5)
+// measured verification.unverified entries accumulating inside an
+// otherwise-passing run, a shape docs/cli.md §2.3.1's precondition no longer
+// produces at all. This measures the replacement instead: one diagnostic for
+// the whole document, so the cost must be flat regardless of how many
+// anchors diverged — checked here across two sample sizes, the same way
+// TestReviewsStaysWithinBudgetPerRow checks a per-row cost, except the
+// marginal cost measured here must come out to exactly zero.
+func TestValidateWorktreeDivergedStaysWithinBudget(t *testing.T) {
 	t.Parallel()
-	const perUnverifiedBudget = 60
+	// Measured against the real binary, not asserted from docs/cli.md §6.1:
+	// that row says "not yet measured" rather than naming a number, so
+	// there is nothing there to reproduce. 153 is what one diverged anchor
+	// and ten both cost — the file name, the ref, and the fixed two-remedy
+	// sentence dominate the message, which is why this lands well above the
+	// 80-token clean ceiling despite carrying exactly one diagnostic.
+	const budget = 153
 	dir, ref := divergedRefDir(t)
-	small := unverifiedCount(t, runValidateOK(t, dir, unverifiedAnchorsDoc(ref, 3)))
-	large := unverifiedCount(t, runValidateOK(t, dir, unverifiedAnchorsDoc(ref, 10)))
-	require.Equal(t, 3, small.n)
-	require.Equal(t, 10, large.n)
-	perUnverified := (large.tokens - small.tokens) / (large.n - small.n)
-	assert.LessOrEqual(t, perUnverified, perUnverifiedBudget,
-		"each unverified anchor costs about %d tokens; the ceiling is %d", perUnverified, perUnverifiedBudget)
-}
-
-// unverifiedCounted is one measurement of a validate run reporting n
-// unverified anchors.
-type unverifiedCounted struct {
-	n      int
-	tokens int
-}
-
-// runValidateOK runs validate and requires it exited clean: an unverified
-// anchor withholds a verification, it does not fail the document.
-func runValidateOK(t *testing.T, dir, source string) string {
-	t.Helper()
-	out, code := runValidate(t, dir, source)
-	require.Equal(t, ExitValid, code, out)
-	return out
-}
-
-// unverifiedCount reads how many anchors a validate run reported unverified,
-// pairing it with the run's token cost.
-func unverifiedCount(t *testing.T, out string) unverifiedCounted {
-	t.Helper()
-	var payload struct {
-		Verification struct {
-			Unverified []struct{} `json:"unverified"`
-		} `json:"verification"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &payload))
-	return unverifiedCounted{n: len(payload.Verification.Unverified), tokens: approxTokens(out)}
+	small, codeSmall := runValidate(t, dir, worktreeDivergedAnchorsDoc(ref, 1))
+	require.Equal(t, ExitPrecondition, codeSmall, small)
+	large, codeLarge := runValidate(t, dir, worktreeDivergedAnchorsDoc(ref, 10))
+	require.Equal(t, ExitPrecondition, codeLarge, large)
+	smallTokens, largeTokens := approxTokens(small), approxTokens(large)
+	assert.Equal(t, smallTokens, largeTokens,
+		"the precondition reports one diagnostic for the document regardless of anchor count, so 1 diverged anchor and 10 must cost the same")
+	assert.LessOrEqual(t, smallTokens, budget,
+		"an exit-3 precondition run costs about %d tokens; its ceiling is %d", smallTokens, budget)
 }
 
 // divergedRefDir makes a throwaway repository with one tracked file at HEAD,
@@ -170,10 +154,10 @@ func divergedRefDir(t *testing.T) (string, string) {
 	return dir, ref
 }
 
-// unverifiedAnchorsDoc is a valid review with n anchors into the one file
-// divergedRefDir diverges, so every anchor is reported anchor-worktree-diverged
-// regardless of the line numbers named.
-func unverifiedAnchorsDoc(ref string, n int) string {
+// worktreeDivergedAnchorsDoc is a valid review with n anchors into the one
+// file divergedRefDir diverges, so every anchor is what the precondition
+// finds regardless of the line numbers named.
+func worktreeDivergedAnchorsDoc(ref string, n int) string {
 	anchors := make([]string, n)
 	for i := range anchors {
 		anchors[i] = fmt.Sprintf(`{"file":"file.txt","line":%d}`, i+1)
@@ -386,6 +370,7 @@ func runValidate(t *testing.T, dir, source string) (string, int) {
 		panickyProfileSource(),
 		realRegistry(t),
 		render.NewJSON(),
+		noopHeadChecker(),
 		CheckNames{},
 		Build{Version: "test", Commit: "test", Schema: schema.Version()},
 		func(bool) ([]byte, error) { return nil, nil },
@@ -395,7 +380,7 @@ func runValidate(t *testing.T, dir, source string) (string, int) {
 		stderr,
 		quietLog(),
 	)
-	code := app.Run(t.Context(), []string{"validate"})
+	code := app.Run(t.Context(), []string{"submit-review"})
 	return stdout.String(), code
 }
 
@@ -449,6 +434,7 @@ func runReal(t *testing.T, args ...string) string {
 		panickyProfileSource(),
 		realRegistry(t),
 		render.NewJSON(),
+		noopHeadChecker(),
 		CheckNames{},
 		Build{Version: "test", Commit: "test", Schema: schema.Version()},
 		func(annotated bool) ([]byte, error) {
@@ -548,6 +534,18 @@ func (a *realReviewsAdapter) ListRepos(ctx context.Context) ([]store.RepoCount, 
 
 func (a *realReviewsAdapter) ReadContent(path string) ([]byte, error) {
 	return a.st.ReadContent(path)
+}
+
+func (a *realReviewsAdapter) DistinctDigests(ctx context.Context, repo, ref string) ([]store.DigestRow, error) {
+	return a.st.DistinctDigests(ctx, repo, ref)
+}
+
+func (a *realReviewsAdapter) ReviewPath(_ context.Context, repo, ref, digest string) (string, error) {
+	return a.st.ReviewPath(repo, ref, digest), nil
+}
+
+func (a *realReviewsAdapter) StoreEnabled(context.Context) (bool, error) {
+	return true, nil
 }
 
 // fixedStoreRootLen is the length every store root newRealStore creates is
@@ -677,6 +675,7 @@ func runReviews(t *testing.T, reviews reviewStore, args ...string) string {
 		panickyProfileSource(),
 		realRegistry(t),
 		render.NewJSON(),
+		noopHeadChecker(),
 		CheckNames{},
 		Build{Version: "test", Commit: "test", Schema: schema.Version()},
 		func(annotated bool) ([]byte, error) {

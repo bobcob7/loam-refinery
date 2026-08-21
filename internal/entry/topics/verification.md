@@ -12,7 +12,9 @@ main points at when someone looks, stale without ever changing.
 
 validate checks those claims against the repository it is run in, by default and
 with no flag, by object lookup — a commit that is not checked out still
-resolves. With no repository the tier is skipped, and reported as skipped.
+resolves. With no repository the tier is skipped and reported as skipped —
+but not passed: any anchor still fails at exit 1 with nothing to confirm it.
+An anchorless document passes either way.
 
 loam-refinery confirms the anchor points somewhere; whether it points at
 the right line is the reviewer's job. What the SHA buys is that anyone can

@@ -7,11 +7,14 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/bobcob7/loam-refinery/internal/review"
 )
 
 var shaPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+var profilePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // Checker runs every structural check over one document.
 type Checker struct {
@@ -32,6 +35,7 @@ func (c *Checker) Check(doc *review.Document) []review.Diagnostic {
 	diagnostics = append(diagnostics, c.anchorRangeOrdered(doc)...)
 	diagnostics = append(diagnostics, c.anchorPathSafe(doc)...)
 	diagnostics = append(diagnostics, c.refFormat(doc)...)
+	diagnostics = append(diagnostics, c.profileFormat(doc)...)
 	covered := map[string]bool{}
 	for _, d := range diagnostics {
 		covered[d.Path] = true
@@ -146,6 +150,14 @@ func pathProblem(file string) (string, bool) {
 		return "is absolute; anchors are repository-relative", true
 	case strings.Contains(file, `\`):
 		return "contains a backslash; anchors are POSIX paths", true
+	case containsControlRune(file):
+		// A denylist of bad shapes keeps losing to inputs nobody enumerated —
+		// a newline turns a single-line render (an inline code span, per
+		// docs/features/combined-reviews.md §8.3.2) into a multi-line one it
+		// cannot survive, forging whatever markdown follows it. Rejecting the
+		// whole class closes that off structurally instead of one escape
+		// sequence at a time.
+		return "contains a control character; anchors are plain text", true
 	}
 	for _, segment := range strings.Split(file, "/") {
 		if segment == ".." {
@@ -153,6 +165,18 @@ func pathProblem(file string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// containsControlRune reports whether s contains any control character —
+// category Cc, which covers \n, \r, \t, and every other C0/C1 control
+// point, DEL included.
+func containsControlRune(s string) bool {
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Checker) refFormat(doc *review.Document) []review.Diagnostic {
@@ -164,6 +188,18 @@ func (c *Checker) refFormat(doc *review.Document) []review.Diagnostic {
 		Name:     "ref-format",
 		Path:     "/ref",
 		Message:  fmt.Sprintf("ref %q is not a 40-character lowercase commit SHA", doc.Ref.Value),
+	}}
+}
+
+func (c *Checker) profileFormat(doc *review.Document) []review.Diagnostic {
+	if !doc.Profile.OK || profilePattern.MatchString(doc.Profile.Value) {
+		return nil
+	}
+	return []review.Diagnostic{{
+		Severity: review.SeverityError,
+		Name:     "profile-format",
+		Path:     "/profile",
+		Message:  fmt.Sprintf("profile %q does not match ^[a-z0-9]+(-[a-z0-9]+)*$", doc.Profile.Value),
 	}}
 }
 

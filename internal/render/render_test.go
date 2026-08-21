@@ -25,7 +25,7 @@ func TestJSONResult(t *testing.T) {
 	}{
 		{name: "clean", result: clean(), golden: "json-clean"},
 		{name: "unverified", result: unverified(), golden: "json-unverified"},
-		{name: "diverged", result: diverged(), golden: "json-diverged"},
+		{name: "precondition", result: precondition(), golden: "json-precondition"},
 		{name: "diagnostics", result: messy(), golden: "json-diagnostics"},
 	}
 	for _, test := range tests {
@@ -121,58 +121,72 @@ func unverified() *review.Result {
 	}
 }
 
-func diverged() *review.Result {
+// precondition is the shape docs/cli.md §2.3.1 pins for an exit-3 run: one
+// diagnostic naming anchor-worktree-diverged for the whole document, no
+// structural or advisory diagnostics beside it.
+func precondition() *review.Result {
 	return &review.Result{
-		Valid:    true,
-		Comments: 1,
-		Verification: review.Verification{
-			Source: "repo", Anchors: 4, Verified: 3,
-			Unverified: []review.Unverified{{
-				Name:    "anchor-worktree-diverged",
-				Comment: "dropped-context-1",
-				Path:    "/comments/0/anchors/0",
-				Message: "internal/fetch/client.go differs from 4f2c1a9 in the working tree",
-			}},
-		},
+		Valid:        false,
+		Comments:     1,
+		Verification: review.Verification{Source: "repo", Anchors: 4},
+		Diagnostics: []review.Diagnostic{{
+			Severity: review.SeverityError,
+			Name:     "anchor-worktree-diverged",
+			Message: "internal/fetch/client.go differs from 4f2c1a9 in the working tree; the reviewed state is not a commit. " +
+				`Commit what was reviewed, or run "git stash create" and resubmit against that SHA — do not retry against this ref.`,
+		}},
+		Precondition: true,
 	}
 }
 
 // Mutation guard: verification.unverified must be genuinely absent from the
-// wire when nothing diverged, not merely equal to an empty array — a caller
-// checking "was this key sent" must see the same thing a nil slice and an
-// explicitly-empty one would otherwise blur together.
-func TestUnverifiedIsOmittedWhenNothingDiverged(t *testing.T) {
+// wire, never sent even when a Result carries anchors verify reported
+// diverged — the field itself is gone, docs/cli.md §5.2, not merely empty
+// on the runs that happen not to need it.
+func TestUnverifiedIsNeverOnTheWire(t *testing.T) {
 	t.Parallel()
-	stdout := &bytes.Buffer{}
-	require.NoError(t, NewJSON().Result(stdout, clean()))
-	assert.NotContains(t, stdout.String(), "unverified", "omitted, the convention diagnostics and lenses already use")
+	for _, test := range []struct {
+		name   string
+		result *review.Result
+	}{
+		{name: "nothing diverged", result: clean()},
+		{name: "an anchor verify reported diverged", result: &review.Result{
+			Valid: true, Comments: 1,
+			Verification: review.Verification{Source: "repo", Anchors: 4, Verified: 3, Unverified: []review.Unverified{{
+				Name: "anchor-worktree-diverged", Comment: "dropped-context-1",
+				Path: "/comments/0/anchors/0", Message: "internal/fetch/client.go differs from 4f2c1a9 in the working tree",
+			}}},
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			stdout := &bytes.Buffer{}
+			require.NoError(t, NewJSON().Result(stdout, test.result))
+			assert.NotContains(t, stdout.String(), "unverified", "omitted, the convention diagnostics and lenses already use")
+		})
+	}
 }
 
-func TestUnverifiedCarriesTheAnchorAndWhy(t *testing.T) {
+// The precondition's diagnostic is the sole content on the wire: no
+// verification.unverified, exactly one diagnostic, and lenses names it.
+func TestPreconditionCarriesOneDiagnosticAndNoUnverifiedField(t *testing.T) {
 	t.Parallel()
 	stdout := &bytes.Buffer{}
-	require.NoError(t, NewJSON().Result(stdout, diverged()))
+	require.NoError(t, NewJSON().Result(stdout, precondition()))
 	var payload struct {
-		Verification struct {
-			Anchors    int `json:"anchors"`
-			Verified   int `json:"verified"`
-			Unverified []struct {
-				Name    string `json:"name"`
-				Comment string `json:"comment"`
-				Path    string `json:"path"`
-				Message string `json:"message"`
-			} `json:"unverified"`
-		} `json:"verification"`
+		Valid       bool `json:"valid"`
+		Diagnostics []struct {
+			Name    string `json:"name"`
+			Message string `json:"message"`
+		} `json:"diagnostics"`
 		Lenses []string `json:"lenses"`
 	}
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &payload))
-	assert.Equal(t, 4, payload.Verification.Anchors)
-	assert.Equal(t, 3, payload.Verification.Verified, "verified stays less than anchors for a diverged one")
-	require.Len(t, payload.Verification.Unverified, 1)
-	assert.Equal(t, "anchor-worktree-diverged", payload.Verification.Unverified[0].Name)
-	assert.Equal(t, "dropped-context-1", payload.Verification.Unverified[0].Comment)
-	assert.Equal(t, "/comments/0/anchors/0", payload.Verification.Unverified[0].Path)
-	assert.Contains(t, payload.Lenses, "anchor-worktree-diverged", "a caller can fetch the explanation without guessing the name")
+	assert.False(t, payload.Valid)
+	require.Len(t, payload.Diagnostics, 1, "one diagnostic for the whole document")
+	assert.Equal(t, "anchor-worktree-diverged", payload.Diagnostics[0].Name)
+	assert.Equal(t, []string{"anchor-worktree-diverged"}, payload.Lenses)
+	assert.NotContains(t, stdout.String(), "unverified")
 }
 
 func messy() *review.Result {

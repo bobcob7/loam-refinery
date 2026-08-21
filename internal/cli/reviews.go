@@ -12,7 +12,7 @@ import (
 	"github.com/bobcob7/loam-refinery/internal/store"
 )
 
-const reviewsUsage = `usage: loam-refinery reviews [--repo=NAME] [--ref=SHA] [--limit=N] [--content] [--failed] [--list] [--format json]
+const reviewsUsage = `usage: loam-refinery reviews [--repo=NAME] [--ref=SHA] [--limit=N] [--content] [--failed] [--list]
 `
 
 // reviewsExclusiveFlags are every flag docs/config.md §6 forbids alongside
@@ -100,13 +100,8 @@ func (a *App) reviews(ctx context.Context, args []string) int {
 	content := set.Bool("content", false, "include each stored file, not just its row")
 	failed := set.Bool("failed", false, "list runs that stored no review")
 	list := set.Bool("list", false, "print the repositories the store knows")
-	format := set.String("format", "json", "output format: json")
 	if err := set.Parse(args); err != nil {
 		return usageOrHelp(err)
-	}
-	if err := a.checkFormat(*format); err != nil {
-		a.fail(err)
-		return ExitUsage
 	}
 	if set.NArg() > 0 {
 		a.fail(fmt.Errorf("reviews takes no arguments; did you mean --repo=%s?", set.Arg(0)))

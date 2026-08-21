@@ -50,10 +50,35 @@ func TestChecksReportEveryStructuralFailure(t *testing.T) {
 			messages: []string{`file "../other/client.go" escapes the repository`, `file "/home/me/repo/client_test.go" is absolute; anchors are repository-relative`},
 		},
 		{
+			// The P0 this bead sits next to: a newline in anchor.file forges
+			// headings once collect-reviews renders it verbatim in an inline
+			// code span (docs/features/combined-reviews.md §8.3.2). This is
+			// the structural gate's half of the fix — rejecting control
+			// characters as a class rather than the three enumerated shapes
+			// pathProblem used to check, so a shape nobody enumerated (a
+			// newline, here) does not slip through. The schema pattern is the
+			// other, independent gate (internal/schema/schema_test.go); either
+			// alone is a single point of failure.
+			name:     "a newline in the anchor path",
+			file:     "anchor-path-control.json",
+			want:     []string{"anchor-path-safe"},
+			messages: []string{"file \"internal/legacy/parse.go\\n# FORGED HEADING\" contains a control character; anchors are plain text"},
+		},
+		{
 			name:     "a branch name is not a ref",
 			file:     "ref-branch.json",
 			want:     []string{"ref-format"},
 			messages: []string{`ref "main" is not a 40-character lowercase commit SHA`},
+		},
+		{
+			name:     "a profile containing a colon",
+			file:     "profile-colon.json",
+			want:     []string{"profile-format"},
+			messages: []string{`profile "arch:v2" does not match ^[a-z0-9]+(-[a-z0-9]+)*$`},
+		},
+		{
+			name: "a profile matching the grammar raises nothing",
+			file: "profile-valid.json",
 		},
 	}
 	for _, test := range tests {

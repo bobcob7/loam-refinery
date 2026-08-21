@@ -36,6 +36,33 @@ func TestWriteReview_ByteIdentical(t *testing.T) {
 	assert.Equal(t, data, on, "stored bytes must be byte-identical to what was submitted")
 }
 
+// TestDigest_MatchesWhatWriteReviewWouldAddress proves Digest computes the
+// same digest WriteReview and WriteRejected already address a file by, so a
+// caller with no file to write — exit 3's precondition (config.md section
+// 4.5.1) — still records the digest a row would have carried had the run
+// examined the document.
+func TestDigest_MatchesWhatWriteReviewWouldAddress(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	data := []byte(`{"ref":"4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f"}`)
+	digest, _, err := s.WriteReview("github.com/example/example", "4f2c1a9e3b7d5f0c8a1e2d4b6c8f0a2e4d6b8c0f", data)
+	require.NoError(t, err)
+	assert.Equal(t, digest, Digest(data))
+}
+
+// TestDigest_NeverTouchesTheFilesystem proves Digest is pure computation:
+// calling it before a store even exists must not create one, unlike every
+// Write* method above.
+func TestDigest_NeverTouchesTheFilesystem(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	got := Digest([]byte("anything"))
+	assert.Len(t, got, 64, "a lowercase hex SHA-256 digest is 64 characters")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "Digest must not write anything")
+}
+
 // TestWriteRejected_ByteIdenticalEvenWhenNotJSON proves config.md section
 // 4.4.1: the rejected tree keeps the input verbatim even when it is not
 // valid JSON at all.

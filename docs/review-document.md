@@ -66,6 +66,7 @@ non-fatal. See [§11.3](#113-advisory-checks--soft).
 | `summary` | string | yes | 1–3 sentence overall assessment. 30–1500 chars. |
 | `ref` | string | yes | Commit SHA the whole review was performed against, 40 lowercase hex. See [§5.1](#51-refs). |
 | `comments` | array | yes | Comment objects. May be empty only when `verdict` is `approve`; otherwise at least one. Enforced by the schema — see below. |
+| `profile` | string | no | The reviewer profile ([cli.md §2.1.1](cli.md#211-reviewer-profiles)) this review was written under, if any — the same `NAME` as `prime --profile=NAME`. Caller-authored and unverifiable, like `id`. Shape constrained by `profile-format` ([§11.1](#111-structural-checks--hard)); honesty is not. Read by `loam-refinery collect-reviews` ([features/combined-reviews.md](features/combined-reviews.md)) for attribution. |
 
 **`comments` may be empty only for `approve`.** The schema expresses this
 conditionally rather than leaving it to prose:
@@ -232,7 +233,7 @@ already holding the checkout.
 Requiring it retires the `ref-missing` advisory, which existed only to warn
 about the document class this now rejects outright. Per
 [§11.5](#115-name-stability) it is removed rather than repurposed, and
-`--disable=ref-missing` becomes an unknown-check usage error.
+`describe --lens=ref-missing` becomes an unknown-lens usage error.
 
 This tightens format version `"1"` rather than introducing a `"2"`. The format
 is a draft with no released consumers, and forking a version to carry a rule
@@ -524,6 +525,7 @@ exit codes, `--strict`, which source of truth it accepts — is
 | `anchor-range-ordered` | `end_line` requires `line` and must be ≥ it. |
 | `anchor-path-safe` | `file` must be relative POSIX, with no leading `/`, no `..` segment, and no backslashes. |
 | `ref-format` | `ref`, where present, matches `^[0-9a-f]{40}$` — a full lowercase commit SHA. Branches, tags, and abbreviated SHAs are rejected. Checkable without a repository. |
+| `profile-format` | `profile`, where present, matches `^[a-z0-9]+(-[a-z0-9]+)*$` — the same grammar [cli.md §2.1.2](cli.md#212-the-profile-file) already defines for the filename a profile resolves to. Checkable without a repository, exactly like `ref-format`. |
 
 See [§11.4](#114-partial-documents) — a structural failure does not stop the
 other tiers from running. `document-unparseable` is the single exception, and
@@ -543,23 +545,28 @@ verification is reported as skipped, never as a pass.
 | `anchor-line-out-of-range` | `line` or `end_line` exceeds the file's line count at the document `ref`. |
 | `anchor-worktree-diverged` | The anchored file's working-tree copy exists and differs from `ref`. Only checked when `ref` is `HEAD`. |
 
-Three of these four are errors, not advisories: an anchor that points nowhere
-makes its comment unactionable, and no amount of good judgment elsewhere in the
-review repairs it. `anchor-worktree-diverged` is the exception — it can only
-remove an anchor from `verified`, never turn a passing document into a failing
-one, so it has nothing to be an error about
-([cli.md §2.3.1](cli.md#231-verifying-anchors) has the full argument).
+All four are errors, not advisories, though not in the same way: an anchor
+that points nowhere makes its comment unactionable, and no amount of good
+judgment elsewhere in the review repairs it. `anchor-worktree-diverged` is
+still the one exception at the level of the **check** — it can only
+withhold a verification, never wrongly deny one, so firing it is never
+evidence the anchor is *wrong* ([cli.md §2.3.1](cli.md#231-verifying-anchors)
+has the full argument) — but that no longer makes it non-fatal at the level
+of the **document**. `loam-refinery submit-review` checks whether the
+reviewed state is a commit at all before running anything else, and a
+diverged anchor at `ref == HEAD` fails that precondition outright, at its
+own exit code, before this tier even runs
+([docs/features/combined-reviews.md
+§3.4](features/combined-reviews.md#34-verification-is-required-to-submit)).
+A working tree moving on does not change whether an anchor *resolves*: a
+ref is an immutable SHA, so later commits cannot affect that. It changes
+whether the anchor gets *checked* at all — which is exactly the state this
+format calls unreviewable, not merely unconfirmed.
 
-A caller that wants the other three non-fatal demotes them explicitly. The
-case that warrants it is a source of truth that does not *contain* the
-reviewed commit — a shallow clone, or a commit never fetched because its
-branch was deleted. A working tree moving on does not change whether an
-anchor *resolves*: a ref is an immutable SHA, so later commits cannot affect
-that. It can change whether the anchor gets *checked* at all — a
-working-tree copy that no longer matches `ref` is the leading reason an
-anchor goes unverified rather than verified, and the leading
-`--require-verification` trigger in a live checkout — which is a fact about
-checkability, not about resolution.
+There is no flag to make any of the four non-fatal. A shallow clone, or a
+commit never fetched because its branch was deleted, still fails a document
+that carries anchors — the fix is a deeper fetch, not a command-line
+option.
 
 What they cannot check is whether the anchored line is the *right* line. A
 comment about a nil check that anchors a correct line number in the correct file,
@@ -657,10 +664,10 @@ ran," because the two justify very different amounts of confidence.
 
 ### 11.5 Name stability
 
-Check names are API. They appear in diagnostics, in `--disable` and `--warn-only`
-arguments, in the `lenses` an agent reads and opens, and in whatever an agent
-remembers across sessions. Renaming one breaks all of that silently, so names do
-not change; a check that outlives its usefulness is removed, not repurposed.
+Check names are API. They appear in diagnostics, in the `lenses` an agent
+reads and opens, and in whatever an agent remembers across sessions.
+Renaming one breaks all of that silently, so names do not change; a check
+that outlives its usefulness is removed, not repurposed.
 
 There is no version negotiation beyond the `version` field, which exists so a
 future consumer can recognize a format it does not understand and say so. It is

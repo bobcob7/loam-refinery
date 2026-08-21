@@ -57,6 +57,31 @@ func TestParseKeepsIllTypedFieldsUsable(t *testing.T) {
 	assert.Equal(t, "/comments/0/anchors/0", doc.Comments[0].Anchors[0].Path)
 }
 
+func TestParseReadsProfileField(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		source  string
+		present bool
+		ok      bool
+		value   string
+	}{
+		"omitted":                {`{"version":"1"}`, false, false, ""},
+		"present and well-typed": {`{"profile":"backend"}`, true, true, "backend"},
+		"present but empty":      {`{"profile":""}`, true, true, ""},
+		"present but wrong type": {`{"profile":123}`, true, false, ""},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			doc, err := Parse([]byte(test.source))
+			require.NoError(t, err)
+			assert.Equal(t, test.present, doc.Profile.Present)
+			assert.Equal(t, test.ok, doc.Profile.OK)
+			assert.Equal(t, test.value, doc.Profile.Value)
+		})
+	}
+}
+
 func TestSortDiagnosticsPutsErrorsFirstThenDocumentOrder(t *testing.T) {
 	t.Parallel()
 	diagnostics := []Diagnostic{

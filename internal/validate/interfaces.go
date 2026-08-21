@@ -13,9 +13,10 @@ type structuralChecker interface {
 	Check(doc *review.Document) []review.Diagnostic
 }
 
-// advisoryRunner runs every advisory the caller did not disable.
+// advisoryRunner runs every registered advisory. There is no way to silence
+// one: advisories always run and are always reported.
 type advisoryRunner interface {
-	Run(doc *review.Document, disabled map[string]bool) ([]review.Diagnostic, []review.Skipped)
+	Run(doc *review.Document) ([]review.Diagnostic, []review.Skipped)
 }
 
 // repositoryFinder discovers the repository containing dir, the way git does.
