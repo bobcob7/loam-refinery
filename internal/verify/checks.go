@@ -11,22 +11,24 @@ func Checks() []review.Check {
 		{
 			Name:    "verification-required",
 			Tier:    review.TierVerification,
-			Summary: "the anchors were not checked, and --require-verification asked that they be",
+			Summary: "the anchors could not be confirmed against a repository",
 			Title:   "Verification required but unavailable",
-			Body: `Fires only under --require-verification, and says one thing: nobody confirmed
-these anchors. A repository that did not answer, a commit this checkout does
-not have, a file git could not read — different causes, same answer.
+			Body: `Fires whenever an anchor claim went unchecked, for any of three reasons: no
+repository, one that could not be asked, or a file git could not read. It runs
+unconditionally now — there is no flag to accept the gap, because nothing
+enters the store unverified. A document is not wrong for being checked
+somewhere that could not check it, but the run still fails: a review nobody
+verified is worth no more than no review.
 
-Without the flag that is reported and the run passes, because a document is not
-wrong for being checked somewhere that could not check it. The flag is for the
-caller who cannot accept that: a merge gate whose whole purpose is confirming
-the line numbers are real, where a review nobody verified is worth no more than
-no review.
+The verification block carries the cause. "none" means the run was outside a
+repository: cd to the one the review names. "unavailable" means a repository
+existed but could not answer — git missing, a bare repository, a checkout git
+refuses on ownership grounds — and the reason is git's own words. A file git
+could not read is rarer still.
 
-The verification block carries the cause: "not a git repository" means cd, and
-an unavailable source means the machine rather than the review. --warn-only on the
-check that explains the gap excuses it — ref-unknown for a commit this checkout
-never had. Nothing excuses a file git could not read.`,
+The fix in every case is a repository that can actually answer — not a
+command-line option. A document with no anchors is never affected; there is
+nothing here for it to ask about.`,
 			Related: []string{"ref-unknown", "anchor-file-missing", "tiers"},
 		},
 		{
@@ -41,10 +43,10 @@ once per anchor.
 
 There are two ordinary causes. Either you are in the wrong repository, in which
 case the SHA in the diagnostic will look foreign and the fix is to cd; or the
-commit is genuinely absent — a shallow clone, or a branch deleted and garbage
-collected since the review was written. That second case is what --warn-only is
-for: it demotes the verification checks to advisories so a legitimate gap does
-not fail the run.
+commit is genuinely absent — a shallow clone that never fetched it, or a branch
+deleted and garbage collected since the review was written. That second case
+has no flag to work around anymore: the fix is a deeper fetch, git fetch
+--deepen, or an unshallow clone, before resubmitting.
 
 If the ref is wrong rather than absent, take it from the checkout the review was
 performed against: git rev-parse HEAD. Fetching the commit is the other fix;
@@ -100,23 +102,24 @@ answer when you are not certain.`,
 			Tier:    review.TierVerification,
 			Summary: "the anchored file's working-tree copy exists and differs from ref",
 			Title:   "Anchored file diverged from ref",
-			Body: `Fires when ref is the checked-out commit, the anchored file exists there, a
-working-tree copy exists too, and git says the two differ. The file the
-reviewer may have read is not the file at ref, so the anchor is reported
-unverified rather than checked against either copy.
+			Body: `Fires when ref is the checked-out commit, an anchored file exists there, a
+working-tree copy exists too, and git says the two differ — the ordinary
+state of a checkout somebody is actively editing. It runs as a precondition,
+immediately after parse and before anything else: before structural checks,
+before advisories, before any other anchor. One diagnostic covers the whole
+document, however many anchors diverged, and the run stops there at exit 3,
+not exit 1.
 
-It is the one verification check that is not an error by default:
-monotonicity licenses consulting the working tree at all, and monotonicity
-means it can only withhold a verification, never grant one — firing this
-check removes an anchor from verified, never turns a passing document into a
-failing one. An anchor it reports is never line-checked, so a file that has
-only grown since ref does not also fail anchor-line-out-of-range.
+The reviewed state is not a commit, and revising the document cannot fix
+that. Commit what was reviewed — even to a throwaway branch — so ref and the
+working tree agree again, or run git stash create: it builds a real commit
+object out of the working tree and the index without touching either, giving
+a resolvable SHA to submit against instead.
 
-Clear it by committing what was reviewed, so ref and the working tree agree
-again, or by naming a ref that already contains it — git stash create makes a
-real commit object without touching HEAD or the index. Under
---require-verification this is a cause it fires on;
---warn-only=anchor-worktree-diverged demotes only this gap.`,
+This is not a check to retry. Resubmitting the identical document against
+the identical dirty tree cannot succeed — an agent that treats exit 3 like
+exit 1 and just resubmits will loop until something outside the review
+changes.`,
 			Related: []string{"anchor-file-missing", "anchor-line-out-of-range", "verification-required"},
 		},
 	}
