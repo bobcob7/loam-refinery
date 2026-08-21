@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -257,16 +258,52 @@ func TestCollectReviews_FormatTextExitsUsage(t *testing.T) {
 
 // TestCollectReviews_FormatMarkdownIsAcceptedAtFlagParsing pins the
 // acceptance criteria's own wording: markdown is accepted at the
-// flag-parsing level even though rendering it is refinery-uyb.12's job.
-// Mutation this kills: rejecting "markdown" the way "text" is rejected
-// would make that later bead's own note ("already accepted, if
-// unrendered") false.
+// flag-parsing level. Mutation this kills: rejecting "markdown" the way
+// "text" is rejected would make --format=markdown a usage error.
 func TestCollectReviews_FormatMarkdownIsAcceptedAtFlagParsing(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t, "")
 	setCollectReviewsStore(t, h.reviews, "some/repo", testRef, true, true, nil, nil)
 	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + testRef, "--repo=some/repo", "--format=markdown"})
 	assert.Equal(t, ExitValid, code, h.stderr.String())
+}
+
+// TestCollectReviews_FormatMarkdownRendersMarkdownNotJSON pins the
+// refinery-uyb.12 wiring: --format=markdown must reach
+// render.Markdown.CollectReviews, not the JSON path silently used for
+// every format the way it was before this bead. Mutation this kills:
+// collectReviewsRun ignoring format and always calling a.renderer's JSON
+// path would still exit 0 here, but stdout would be JSON, not Markdown.
+func TestCollectReviews_FormatMarkdownRendersMarkdownNotJSON(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	setCollectReviewsStore(t, h.reviews, repo121, ref121, true, true,
+		[]string{"digest-a", "digest-b"},
+		map[string]string{"digest-a": submissionA, "digest-b": submissionB},
+	)
+	setHeadCheckStub(h.headChecker, "repo", true, []DivergedAnchor{})
+	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + ref121, "--repo=" + repo121, "--format=markdown"})
+	require.Equal(t, ExitValid, code, h.stderr.String())
+	stdout := h.stdout.String()
+	assert.True(t, strings.HasPrefix(stdout, "# collect-reviews:"), "markdown output, not a JSON object: %q", stdout)
+	assert.Contains(t, stdout, "## backend:dropped-context-1")
+	assert.Contains(t, stdout, "## security:dropped-context-1")
+	assert.NotEqual(t, '{', stdout[0], "must not be the JSON envelope")
+}
+
+// TestCollectReviews_FormatJSONStillRendersJSON is the negative case
+// alongside the test above: the default and explicit "json" formats must
+// still go through the unchanged JSON path once collectReviewsRun starts
+// branching on format.
+func TestCollectReviews_FormatJSONStillRendersJSON(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	setCollectReviewsStore(t, h.reviews, "some/repo", testRef, true, true, nil, nil)
+	setHeadCheckStub(h.headChecker, "none", false, nil)
+	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + testRef, "--repo=some/repo", "--format=json"})
+	require.Equal(t, ExitValid, code, h.stderr.String())
+	got := asObject(t, h.stdout.String())
+	assert.Contains(t, got, "ref")
 }
 
 // TestCollectReviewsEmptyCases pins every exit-0 row of §9's table — known
