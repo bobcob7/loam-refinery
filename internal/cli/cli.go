@@ -101,8 +101,8 @@ const usage = `loam-refinery — check a review document
 
   loam-refinery prime [--profile=NAME] [--list]  the workflow, in one small call
   loam-refinery describe [--lens=NAME,...]       the contract, disclosed on demand
-  loam-refinery validate [path]                  check a review (- or omitted: stdin)
-  loam-refinery reviews [--repo=NAME]            what an earlier validate stored
+  loam-refinery submit-review [path]             check a review (- or omitted: stdin)
+  loam-refinery reviews [--repo=NAME]            what an earlier submit-review stored
   loam-refinery schema [--annotated]             JSON Schema, for machines
   loam-refinery version
 
@@ -121,8 +121,8 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return a.prime(rest)
 	case "describe":
 		return a.describe(rest)
-	case "validate":
-		return a.validate(ctx, rest)
+	case "submit-review":
+		return a.submitReview(ctx, rest)
 	case "reviews":
 		return a.reviews(ctx, rest)
 	case "schema":
@@ -173,8 +173,8 @@ func (a *App) checkFormat(format string) error {
 var errNoNames = errors.New("the list is empty")
 
 // parseAnywhere parses flags that appear after the positional argument, which
-// the flag package otherwise stops at. "validate review.json --strict" is the
-// order a person writes, and rejecting it teaches nothing.
+// the flag package otherwise stops at. "submit-review review.json --strict" is
+// the order a person writes, and rejecting it teaches nothing.
 func parseAnywhere(set *flag.FlagSet, args []string) ([]string, error) {
 	positional := []string{}
 	for {

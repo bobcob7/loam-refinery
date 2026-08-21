@@ -2,15 +2,15 @@ title: The review store
 aliases: storing
 related: exit-codes
 ---
-Every `validate` that reads a document writes it down. A clean review is
+Every `submit-review` that reads a document writes it down. A clean review is
 stored as a review; an input that fails is stored as a rejected input — in
 separate trees, never mixed, so the store can answer "what was concluded
 about this commit" without a failure ever polluting it.
 
-Storing needs no flag and produces no output: it is simply what `validate`
+Storing needs no flag and produces no output: it is simply what `submit-review`
 does, on every run with something to keep. The result object never mentions
 it — asking where a copy landed is `loam-refinery reviews`'s job, not
-`validate`'s.
+`submit-review`'s.
 
 `store.enabled: false` in the config file is the only way to turn storing
 off. There is no per-run flag.

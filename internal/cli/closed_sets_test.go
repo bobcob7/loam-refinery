@@ -51,16 +51,16 @@ func TestReviewsFlagSetIsExactlyTheSevenDocumentedFlags(t *testing.T) {
 	assert.Equal(t, want, flagNames(t, "reviews"), "docs/config.md §6: reviews accepts exactly these seven flags")
 }
 
-// TestValidateFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's
-// table for validate: --strict, --warn-only, --disable,
+// TestSubmitReviewFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's
+// table for submit-review: --strict, --warn-only, --disable,
 // --require-verification, and --format — the same five whether read from
 // §3's table or from §2.3's prose, and, per §2.3, "no flag for it" about
 // storing: nothing here names a store setting.
-func TestValidateFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
+func TestSubmitReviewFlagSetIsExactlyTheDocumentedFlags(t *testing.T) {
 	t.Parallel()
 	want := []string{"disable", "format", "require-verification", "strict", "warn-only"}
 	sort.Strings(want)
-	assert.Equal(t, want, flagNames(t, "validate"), "docs/cli.md §3: validate accepts exactly these five flags, and none about storing")
+	assert.Equal(t, want, flagNames(t, "submit-review"), "docs/cli.md §3: submit-review accepts exactly these five flags, and none about storing")
 }
 
 // TestPrimeFlagSetIsExactlyTheDocumentedFlags pins docs/cli.md §3's table

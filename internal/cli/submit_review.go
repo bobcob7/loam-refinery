@@ -11,13 +11,13 @@ import (
 	"github.com/bobcob7/loam-refinery/internal/validate"
 )
 
-const validateUsage = `usage: loam-refinery validate [path] [--strict] [--require-verification] [--warn-only=NAME,...] [--disable=NAME,...] [--format json]
+const submitReviewUsage = `usage: loam-refinery submit-review [path] [--strict] [--require-verification] [--warn-only=NAME,...] [--disable=NAME,...] [--format json]
 `
 
-// validate checks one review document. Every check runs: a failure in one tier
-// never gates the next, so one call reports everything findable.
-func (a *App) validate(ctx context.Context, args []string) int {
-	set := a.flagSet("validate", validateUsage)
+// submitReview checks one review document. Every check runs: a failure in one
+// tier never gates the next, so one call reports everything findable.
+func (a *App) submitReview(ctx context.Context, args []string) int {
+	set := a.flagSet("submit-review", submitReviewUsage)
 	strict := set.Bool("strict", false, "treat advisories as errors")
 	warnOnly := set.String("warn-only", "", "demote the named verification checks")
 	disable := set.String("disable", "", "skip the named advisories")
@@ -32,7 +32,7 @@ func (a *App) validate(ctx context.Context, args []string) int {
 		return ExitUsage
 	}
 	if len(paths) > 1 {
-		a.fail(fmt.Errorf("validate takes at most one path, got %d", len(paths)))
+		a.fail(fmt.Errorf("submit-review takes at most one path, got %d", len(paths)))
 		return ExitUsage
 	}
 	options := validate.Options{Strict: *strict, RequireVerification: *require, Dir: a.dir}

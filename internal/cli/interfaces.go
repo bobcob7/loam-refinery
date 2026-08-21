@@ -18,7 +18,7 @@ type documentValidator interface {
 	Validate(ctx context.Context, source []byte, options validate.Options) (*review.Result, error)
 }
 
-// StoreInput is what validate has learned about one run by the time storing
+// StoreInput is what submit-review has learned about one run by the time storing
 // happens (docs/config.md §5). Ref and Verdict are read straight off the
 // submitted document, unvalidated — a documentStore applies whatever rules
 // keep them safe to record, the same way it applies docs/config.md §4.8 to
@@ -50,7 +50,7 @@ type StoreInput struct {
 // documentStore persists one run per docs/config.md §5: exit 0 keeps the
 // review, exit 1 keeps the input unless it is oversized, and every call
 // records a row. A nil error covers both a run that stored something and one
-// with nothing to keep — store.enabled:false, most likely — so validate
+// with nothing to keep — store.enabled:false, most likely — so submit-review
 // cannot tell the two apart and does not need to. A non-nil error means the
 // store could not be established, written, or recorded to; the caller exits
 // ExitTool with nothing on stdout (docs/config.md §5.1).

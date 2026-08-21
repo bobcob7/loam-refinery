@@ -96,7 +96,7 @@ func docJSONFragment(t *testing.T, path, anchor string, occurrence int) any {
 	}
 }
 
-// realJSON runs a real reviews or validate invocation through the App and
+// realJSON runs a real reviews or submit-review invocation through the App and
 // parses its stdout, so "the tool" in "compared against real command
 // output" means exactly that — the same JSON encoder path production
 // traffic goes through, not a hand-written stand-in for it.

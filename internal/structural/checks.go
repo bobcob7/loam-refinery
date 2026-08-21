@@ -23,7 +23,7 @@ The usual causes are prose wrapped around the JSON, a fenced code block left
 in, and two documents concatenated into one stream. The message carries the
 decoder's own complaint, which names the byte offset:
 
-  loam-refinery validate review.json
+  loam-refinery submit-review review.json
   invalid character 'h' looking for beginning of value
 
 This is a document to repair rather than a command line to fix, so it exits 1

@@ -395,7 +395,7 @@ func runValidate(t *testing.T, dir, source string) (string, int) {
 		stderr,
 		quietLog(),
 	)
-	code := app.Run(t.Context(), []string{"validate"})
+	code := app.Run(t.Context(), []string{"submit-review"})
 	return stdout.String(), code
 }
 
