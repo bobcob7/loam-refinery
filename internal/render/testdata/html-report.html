@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>collect-reviews: 4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d</title>
+<style>
+ 
+:root { color-scheme: light dark; }
+body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+ 
+[hidden] { display: none !important; }
+
+ 
+:root {
+  --page-bg: #f7f7f8;
+  --panel-bg: #ffffff;
+  --panel-border: #d8dae0;
+  --text: #1b1e24;
+  --text-muted: #5b6270;
+  --link: #1a5fb4;
+  --chip-bg: #eef0f4;
+  --chip-border: #cdd1db;
+  --badge-text-on-dark: #ffffff;
+
+  --pri-mustfix-bg: #b3221c;
+  --pri-mustfix-text: #ffffff;
+  --pri-shouldfix-bg: #c8631a;
+  --pri-shouldfix-text: #ffffff;
+  --pri-worthfixing-bg: #ad8b00;
+  --pri-worthfixing-text: #1b1e24;
+  --pri-optional-bg: #5b6270;
+  --pri-optional-text: #ffffff;
+
+  --cat-correctness-bg: #fde3e1;
+  --cat-correctness-text: #7a1f1a;
+  --cat-security-bg: #ece1fb;
+  --cat-security-text: #4a2b82;
+  --cat-performance-bg: #dcf3ee;
+  --cat-performance-text: #0f5c4c;
+  --cat-maintainability-bg: #dfeaf9;
+  --cat-maintainability-text: #1c4a78;
+  --cat-testing-bg: #e2f3da;
+  --cat-testing-text: #2e5d1a;
+  --cat-documentation-bg: #f3e7d2;
+  --cat-documentation-text: #6b4a17;
+  --cat-style-bg: #e8e9ee;
+  --cat-style-text: #3d4150;
+  --cat-other-bg: #eef0f4;
+  --cat-other-text: #43485a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page-bg: #16181d;
+    --panel-bg: #1e2127;
+    --panel-border: #383c46;
+    --text: #e7e8ec;
+    --text-muted: #a2a8b6;
+    --link: #7cb0f0;
+    --chip-bg: #2a2e37;
+    --chip-border: #454b58;
+
+    --pri-mustfix-bg: #e35850;
+    --pri-mustfix-text: #1b1e24;
+    --pri-shouldfix-bg: #e8985a;
+    --pri-shouldfix-text: #1b1e24;
+    --pri-worthfixing-bg: #d9bb3d;
+    --pri-worthfixing-text: #1b1e24;
+    --pri-optional-bg: #8890a0;
+    --pri-optional-text: #16181d;
+
+    --cat-correctness-bg: #4a2320;
+    --cat-correctness-text: #f6c6c1;
+    --cat-security-bg: #362a4d;
+    --cat-security-text: #dccafc;
+    --cat-performance-bg: #1c3b34;
+    --cat-performance-text: #b6ecdd;
+    --cat-maintainability-bg: #1e3350;
+    --cat-maintainability-text: #bfdcfa;
+    --cat-testing-bg: #26401a;
+    --cat-testing-text: #cdedb9;
+    --cat-documentation-bg: #4a3a1c;
+    --cat-documentation-text: #f0d69f;
+    --cat-style-bg: #2c303a;
+    --cat-style-text: #cdd1db;
+    --cat-other-bg: #2a2e37;
+    --cat-other-text: #cdd1db;
+  }
+}
+
+ 
+html { color-scheme: light dark; }
+body {
+  margin: 0;
+  padding: 1.5rem clamp(1rem, 3vw, 3rem) 4rem;
+  background: var(--page-bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+#envelope, #submissions, #findings {
+  max-width: 1400px;
+  margin: 0 auto 1.5rem;
+}
+h1, h2, h3, h4 { color: var(--text); }
+a { color: var(--link); }
+p { margin: 0.5em 0; }
+
+ 
+.envelope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.envelope-ref { font-weight: 600; color: var(--text); }
+
+ 
+.index {
+  display: grid;
+  grid-template-columns: minmax(3rem, auto) minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(10rem, 1.3fr);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: var(--panel-bg);
+}
+.index-row {
+  display: grid;
+  grid-template-columns: minmax(3rem, auto) minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(10rem, 1.3fr);
+  grid-column: 1 / -1;
+}
+.index-row:not(:last-child) { border-bottom: 1px solid var(--panel-border); }
+.index-header {
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  background: var(--chip-bg);
+}
+.index-cell { padding: 0.5rem 0.75rem; overflow-wrap: anywhere; }
+.index-ordinal a { font-weight: 600; text-decoration: none; }
+.index-ordinal a:hover { text-decoration: underline; }
+.empty-state { color: var(--text-muted); font-style: italic; }
+
+ 
+.toolbar { display: none; }
+html.js .toolbar { display: flex; }
+
+ 
+.finding {
+  display: block;
+  max-width: 100%;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+.finding > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  list-style: none;
+}
+.finding > summary::-webkit-details-marker { display: none; }
+.finding > summary::marker { content: ""; }
+.finding > summary::before {
+  content: "▶";
+  font-size: 0.7em;
+  color: var(--text-muted);
+  transition: transform 0.1s ease-in-out;
+}
+.finding[open] > summary::before { transform: rotate(90deg); }
+.finding-headline { font-weight: 600; flex: 1 1 16rem; }
+.finding-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-border);
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.4rem;
+}
+.finding-id:hover { text-decoration: underline; }
+.finding-body { margin-top: 0.75rem; }
+.finding-body > .body { white-space: pre-wrap; }
+.anchors { display: flex; flex-wrap: wrap; gap: 0.4rem; color: var(--text-muted); }
+
+.tag {
+  display: inline-block;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  border-radius: 1rem;
+  padding: 0.1rem 0.6rem;
+  white-space: nowrap;
+}
+ 
+.tag[class*="pri-"] { font-weight: 700; }
+.tag.pri-mustfix { background: var(--pri-mustfix-bg); color: var(--pri-mustfix-text); }
+.tag.pri-shouldfix { background: var(--pri-shouldfix-bg); color: var(--pri-shouldfix-text); }
+.tag.pri-worthfixing { background: var(--pri-worthfixing-bg); color: var(--pri-worthfixing-text); }
+.tag.pri-optional { background: var(--pri-optional-bg); color: var(--pri-optional-text); }
+ 
+.tag[class*="cat-"] { font-weight: 400; }
+.tag.cat-correctness { background: var(--cat-correctness-bg); color: var(--cat-correctness-text); }
+.tag.cat-security { background: var(--cat-security-bg); color: var(--cat-security-text); }
+.tag.cat-performance { background: var(--cat-performance-bg); color: var(--cat-performance-text); }
+.tag.cat-maintainability { background: var(--cat-maintainability-bg); color: var(--cat-maintainability-text); }
+.tag.cat-testing { background: var(--cat-testing-bg); color: var(--cat-testing-text); }
+.tag.cat-documentation { background: var(--cat-documentation-bg); color: var(--cat-documentation-text); }
+.tag.cat-style { background: var(--cat-style-bg); color: var(--cat-style-text); }
+.tag.cat-other { background: var(--cat-other-bg); color: var(--cat-other-text); }
+ 
+.tag-profile, .tag-ordinal, .tag-effort, .tag-scope, .tag.anchor {
+  background: var(--chip-bg);
+  color: var(--text-muted);
+  border: 1px solid var(--chip-border);
+  font-weight: 400;
+}
+code.tag.anchor {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+ 
+.suggestions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.suggestion-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  background: var(--chip-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+.suggestion-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.suggestion-summary { font-weight: 600; flex: 1 1 100%; }
+.suggestion-pros-cons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+.suggestion-pros, .suggestion-cons { min-width: 0; }
+.suggestion-pros h4, .suggestion-cons h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+.suggestion-pros ul, .suggestion-cons ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+.suggestion-pros li, .suggestion-cons li { margin: 0.15rem 0; }
+
+ 
+pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0.75rem 0 0;
+  padding: 0.75rem;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-border);
+  border-radius: 0.4rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+pre code { white-space: pre; }
+
+ 
+@media (max-width: 720px) {
+  .index { overflow-x: auto; }
+  .index-row { min-width: 40rem; }
+  .suggestion-pros-cons { grid-template-columns: 1fr; }
+}
+
+
+:root {
+  --c-kw:#a626a4; --c-str:#50a14f; --c-cm:#a0a1a7;
+  --c-nm:#383a42; --c-num:#986801; --c-pn:#383a42;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-kw:#c678dd; --c-str:#98c379; --c-cm:#5c6370;
+    --c-nm:#abb2bf; --c-num:#d19a66; --c-pn:#abb2bf;
+  }
+}
+.c-kw{color:var(--c-kw)} .c-str{color:var(--c-str)} .c-cm{color:var(--c-cm)}
+.c-nm{color:var(--c-nm)} .c-num{color:var(--c-num)} .c-pn{color:var(--c-pn)}
+.code-block {
+  overflow-x: auto;
+  white-space: pre;
+  max-width: 100%;
+  margin: 0.5em 0;
+  padding: 0.75em 1em;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+.code-lang {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75em;
+  opacity: 0.65;
+  margin-bottom: 0.25em;
+}
+
+</style>
+</head>
+<body>
+
+<div id="envelope" class="envelope">
+<span class="envelope-ref">collect-reviews: 4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d</span>
+<span class="envelope-repo">repo: github.com/bobcob7/loam-refinery (known)</span>
+<span class="envelope-store">store: enabled</span>
+<span class="envelope-head-check">head_check: repo, is_head=true, 0 diverged</span>
+<span class="envelope-total">total: 1</span>
+<span class="envelope-unreadable">unreadable: 0</span>
+</div>
+
+
+<section id="submissions" class="submissions">
+
+<div class="index" role="table">
+<div class="index-row index-header" role="row">
+<span class="index-cell" role="columnheader">#</span>
+<span class="index-cell" role="columnheader">profile</span>
+<span class="index-cell" role="columnheader">verdict</span>
+<span class="index-cell" role="columnheader">assessment</span>
+<span class="index-cell" role="columnheader">severity</span>
+</div>
+
+<div class="index-row" role="row">
+<span class="index-cell index-ordinal" role="cell"><a href="#backend:dropped-context-1">#1</a></span>
+<span class="index-cell index-profile" role="cell">backend</span>
+<span class="index-cell index-verdict" role="cell">request_changes</span>
+<span class="index-cell index-assessment" role="cell">mixed</span>
+<span class="index-cell index-severity" role="cell">max=8</span>
+</div>
+
+</div>
+
+</section>
+
+
+<div class="toolbar" id="toolbar" aria-label="Filter and view controls">
+<style>
+.toolbar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.4rem 0; }
+.toolbar button { font: inherit; cursor: pointer; border: 1px solid var(--panel-border); background: var(--panel-bg); color: var(--text); border-radius: 0.3rem; padding: 0.25rem 0.7rem; }
+.toolbar button:hover { border-color: var(--link); }
+.toolbar-count { color: var(--text-muted); font-size: 0.85rem; }
+.toolbar-banner { background: var(--chip-bg); border: 1px solid var(--panel-border); color: var(--text); border-radius: 0.4rem; padding: 0.4rem 0.7rem; margin: 0.4rem 0; font-weight: 600; }
+.toolbar-facet { align-items: flex-start; }
+.toolbar-facet-label { color: var(--text-muted); font-size: 0.8rem; min-width: 4.5rem; padding-top: 0.25rem; }
+.toolbar-chip-row { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.chip[aria-pressed="true"] { outline: 2px solid var(--link); outline-offset: 1px; }
+</style>
+<div class="toolbar-row toolbar-actions">
+<button type="button" id="expandAllBtn">Expand all</button>
+<button type="button" id="collapseAllBtn">Collapse all</button>
+<button type="button" id="resetFiltersBtn">Reset filters</button>
+<span id="filterCount" class="toolbar-count" aria-live="polite"></span>
+</div>
+<p id="filterBanner" class="toolbar-banner" hidden aria-live="polite"></p>
+<div class="toolbar-row toolbar-facet">
+<span class="toolbar-facet-label">Priority</span>
+<div id="facetPriority" class="toolbar-chip-row" role="group" aria-label="Filter by priority"></div>
+</div>
+<div class="toolbar-row toolbar-facet">
+<span class="toolbar-facet-label">Category</span>
+<div id="facetCategory" class="toolbar-chip-row" role="group" aria-label="Filter by category"></div>
+</div>
+<div class="toolbar-row toolbar-facet">
+<span class="toolbar-facet-label">Lens</span>
+<div id="facetLens" class="toolbar-chip-row" role="group" aria-label="Filter by lens"></div>
+</div>
+</div>
+
+<section id="findings">
+
+<details class="finding" id="backend:dropped-context-1" data-priority-css="pri-shouldfix" data-category-css="cat-correctness" data-lens="backend" open>
+<summary>
+<span class="finding-headline">The retry loop calls c.do(context.Background(), req) rather than passing the caller&#39;s ctx.</span>
+<a class="finding-id" href="#backend:dropped-context-1" title="backend:dropped-context-1">backend:dropped-context-1</a>
+<span class="tag tag-profile">backend</span>
+
+<span class="tag pri-shouldfix">priority 8</span>
+<span class="tag cat-correctness">correctness</span>
+</summary>
+<div class="finding-body">
+<p class="anchors"><code class="tag anchor">internal/fetch/client.go:88</code></p>
+<p class="body">The retry loop calls c.do(context.Background(), req) rather than passing the caller&#39;s ctx.</p>
+
+<div class="code-lang">.go</div><pre class="code-block"><code><span class="c-nm">c</span><span class="c-pn">.</span><span class="c-nm">do</span><span class="c-pn">(</span><span class="c-nm">context</span><span class="c-pn">.</span><span class="c-nm">Background</span><span class="c-pn">(),</span> <span class="c-nm">req</span><span class="c-pn">)</span></code></pre>
+
+
+<div class="suggestions">
+
+<div class="suggestion-card">
+<div class="suggestion-header">
+<span class="suggestion-summary">Pass the caller&#39;s context straight through</span>
+<span class="tag tag-effort">trivial</span>
+<span class="tag tag-scope">line</span>
+</div>
+<div class="suggestion-pros-cons">
+<div class="suggestion-pros">
+<h4>Pros</h4>
+<ul><li>Cancellation and deadlines propagate immediately</li></ul>
+</div>
+<div class="suggestion-cons">
+<h4>Cons</h4>
+<ul><li>A caller relying on retries outliving the request context sees a behavior change</li></ul>
+</div>
+</div>
+
+</div>
+
+</div>
+
+</div>
+</details>
+
+</section>
+<script>
+(function () {
+document.documentElement.classList.add("js");
+
+var FINDING_SELECTOR = "details.finding";
+
+var PRIORITY_LABELS = {
+"pri-mustfix": "Must fix",
+"pri-shouldfix": "Should fix",
+"pri-worthfixing": "Worth fixing",
+"pri-optional": "Optional"
+};
+var PRIORITY_ORDER = ["pri-mustfix", "pri-shouldfix", "pri-worthfixing", "pri-optional"];
+
+var CATEGORY_LABELS = {
+"cat-correctness": "Correctness",
+"cat-security": "Security",
+"cat-performance": "Performance",
+"cat-maintainability": "Maintainability",
+"cat-testing": "Testing",
+"cat-documentation": "Documentation",
+"cat-style": "Style",
+"cat-other": "Other"
+};
+var CATEGORY_ORDER = [
+"cat-correctness", "cat-security", "cat-performance", "cat-maintainability",
+"cat-testing", "cat-documentation", "cat-style", "cat-other"
+];
+
+var FACETS = [
+{ key: "priority", attr: "data-priority-css", containerID: "facetPriority", labels: PRIORITY_LABELS, order: PRIORITY_ORDER },
+{ key: "category", attr: "data-category-css", containerID: "facetCategory", labels: CATEGORY_LABELS, order: CATEGORY_ORDER },
+{ key: "lens", attr: "data-lens", containerID: "facetLens", labels: null, order: null }
+];
+
+var active = { priority: {}, category: {}, lens: {} };
+var activeCount = { priority: 0, category: 0, lens: 0 };
+
+function findings() {
+return Array.prototype.slice.call(document.querySelectorAll(FINDING_SELECTOR));
+}
+
+function byID(id) {
+return document.getElementById(id);
+}
+
+function selectByID(id) {
+if (!id) {
+return null;
+}
+try {
+return document.querySelector("#" + CSS.escape(id));
+} catch (err) {
+return null;
+}
+}
+
+function resolveFragmentTarget(fragment) {
+var raw = fragment;
+var target = selectByID(raw);
+if (target) {
+return target;
+}
+var decoded = raw;
+try {
+decoded = decodeURIComponent(raw);
+} catch (err) {
+return null;
+}
+if (decoded === raw) {
+return null;
+}
+return selectByID(decoded);
+}
+
+function openDetailsAncestors(el) {
+var node = el.closest("details");
+while (node) {
+node.open = true;
+node = node.parentElement ? node.parentElement.closest("details") : null;
+}
+}
+
+function routeHash() {
+var hash = location.hash;
+if (!hash || hash.length < 2) {
+return;
+}
+var target = resolveFragmentTarget(hash.slice(1));
+if (!target) {
+return;
+}
+openDetailsAncestors(target);
+target.scrollIntoView();
+}
+
+function setAllOpen(open) {
+findings().forEach(function (details) {
+details.open = open;
+});
+}
+
+function presentValues(attr) {
+var seen = {};
+var values = [];
+findings().forEach(function (details) {
+var value = details.getAttribute(attr);
+if (value && !seen[value]) {
+seen[value] = true;
+values.push(value);
+}
+});
+return values;
+}
+
+function orderedValues(facet) {
+var present = presentValues(facet.attr);
+if (!facet.order) {
+return present.slice().sort();
+}
+return facet.order.filter(function (value) {
+return present.indexOf(value) !== -1;
+});
+}
+
+function toggleChip(facetKey, value, chip) {
+if (active[facetKey][value]) {
+delete active[facetKey][value];
+activeCount[facetKey] -= 1;
+chip.setAttribute("aria-pressed", "false");
+} else {
+active[facetKey][value] = true;
+activeCount[facetKey] += 1;
+chip.setAttribute("aria-pressed", "true");
+}
+applyFilters();
+}
+
+function makeChip(facet, value) {
+var chip = document.createElement("button");
+chip.type = "button";
+chip.className = "chip tag";
+if (facet.key === "priority" || facet.key === "category") {
+chip.classList.add(value);
+} else {
+chip.classList.add("tag-profile");
+}
+chip.setAttribute("aria-pressed", "false");
+chip.textContent = facet.labels && facet.labels[value] ? facet.labels[value] : value;
+chip.addEventListener("click", function () {
+toggleChip(facet.key, value, chip);
+});
+return chip;
+}
+
+function buildFacets() {
+FACETS.forEach(function (facet) {
+var container = byID(facet.containerID);
+if (!container) {
+return;
+}
+orderedValues(facet).forEach(function (value) {
+container.appendChild(makeChip(facet, value));
+});
+});
+}
+
+function updateCount(visible, total) {
+var el = byID("filterCount");
+if (el) {
+el.textContent = visible + " of " + total + " findings shown";
+}
+}
+
+function updateBanner(anyActive) {
+var el = byID("filterBanner");
+if (!el) {
+return;
+}
+if (anyActive) {
+el.hidden = false;
+el.textContent = "Some findings are hidden by the active filters.";
+} else {
+el.hidden = true;
+el.textContent = "";
+}
+}
+
+function passesFacet(details, facetKey, attr) {
+var count = activeCount[facetKey];
+if (count === 0) {
+return true;
+}
+return !!active[facetKey][details.getAttribute(attr)];
+}
+
+function applyFilters() {
+var list = findings();
+var visible = 0;
+list.forEach(function (details) {
+var pass = passesFacet(details, "priority", "data-priority-css")
+&& passesFacet(details, "category", "data-category-css")
+&& passesFacet(details, "lens", "data-lens");
+details.hidden = !pass;
+if (pass) {
+visible += 1;
+}
+});
+var anyActive = activeCount.priority > 0 || activeCount.category > 0 || activeCount.lens > 0;
+updateCount(visible, list.length);
+updateBanner(anyActive);
+}
+
+function resetFilters() {
+FACETS.forEach(function (facet) {
+active[facet.key] = {};
+activeCount[facet.key] = 0;
+});
+document.querySelectorAll(".chip[aria-pressed]").forEach(function (chip) {
+chip.setAttribute("aria-pressed", "false");
+});
+applyFilters();
+}
+
+function wireToolbar() {
+var expandBtn = byID("expandAllBtn");
+if (expandBtn) {
+expandBtn.addEventListener("click", function () {
+setAllOpen(true);
+});
+}
+var collapseBtn = byID("collapseAllBtn");
+if (collapseBtn) {
+collapseBtn.addEventListener("click", function () {
+setAllOpen(false);
+});
+}
+var resetBtn = byID("resetFiltersBtn");
+if (resetBtn) {
+resetBtn.addEventListener("click", resetFilters);
+}
+}
+
+buildFacets();
+wireToolbar();
+applyFilters();
+document.addEventListener("DOMContentLoaded", routeHash);
+window.addEventListener("hashchange", routeHash);
+})();
+</script>
+</body>
+</html>
