@@ -36,6 +36,7 @@ type Document struct {
 	Verdict  Field[string]
 	Summary  Field[string]
 	Ref      Field[string]
+	Profile  Field[string]
 	Comments []Comment
 	// CommentsPresent reports that the key exists, CommentsArray that it holds
 	// an array, and CommentsWellTyped that every element is an object.
@@ -121,6 +122,7 @@ func Parse(data []byte) (*Document, error) {
 		Verdict: stringField(obj, "verdict"),
 		Summary: stringField(obj, "summary"),
 		Ref:     stringField(obj, "ref"),
+		Profile: stringField(obj, "profile"),
 	}
 	raw, present := obj["comments"]
 	doc.CommentsPresent = present
