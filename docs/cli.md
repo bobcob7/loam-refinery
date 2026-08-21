@@ -145,7 +145,7 @@ loam-refinery describe        [--lens=NAME[,NAME...]]
 loam-refinery submit-review   [path] [--strict]
 loam-refinery reviews         [--repo=NAME] [--ref=SHA] [--limit=N] [--content]
                               [--failed] [--list]
-loam-refinery collect-reviews --ref=SHA [--repo=NAME] [--format json|markdown]
+loam-refinery collect-reviews --ref=SHA [--repo=NAME] [--format json|markdown|html]
 loam-refinery schema          [--annotated]
 loam-refinery version
 ```
@@ -776,21 +776,21 @@ run; the config file that exists ([config.md](config.md)) is optional and may
 only set the store flags.
 
 ```
---profile=NAME            append one reviewer profile                prime
---list                    print the profile index, no bodies         prime
---strict                  treat advisories as errors (exit 1)        submit-review
---lens=NAME[,NAME...]     open one entry in full                     describe
---list                    print the lens index, no bodies            describe
---repo=NAME               which repository's reviews                 reviews
---ref=SHA                 which commit; the full 40-char SHA         reviews
---limit=N                 most recent N; 0 for all                   reviews
---content                 include each stored file, not just rows    reviews
---failed                  list runs that stored no review            reviews
---list                    print the repositories in the store        reviews
---ref=SHA                 which commit; required, no default         collect-reviews
---repo=NAME               which repository's reviews                 collect-reviews
---format json|markdown    output format; markdown is unique here     collect-reviews
---annotated               emit the schema with descriptions intact   schema
+--profile=NAME               append one reviewer profile                       prime
+--list                       print the profile index, no bodies                prime
+--strict                     treat advisories as errors (exit 1)               submit-review
+--lens=NAME[,NAME...]        open one entry in full                            describe
+--list                       print the lens index, no bodies                   describe
+--repo=NAME                  which repository's reviews                        reviews
+--ref=SHA                    which commit; the full 40-char SHA                reviews
+--limit=N                    most recent N; 0 for all                          reviews
+--content                    include each stored file, not just rows           reviews
+--failed                     list runs that stored no review                   reviews
+--list                       print the repositories in the store               reviews
+--ref=SHA                    which commit; required, no default                collect-reviews
+--repo=NAME                  which repository's reviews                        collect-reviews
+--format json|markdown|html  output format; markdown and html are unique here  collect-reviews
+--annotated                  emit the schema with descriptions intact          schema
 ```
 
 Structural checks cannot be disabled or demoted, and neither can verification
@@ -930,7 +930,7 @@ already uses:**
 
 | Principle | Standing |
 | --- | --- |
-| No second renderer, no `--format` choice left to make | **Amended, narrowly.** `loam-refinery collect-reviews --format markdown` is the one exception, on the one command whose primary audience is a human reader rather than an agent in a loop — see [docs/features/combined-reviews.md §8.3](features/combined-reviews.md#83-the-markdown-projection). It is not a second *renderer* in the sense this section warns against: it is a pure projection of the identical result value the JSON form serializes, built once, by one code path, with the same escaping and fencing discipline specified there to close the forgery half of this section's own argument. `submit-review`, `reviews`, `describe`, and `schema` are unchanged in the sense this row is actually about — one command, one projection, one source of truth, not a second computation of any result. A later, unrelated decision removes their `--format` flag entirely rather than leaving it accepting one value: a flag chooses between formats, and none of the four has more than one to choose between, `collect-reviews` now being the sole command that does. |
+| No second renderer, no `--format` choice left to make | **Amended, narrowly.** `loam-refinery collect-reviews --format markdown` and `--format html` are two narrow exceptions, on the one command whose primary audience is a human reader rather than an agent in a loop — see [docs/features/combined-reviews.md §8.3](features/combined-reviews.md#83-the-markdown-projection) and [docs/features/html-report.md §2](features/html-report.md#2-the-amendment-this-falls-under). Neither is a second *renderer* in the sense this section warns against: each is a pure projection of the identical result value the JSON form serializes, built once, by one code path, with an escaping discipline suited to each target grammar — CommonMark fencing and position-aware backslash-escaping for markdown, `html/template`'s contextual autoescaping for HTML's markup, and a script that never receives caller-authored content in the first place for HTML's one script context — each closing the forgery half of this section's own argument in its own grammar's terms. `submit-review`, `reviews`, `describe`, and `schema` are unchanged in the sense this row is actually about — one command, one projection, one source of truth, not a second computation of any result. A later, unrelated decision removes their `--format` flag entirely rather than leaving it accepting one value: a flag chooses between formats, and none of the four has more than one to choose between, `collect-reviews` now being the sole command that does. |
 
 ### 5.2 The result object
 
@@ -1082,6 +1082,7 @@ nothing measures is a limit that erodes.
 | `reviews --content` | none | Returns caller-authored documents |
 | `collect-reviews --format json` | 80 + 40 per submission + 60 per comment + 60 per diverged anchor | Rare; only when an orchestrator has run more than one reviewer against one ref |
 | `collect-reviews --format markdown` | unbudgeted | Rare; human reading, or embedding somewhere a human reads it |
+| `collect-reviews --format html` | **exempt — not agent-facing** | Rare; opened in a browser by a person |
 
 These are higher than the text format they replaced. Measured over a
 realistic write-submit-review-fix cycle it is about **2.1x**; a clean `submit-review`
@@ -1198,6 +1199,41 @@ is the identical shape that ceiling was already measured against.
 `--format markdown` stays unbudgeted outright: it is read by a human once, or
 piped into a comment body a human reads once, never paid on a loop the way
 every other row here is.
+
+`--format html` is **exempt**, not merely unbudgeted, and the distinction is
+deliberate: every other row in this table is a ceiling, so silence next to
+one would read as an oversight rather than a decision. Naming the exemption
+says plainly what would otherwise only be inferable from which flag happens
+to be documented where — the three formats now serve three audiences, and
+none of them overlap: **JSON** is for a machine — an orchestrator, another
+tool in a pipeline, anything that parses the output and acts on it — and is
+the only form anything automated should ever consume. **Markdown** is for an
+agent in a loop, or a human reading pass-through content a loop produced — a
+PR comment, a chat message, read once by a person but generated by, and
+often consumed adjacent to, an automated process. **HTML** is for a person,
+directly, with a browser open, and never for anything else: nothing should
+generate it inside a loop that expects to read the result back, nothing
+should feed it to a model as context in place of the JSON form it was built
+from, and no future feature should add a flag that parses one back into
+structured data — see
+[docs/features/html-report.md §11](features/html-report.md#11-budgets-and-audience).
+
+Being exempt from a ceiling does not mean the cost is unknown. Measured
+against a prototype build of the HTML renderer, over the 7-submission,
+36-comment panel the feature's own fixtures use, one full report totaled
+145,168 bytes (32,717 gzipped) — 10,456 bytes of CSS and 3,891 of script,
+both fixed costs paid once regardless of how many findings the page holds,
+against 145,168 − 10,456 − 3,891 = 130,821 bytes that do scale with the
+review, of which visible review text — `body`, `summary`, `pros`, `cons`,
+suggestion text — accounts for roughly two-thirds of the page total, 67%.
+The same panel's markdown projection measures 70,449 bytes; HTML costing
+roughly twice that for the same content is the honest price of per-finding
+structure (`<details>`, badges, suggestion cards), not a cost anyone should
+try to recover by trimming markup, since markup is not where the weight is.
+These are prototype measurements, not a pin on the shipped renderer — see
+[docs/features/html-report.md §11.1](features/html-report.md#111-measured-size)
+for the full table and what it was measured against; re-measure before
+restating them as more than that.
 
 The largest saving is not in any row of that table — it is in **not repeating
 it**. A validator that reports one problem at a time turns a document with four
