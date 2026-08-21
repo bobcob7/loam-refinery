@@ -128,7 +128,7 @@ type Submission struct {
 	Verdict string
 	Summary string
 	// Assessment is the reviewer's quality grade (review-document.md
-	// §11.5), nil when the document never set the field. Unlike Verdict,
+	// §3), nil when the document never set the field. Unlike Verdict,
 	// which submissionOf reads unconditionally because every review has
 	// to carry one, Assessment is genuinely optional — omitting it is a
 	// real state, not the tool's absence of an opinion, and collapsing a

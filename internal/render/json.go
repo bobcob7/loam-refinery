@@ -281,12 +281,20 @@ func (j *JSON) Profiles(w io.Writer, profiles []profile.Profile) error {
 
 // Write encodes payload to w with this package's JSON conventions:
 // two-space indent, and HTML escaping off so a path or a digest is never
-// rewritten. Every renderer method in this package calls it, and it is
-// exported so a caller outside this package that must emit JSON in the
-// same shape - internal/cli's reviews command, whose payload types are not
-// review.Result, entry.Entry, or any other type this package already
-// knows - calls it instead of keeping a second copy of the same encoder
-// configuration.
+// rewritten. Result, Entries, and Profiles call it for their whole-object
+// payloads. Index and Summary do not: their array-of-groups shape needs
+// each group's "names" rendered as one inline array rather than
+// json.Encoder's one-element-per-line indent, so they hand-build that text
+// themselves and call marshalCompact per value instead - a second encoder
+// configuration, but a deliberate one, since a compact per-value encoding
+// and json.Encoder's own top-down indentation cannot produce the same
+// output. Both configurations keep HTML escaping off for the same reason:
+// describe's own summary carries a literal "<40 hex>" placeholder that must
+// survive verbatim. Write is exported so a caller outside this package that
+// must emit JSON in the same whole-object shape - internal/cli's reviews
+// command, whose payload types are not review.Result, entry.Entry, or any
+// other type this package already knows - calls it instead of keeping a
+// second copy of that configuration.
 func Write(w io.Writer, payload any) error {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
