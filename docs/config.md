@@ -878,7 +878,7 @@ renegotiate.
 ## 5. Storing a review
 
 ```
-loam-refinery submit-review [path]
+loam-refinery submit-review [path] [--strict]
 ```
 
 `path` names the review document to read — from stdin when omitted or `-`,
@@ -887,11 +887,14 @@ repository a run stores against is a separate question, always inferred
 from the working directory ([§4.2](#42-repository-identity)) rather than
 named on the command line at all.
 
-There is no flag here, and no `--format` either ([cli.md §5.1](cli.md#51-one-format)
-is why `submit-review` has none). Every review that validates clean is
-stored, and every input that reaches validation and fails it is stored too.
-An exit-3 run reaches neither — the precondition it fails on runs before
-validation starts — and is covered on its own terms below.
+`--strict` survives here, but it changes only what a run reports, never
+whether it stores: there is no flag that turns storing on or off for a
+single run, and no `--format` either ([cli.md §5.1](cli.md#51-one-format)
+is why `submit-review` carries no second one). Every review that validates
+clean is stored, and every input that reaches validation and fails it is
+stored too. An exit-3 run reaches neither — the precondition it fails on is
+read off verification's own result and stops the rest of validation there
+— and is covered on its own terms below.
 
 **Exit 0 writes a review; exit 1 writes a rejected input; exit 3 writes
 neither.** Exit 0 and exit 1 go in separate trees ([§4.4](#44-the-stored-files))
@@ -1016,16 +1019,30 @@ arranged **before** the run rather than during it:
 2. **Ship a config file** containing `{"version":"1","store":{"enabled":false}}`.
    Storing is off, and nothing is created or recorded.
 
-**Amended, by addition rather than contradiction:** the second option costs an
-operator something new once
-[`loam-refinery collect-reviews`](features/combined-reviews.md) exists. A
-machine with `store.enabled: false` gets no output from `collect-reviews`
-whatsoever — not "no reviews yet," but nothing, ever, for that machine — and
-`collect-reviews` reports `store.enabled` on its own envelope precisely so a
-caller in that position can tell "off" from "nobody has reviewed this yet."
-An operator who needs both — a read-only image *and* `collect-reviews`
-reading something back — has to use the first option instead,
-`LOAM_REFINERY_HOME` pointed at somewhere writable.
+**Amended, by addition rather than contradiction:** the second option is worth
+a note now that
+[`loam-refinery collect-reviews`](features/combined-reviews.md) exists,
+though not the note an earlier draft of this section made. `store.enabled`
+gates *writing*, exactly as it always has for
+[`loam-refinery reviews`](#6-reading-the-store) — it has never gated
+reading, because [`internal/store/read.go`](../internal/store/read.go)
+answers every query form straight from `store.db` with no reference to the
+flag. A machine that stored reviews before `store.enabled` was set to
+`false`, and is then pointed at with `collect-reviews`, gets every one of
+them back — full output, exit 0 — because the store the flag turned off
+*writing* to is the same store the read is answering from. What the flag
+buys an operator is narrower: nothing submitted while it is off gets added,
+so a store that was empty when the flag was set stays empty, and
+`collect-reviews` against it looks like any other repository or ref the
+store has nothing filed under
+([docs/features/combined-reviews.md §9](features/combined-reviews.md#9-empty-and-failure-cases)).
+`collect-reviews` reports `store.enabled` on its own envelope precisely so
+a caller can tell "off, holding whatever was written while it was on" apart
+from "on, and current." An operator who wants a `collect-reviews` read to
+see nothing at all — not merely nothing new — needs a store with nothing in
+it, which means the first option instead: `LOAM_REFINERY_HOME` pointed at
+somewhere that has never been used, not this flag toggled on an existing
+one.
 
 The second one has a bootstrapping edge worth stating plainly, because it is the
 sharpest consequence of removing the flag. The key that disables storing lives

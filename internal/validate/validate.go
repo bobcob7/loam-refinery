@@ -1,6 +1,9 @@
 // Package validate runs every check tier over one document and assembles the
-// result. No tier gates another: a schema failure does not stop verification,
-// and a verification failure does not stop the advisories.
+// result. No tier gates another — a schema failure does not stop
+// verification, and a verification failure does not stop the advisories —
+// except the one precondition that is not really a tier: a diverged working
+// tree on a ref-is-HEAD anchor, read off verification's own result, stops
+// the run there and reports only itself, at exit 3 (docs/cli.md §2.3.1).
 package validate
 
 import (

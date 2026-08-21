@@ -104,11 +104,11 @@ answer when you are not certain.`,
 			Title:   "Anchored file diverged from ref",
 			Body: `Fires when ref is the checked-out commit, an anchored file exists there, a
 working-tree copy exists too, and git says the two differ — the ordinary
-state of a checkout somebody is actively editing. It runs as a precondition,
-immediately after parse and before anything else: before structural checks,
-before advisories, before any other anchor. One diagnostic covers the whole
-document, however many anchors diverged, and the run stops there at exit 3,
-not exit 1.
+state of a checkout somebody is actively editing. It is read off
+verification's own pass as a precondition: once found, that pass's other
+results are discarded and the run stops before structural checks and
+advisories. One diagnostic covers the whole document, however many anchors
+diverged — exit 3, not exit 1.
 
 The reviewed state is not a commit, and revising the document cannot fix
 that. Commit what was reviewed — even to a throwaway branch — so ref and the

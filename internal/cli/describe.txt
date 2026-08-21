@@ -4,7 +4,7 @@ root
   version   "1"
   verdict   approve | request_changes | comment
   summary   1-3 sentences, 30-1500 chars
-  ref       40-char lowercase commit SHA; optional, read by every anchor
+  ref       40-char lowercase commit SHA; required, read by every anchor
   comments  array; empty only when verdict is approve
 
 comment

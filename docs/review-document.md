@@ -552,10 +552,11 @@ still the one exception at the level of the **check** — it can only
 withhold a verification, never wrongly deny one, so firing it is never
 evidence the anchor is *wrong* ([cli.md §2.3.1](cli.md#231-verifying-anchors)
 has the full argument) — but that no longer makes it non-fatal at the level
-of the **document**. `loam-refinery submit-review` checks whether the
-reviewed state is a commit at all before running anything else, and a
+of the **document**. `loam-refinery submit-review` reads whether the
+reviewed state is a commit at all off this tier's own result, and a
 diverged anchor at `ref == HEAD` fails that precondition outright, at its
-own exit code, before this tier even runs
+own exit code, discarding whatever else this tier found and running before
+the structural and advisory tiers get a turn
 ([docs/features/combined-reviews.md
 §3.4](features/combined-reviews.md#34-verification-is-required-to-submit)).
 A working tree moving on does not change whether an anchor *resolves*: a

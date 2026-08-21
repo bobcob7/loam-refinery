@@ -477,13 +477,14 @@ proportional to the number of entries rather than their content.
 ### 2.3 `submit-review`
 
 Reads a review document from `path`, or from stdin when `path` is `-` or omitted.
-Immediately after parsing, and before anything else, it checks one
-precondition — is the reviewed state actually a commit — then runs the
-structural checks, then verification, then the advisories; emits diagnostics
-and sets the exit code per [§4](#4-exit-codes). Verification itself is no
-longer conditional on a source being supplied: it always runs, and a document
-that carries any anchors needs a working source of truth to pass — see
-[§2.3.1](#231-verifying-anchors).
+Immediately after parsing it runs verification, which is no longer
+conditional on a source being supplied: it always runs, and a document that
+carries any anchors needs a working source of truth to pass. Verification's
+own result answers one question before anything else does — is the
+reviewed state actually a commit — and when it says no, the run stops
+there and reports only that; otherwise the structural checks run, then the
+advisories, emitting diagnostics and setting the exit code per
+[§4](#4-exit-codes) — see [§2.3.1](#231-verifying-anchors).
 
 **Every check runs, with one exception.** A failure in one tier does not gate
 the next, and a failure on one comment does not gate the others — see
@@ -541,19 +542,23 @@ skipped**, with the reason in `verification`. It is never silently passed: a
 run that verified nothing must not look like a run that verified everything, or
 the tier is worse than absent — it would license confidence it never earned.
 
-**The precondition, checked first.** Before any of that, `submit-review`
+**The precondition, read off verification's own result.** `submit-review`
 asks one question none of the rest of verification does: is the reviewed
-state a commit at all. When `ref` names the repository's current `HEAD` and
-at least one anchored file's working-tree copy has since diverged from the
-blob at `ref` — the ordinary state of a checkout somebody is actively
-editing — the run stops immediately: before the structural checks, before
-the advisories, before any other anchor is even looked at. One diagnostic
-reports it, in `diagnostics`, naming `anchor-worktree-diverged` once for the
-document rather than once per diverged anchor — exit 3, not exit 1; [§4](#4-exit-codes)
-argues why that is its own code. A reviewer that has to read twelve anchor
-failures to learn its whole premise was wrong is being told the same thing
-twelve times, badly, and a document whose reviewed state was never committed
-is not one this tool spends further work reading.
+state a commit at all. Verification finds the answer the same way it finds
+everything else, by checking every anchor; when `ref` names the
+repository's current `HEAD` and that pass turns up at least one anchored
+file whose working-tree copy has since diverged from the blob at `ref` —
+the ordinary state of a checkout somebody is actively editing — the run
+stops there: before the structural checks, before the advisories, and
+before the rest of verification's own findings are added to the result,
+discarded rather than reported alongside a premise that was never sound.
+One diagnostic reports it, in `diagnostics`, naming `anchor-worktree-diverged`
+once for the document rather than once per diverged anchor — exit 3, not
+exit 1; [§4](#4-exit-codes) argues why that is its own code. A reviewer
+that has to read twelve anchor failures to learn its whole premise was
+wrong is being told the same thing twelve times, badly, and a document
+whose reviewed state was never committed is not one worth carrying into the
+structural and advisory tiers once that much is known.
 
 ```json
 {
@@ -845,7 +850,7 @@ of them touch 3, which is why it was free to take.
 
 Advisories alone never produce exit 1. Verification failures always do —
 there is no flag left to demote one. A working tree that has diverged from
-`ref` produces exit 3 instead, before verification even runs — see
+`ref` produces exit 3 instead, once verification itself finds it — see
 [§2.3.1](#231-verifying-anchors).
 
 A failed store produces exit 101 — never 1, and no longer 2. A full disk is not
@@ -888,7 +893,7 @@ already uses:**
 
 | Principle | Standing |
 | --- | --- |
-| No second renderer, no `--format` choice left to make | **Amended, narrowly.** `loam-refinery collect-reviews --format markdown` is the one exception, on the one command whose primary audience is a human reader rather than an agent in a loop — see [docs/features/combined-reviews.md §8.3](features/combined-reviews.md#83-the-markdown-projection). It is not a second *renderer* in the sense this section warns against: it is a pure projection of the identical result value the JSON form serializes, built once, by one code path, with the same escaping and fencing discipline specified there to close the forgery half of this section's own argument. `submit-review`, `reviews`, `describe`, and `schema` are entirely unchanged — one command, one projection, one source of truth, not a second computation of any result. |
+| No second renderer, no `--format` choice left to make | **Amended, narrowly.** `loam-refinery collect-reviews --format markdown` is the one exception, on the one command whose primary audience is a human reader rather than an agent in a loop — see [docs/features/combined-reviews.md §8.3](features/combined-reviews.md#83-the-markdown-projection). It is not a second *renderer* in the sense this section warns against: it is a pure projection of the identical result value the JSON form serializes, built once, by one code path, with the same escaping and fencing discipline specified there to close the forgery half of this section's own argument. `submit-review`, `reviews`, `describe`, and `schema` are unchanged in the sense this row is actually about — one command, one projection, one source of truth, not a second computation of any result. A later, unrelated decision removes their `--format` flag entirely rather than leaving it accepting one value: a flag chooses between formats, and none of the four has more than one to choose between, `collect-reviews` now being the sole command that does. |
 
 ### 5.2 The result object
 
@@ -1068,10 +1073,11 @@ but a run that verified nothing would then look like a run that verified
 everything, which [§2.3.1](#231-verifying-anchors) rules out on purpose. A
 dirty checkout no longer costs content that scales with the number of
 diverged anchors: [§2.3.1](#231-verifying-anchors)'s precondition reports
-the whole thing once, in one diagnostic, the moment the reviewed state
-turns out not to be a commit — before structural checks, before advisories,
-before any other anchor is even examined. That is the uncommitted-work row
-above, measured at 153 — flat whether one anchor diverged or ten, which is
+the whole thing once, in one diagnostic, the moment verification's own pass
+finds the reviewed state is not a commit — discarding the rest of what that
+pass found, and running before structural checks and before advisories. That
+is the uncommitted-work row above, measured at 153 — flat whether one
+anchor diverged or ten, which is
 the whole point: the precondition reports once for the document rather than
 once per anchor, so the cost cannot grow with how many anchors turned out to
 be wrong about the same thing. It does not carry forward the old per-anchor
@@ -1212,7 +1218,7 @@ internal/entry/schema.go          field:* provider, reads the annotated schema
 internal/entry/checks.go          check:* provider, reads the check registries
 internal/entry/topics/            topic:* entries, //go:embed of hand-written md
 internal/collect/                 collect-reviews's merge semantics, qualified ids
-internal/render/                  the json renderer
+internal/render/                  the json and markdown renderers
 internal/config/                  locations, the config file, precedence
 internal/profile/                 the profile directory, frontmatter, bodies
 internal/store/                   stored files, the run database, queries
@@ -1323,12 +1329,14 @@ Deliberately deferred, recorded so the design leaves room for them.
   with prose written by hand rather than generated from a schema — a knowledge
   base is exactly where 350-token entries quietly become 900-token ones, so the
   budget tests apply to `kb:*` from its first entry. And `describe --list`'s own
-  ceiling ([§6.1](#61-budgets)) has little room left to grow into: one new root
-  field, `profile` ([review-document.md §3](review-document.md#3-root-object)),
-  cost it 5 measured tokens, leaving about 15 of the 380-token ceiling — three
-  more names, roughly, before it needs raising. A `kb:*` rollout that registers
-  more than a handful of entries at once should expect to renegotiate that
-  ceiling rather than assume the existing one still fits.
+  ceiling ([§6.1](#61-budgets)) has little room left to grow into: measured
+  after the `profile` root field
+  ([review-document.md §3](review-document.md#3-root-object)) landed alongside
+  everything else this branch added to the index, `describe --list` is 372
+  tokens against its 380-token ceiling — 8 left, room for one more name before
+  it needs raising, not three. A `kb:*` rollout that registers more than a
+  single entry at once should expect to renegotiate that ceiling rather than
+  assume the existing one still fits.
 
   A project-supplied knowledge base — conventions read from the repository rather
   than compiled into the binary — is the obvious follow-on and would be another
