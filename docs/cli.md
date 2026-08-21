@@ -1240,37 +1240,40 @@ reason stated in the same change that raises it; done reflexively on
 contact with a red test, it is the one response this section exists to rule
 out, since a limit raised the first time it bites is a limit that never bit.
 
-**`describe --list` has little room left, and two things already planned
-spend it.** [§8](#8-future-considerations) anticipates a `kb:*` namespace
-registering entries through the same provider mechanism this registry
-already uses, and `internal/entry/schema.go` generates one `field:*` entry
-per schema property, so any future field the review document gains lands in
-this index too, unasked. The index is already close to its minimal shape —
-one namespace label plus a bare list of names, no descriptions — so there is
-little slack to recover by making it terser without changing what it is.
-The honest default, then, is the same one clean `submit-review` gets when a
-result field is genuinely new: raise the ceiling deliberately, in the same
-change that adds the field or namespace pushing past it, stating how many
-tokens the addition cost and why. Reaching for a terser shape instead is
-worth doing only once raising the ceiling has happened more than once for
-the same reason — a pattern, not a single addition — since restructuring the
-index is a larger change than any one field justifies on its own.
+**`describe`'s index used to spend structure it did not need to, and
+refinery-dbk.4 bought that back instead of raising the ceiling.** Every
+group in the index — field, check, topic — used to render through this
+package's shared indenting encoder, the same one every other JSON command
+uses, which puts one name per line. The index holds nothing but short,
+already-namespaced identifiers, with no descriptions to justify that much
+whitespace, so `Index` and `Summary` (`internal/render/json.go`) now build
+the `"index"` array by hand: each group's `"names"` renders as a single
+inline JSON array instead of one element per line. Nothing else in either
+command's output changed shape — no field, check, or topic lost a lens, and
+`describe --lens=NAME`, `schema`, and every other command still go through
+the shared encoder untouched. Measured after the change: plain `describe`
+is 728 of its 850-token ceiling and `describe --list` is 264 of its 380 —
+122 and 116 tokens of headroom, in place of the four characters and two
+tokens either used to have. [§8](#8-future-considerations)'s `assessment`
+field and `kb:*` namespace both land inside this room now instead of
+forcing an immediate ceiling raise.
 
 **`topic:collect-reviews` measured its own row before it was added, per the
-policy above, and fit.** `describe --list` stood at 372 of 380 with no entry
-for the one command with a seven-field envelope, a qualified-id grammar, a
-supersession model, and a second output format — a genuine gap against
-design principles 2 and 4, not a falsification of either, since nothing was
-there to render or route to. Adding the row measured 378 of 380: two tokens
-of headroom left, not zero, and no ceiling was raised to make it fit. The
-entry itself landed at 321 of the 350 per-entry ceiling, trimmed once on the
-same pass topic:store, topic:tiers, and topic:verification already made,
-to leave room under both budgets rather than either — this is exactly the
-"second thing tried" the ceiling-raising sentence above defers to, done
-before it was needed rather than after. The two tokens of headroom left on
-`describe --list` are smaller than either of the two additions
-[§8](#8-future-considerations) already anticipates, so the next one of
-those is the one likely to actually need the ceiling raised, not this one.
+policy above, and fit — at the time.** `describe --list` stood at 372 of 380
+with no entry for the one command with a seven-field envelope, a
+qualified-id grammar, a supersession model, and a second output format — a
+genuine gap against design principles 2 and 4, not a falsification of
+either, since nothing was there to render or route to. Adding the row
+measured 378 of 380: two tokens of headroom left, not zero, and no ceiling
+was raised to make it fit. The entry itself landed at 321 of the 350
+per-entry ceiling, trimmed once on the same pass topic:store, topic:tiers,
+and topic:verification already made, to leave room under both budgets
+rather than either. Both of those numbers describe the index's old
+one-name-per-line rendering; the reformat in the paragraph above changed the
+shape they were measured against, not the content, so they stay here as the
+historical record of what that addition cost rather than as a current
+headroom figure — the paragraph above states what `describe --list` costs
+now.
 
 ### 6.2 Why progressive disclosure
 
@@ -1493,15 +1496,15 @@ Deliberately deferred, recorded so the design leaves room for them.
   [§2.2.1](#221-lens-names) are for. Per-entry budgets must survive contact
   with prose written by hand rather than generated from a schema — a knowledge
   base is exactly where 350-token entries quietly become 900-token ones, so the
-  budget tests apply to `kb:*` from its first entry. And `describe --list`'s own
-  ceiling ([§6.1](#61-budgets)) has little room left to grow into: measured
-  after the `profile` root field
-  ([review-document.md §3](review-document.md#3-root-object)) landed alongside
-  everything else this branch added to the index, `describe --list` is 372
-  tokens against its 380-token ceiling — 8 left, room for one more name before
-  it needs raising, not three. A `kb:*` rollout that registers more than a
-  single entry at once should expect to renegotiate that ceiling rather than
-  assume the existing one still fits.
+  budget tests apply to `kb:*` from its first entry. `describe --list`'s own
+  ceiling ([§6.1](#61-budgets)) once had little room to grow into — 372, then
+  378, of 380 — but refinery-dbk.4's index reformat there recovered real
+  headroom without raising the ceiling, so `describe --list` now measures 264
+  of 380: 116 tokens, not 2. A `kb:*` rollout registering more than a handful
+  of entries at once should still measure itself against the ceiling at the
+  time rather than assume this headroom is permanent — the field and check
+  namespaces grow too, on their own schedule — but it is no longer the tight
+  fit this paragraph used to describe.
 
   A project-supplied knowledge base — conventions read from the repository rather
   than compiled into the binary — is the obvious follow-on and would be another
