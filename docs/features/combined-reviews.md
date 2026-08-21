@@ -95,15 +95,22 @@ which matters once more below ([§4.3](#43-the-head-check)): passing
 `--repo=NAME` explicitly does not manufacture a working tree to check
 divergence against.
 
-`--format` defaults to `json`, unchanged from every other command's
-posture. `markdown` is the one new accepted value, and it exists on this
-command alone — [§8.3](#83-the-markdown-projection) specifies exactly what
-it is and is not, and [§11.10](#1110-climd-51-the-markdown-exception)
-amends [cli.md §5.1](../cli.md#51-one-format) narrowly to allow it.
-`--format=text` remains an error on `collect-reviews` too, the same as
-everywhere else — `markdown` is a distinct, named value, not a synonym for
-the one `cli.md §5.1` already rejects, so accepting one does not quietly
-change the meaning of the other.
+`--format` defaults to `json`. `markdown` is the one new accepted value,
+and it exists on this command alone — [§8.3](#83-the-markdown-projection)
+specifies exactly what it is and is not, and
+[§11.10](#1110-climd-51-the-markdown-exception) amends
+[cli.md §5.1](../cli.md#51-one-format) narrowly to allow it.
+`collect-reviews` is also the only command in the whole ladder that still
+carries a `--format` flag at all: a later, unrelated decision drops it
+from `submit-review`, `describe`, and `reviews` entirely, on the reasoning
+that a flag exists to choose between formats and none of those three has
+more than one to choose between — see
+[§3.1](#31-what-changes-the-name) and
+[../cli.md §5.1](../cli.md#51-one-format). `--format=text` is still an
+error here, the one place the flag survives to reject it — `markdown` is a
+distinct, named value, not a synonym for the one `cli.md §5.1` already
+rejects, so accepting one does not quietly change the meaning of the
+other.
 
 No other flag. `--content`, `--limit`, `--failed`, `--list` are all
 `reviews`-shaped questions about the store as a log; `collect-reviews`
@@ -1846,7 +1853,10 @@ than in that inventory:
   the surrounding prose in their place.
 - [../cli.md §3](../cli.md#3-flags)'s flag table: the `--warn-only`,
   `--require-verification`, and `--disable` rows are deleted, not renamed.
-  The shared `--format json` row's `validate` becomes `submit-review`.
+  The shared `--format json` row is deleted too, on an unrelated later
+  decision — `--format` exists where there is a format to choose, and
+  `submit-review` does not have one — leaving `collect-reviews` as the
+  only command in this table with a `--format` row at all.
   `--strict`'s row is undecided — [§13](#13-open-questions).
 - [../cli.md §4](../cli.md#4-exit-codes)'s exit-1 row, "unverified anchors
   under `--require-verification`," needs rewording to describe the new
@@ -1902,7 +1912,7 @@ already uses:**
 
 | Principle | Standing |
 | --- | --- |
-| No second renderer, no `--format` choice left to make | **Amended, narrowly.** `loam-refinery collect-reviews --format markdown` is the one exception, on the one command whose primary audience is a human reader rather than an agent in a loop — see [docs/features/combined-reviews.md §8.3](../features/combined-reviews.md#83-the-markdown-projection). It is not a second *renderer* in the sense this section warns against: it is a pure projection of the identical result value the JSON form serializes, built once, by one code path, with the same escaping and fencing discipline specified there to close the forgery half of this section's own argument. `submit-review`, `reviews`, `describe`, and `schema` are entirely unchanged — one command, one projection, one source of truth, not a second computation of any result. |
+| No second renderer, no `--format` choice left to make | **Amended, narrowly.** `loam-refinery collect-reviews --format markdown` is the one exception, on the one command whose primary audience is a human reader rather than an agent in a loop — see [docs/features/combined-reviews.md §8.3](../features/combined-reviews.md#83-the-markdown-projection). It is not a second *renderer* in the sense this section warns against: it is a pure projection of the identical result value the JSON form serializes, built once, by one code path, with the same escaping and fencing discipline specified there to close the forgery half of this section's own argument. `submit-review`, `reviews`, `describe`, and `schema` are unchanged in the sense this row is actually about — one command, one projection, one source of truth, not a second computation of any result. A later, unrelated decision removes their `--format` flag entirely rather than leaving it accepting one value: a flag chooses between formats, and none of the four has more than one to choose between, `collect-reviews` now being the sole command that does. |
 
 ### 11.11 On "once" — checked, no amendment needed
 
