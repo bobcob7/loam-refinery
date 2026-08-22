@@ -835,10 +835,18 @@ lexers for backreference and lookaround support Go's own `regexp` package
 doesn't provide. This project's `go.mod` lists seven direct requirements
 today, a number [cli.md §7.3](../cli.md#73-dependencies) treats as
 deliberate — "keep the tree shallow — this binary is invoked in tight
-loops." Adding chroma adds two lines to that list on its own: chroma
-itself, and `regexp2` beneath it.
+loops." Adding chroma adds exactly **one** line to that list: chroma
+itself. `regexp2` does not join it — `go.mod`'s indirect block still marks
+`github.com/dlclark/regexp2/v2 // indirect`, because nothing in this
+module imports it directly; chroma depending on it internally does not
+promote it, and `go mod tidy` has no reason to move a package no package
+in this module names in an `import` statement. An earlier draft of this
+section assumed the opposite — that a direct dependency's own transitive
+requirements ride along with it into the direct block — which is not how
+Go's module tooling works: promotion follows the import graph this
+module's own code forms, not the one chroma forms internally.
 
-A third line joins them from an unrelated direction, and it is not
+A second line joins it from an unrelated direction, and it is not
 optional to mention just because it isn't chroma's fault.
 [§2.2.1](#221-how-html-output-is-tested)'s structural assertions parse
 this renderer's output with `golang.org/x/net/html` rather than a regular
@@ -864,10 +872,24 @@ time code generator, tracked in `internal/tools/tools.go` behind the
 imported by code that ships in the binary, and its own enormous transitive
 tree (a SQL parser, a Postgres driver, a MySQL driver, a CEL evaluator)
 never executes when a user runs `loam-refinery`. Chroma is not that kind of
-dependency. `internal/render`'s HTML path imports it directly, and it runs
-every time a caller asks for `--format html` and a comment carries a `code`
-excerpt — a genuine runtime dependency, on the one code path that needs it,
-not a build-time tool. `x/net/html` sits closer to `sqlc` than to chroma on
+dependency, and it is a narrower claim than "the HTML path imports it" to
+say why. `internal/render/html_highlight.go` imports
+`github.com/alecthomas/chroma/v2/lexers` at file scope, and `internal/cli`
+imports `internal/render` for the JSON and Markdown paths too, not only
+HTML's ([collect_reviews.go](../../internal/cli/collect_reviews.go),
+[interfaces.go](../../internal/cli/interfaces.go),
+[reviews.go](../../internal/cli/reviews.go)). That import graph means
+chroma's package initializer — `lexers.GlobalLexerRegistry`, which globs
+and parses every embedded `.xml` lexer definition into memory — runs once
+per process, on every `loam-refinery` invocation, `submit-review` included,
+regardless of `--format`; it is not gated behind the flag the way the
+tokenizing work itself is. Calling chroma's `Tokenise` on a specific
+`code` excerpt *is* confined to the one code path that needs it — it only
+happens when a comment carries a `code` field and `--format html` was
+asked for — but the package-load cost, and the binary-size cost of
+shipping chroma at all, are paid by every invocation regardless of format.
+[cli.md §7.3](../cli.md#73-dependencies) records the binary-size figure
+this costs. `x/net/html` sits closer to `sqlc` than to chroma on
 that axis — [§2.2.1](#221-how-html-output-is-tested)'s parser runs only
 inside `go test`, never inside a shipped `loam-refinery` binary — but it is
 not tracked behind the `tools` build tag the way `sqlc` is, because it is
@@ -876,12 +898,12 @@ import, and Go's module tooling makes no distinction between a test-only
 direct import and a runtime one when deciding what belongs in the direct
 block. The line in `go.mod` reads the same either way, which is exactly
 why it has to be counted the same way. The honest accounting is: this
-feature costs three new lines in `go.mod`'s direct-requirement list, not
-two — chroma and `regexp2` for the highlighting path, `x/net` for the test
-path that checks it — one of which (`regexp2`) exists purely to support
-another (chroma). Chroma and `regexp2`'s *runtime* cost is paid only by
-callers of one flag on one command — `submit-review`, the call every loop
-pays, imports neither. `x/net`'s cost is not that kind of cost: it never
+feature costs two new lines in `go.mod`'s direct-requirement list —
+chroma for the highlighting path, `x/net` for the test path that checks
+it. `regexp2` is not a third: it ships in the binary as chroma's own
+transitive dependency, but no line for it moves in `go.mod`, because
+nothing in this module imports it by name — see above. `x/net`'s cost is
+not the same kind of cost as chroma's, in the other direction: it never
 executes in the shipped binary, but the `go.mod` line itself is paid by
 every build of this module the moment the test that imports it exists,
 flag or no flag, because a direct requirement is a property of the
@@ -1384,38 +1406,49 @@ over.
 ### 11.1 Measured size
 
 Exempt from a token budget does not mean nobody should know what this
-costs, and guessing invites optimizing the wrong part of it later. Measured
-against the built prototype, rendering the same 7-submission, 36-comment
-panel [§2.2](#22-the-tests-that-make-the-claim-true-not-merely-stated)'s
-tests already use as a fixture:
+costs, and guessing invites optimizing the wrong part of it later. This
+section has now carried three generations of measured-size figures — a
+prototype build's, then the shipped renderer's, each replacing the last
+because nothing kept either one true — and it does not restate a fourth
+set of exact bytes here for the same reason the second set went stale
+before this sentence was written: none of them is checked by a test, and
+this renderer's own syntax-highlighting path was under active revision at
+the time of this correction. `refinery-t1c.13` proposes checking in a
+sized fixture and pinning the two costs that are actually fixed and
+content-independent — the `<style>` and `<script>` block byte lengths —
+the way `internal/cli/budget_test.go` already pins `describe` and clean
+`submit-review`'s token counts; once that lands, this section can cite the
+pinning test by name instead of a number nothing enforces.
 
-| Quantity | Measured |
-| --- | --- |
-| Total page size | 145,168 bytes |
-| Gzipped | 32,717 bytes |
-| CSS (`<style>` block) | 10,456 bytes |
-| Script | 3,891 bytes |
-| Syntax-highlighting spans | ~316 `<span>` elements |
-| The same panel, Markdown projection | 70,449 bytes |
+**The panel this section used to cite — "the same 7-submission,
+36-comment panel §2.2's tests already use as a fixture" — was never a
+fixture that exists in this repository.** [§2.2](#22-the-tests-that-make-the-claim-true-not-merely-stated)'s
+parity, fidelity, and forgery tests run against `docs121Envelope`, which
+carries 2 submissions and 2 comments; no 36-comment fixture is checked in
+anywhere for a reader to re-measure against. Whatever produced that
+number was a one-off, unrecorded measurement, not a fixture this section
+can point to — which is exactly the gap `refinery-t1c.13` closes going
+forward.
 
-**Visible review text — `body`, `summary`, `pros`, `cons`, suggestion
-text — accounts for roughly two-thirds of the total, 67%.** The markup
-around it is not where the weight is, and is not where it should be
-optimized if a future report over a much larger panel starts feeling
-heavy: the CSS and script are fixed costs, paid once regardless of how many
-findings the page holds (10,456 and 3,891 bytes respectively, unchanged
-whether the panel has one comment or a hundred, because neither is
-generated per finding), where the content is the one thing that scales
-with the review itself and the one thing this renderer has no license to
-trim, elide, or summarize — every byte of it is what the reviewer wrote,
-and [§4](#4-escaping-html-template-never-hand-rolled)'s whole argument
-depends on carrying it through unmodified. HTML costing roughly twice the
-Markdown projection's bytes for the same content is the honest price of
-per-finding structure (`<details>`, the priority and category badges, the
-suggestion cards) that Markdown expresses in fewer bytes per element by
-using bullets and headings instead — a real cost, stated here rather than
-discovered later by someone assuming HTML's markup was free next to
-Markdown's.
+What is true regardless of the exact byte counts, and does not need
+re-measuring to state: the CSS and script are fixed costs, paid once per
+page no matter how many findings it holds, because neither is generated
+per finding; visible review text — `body`, `summary`, `pros`, `cons`,
+suggestion text — is the one thing that scales with the review itself,
+and the one thing this renderer has no license to trim, elide, or
+summarize, since every byte of it is what the reviewer wrote and
+[§4](#4-escaping-html-template-never-hand-rolled)'s whole argument depends
+on carrying it through unmodified. HTML costs more bytes than the Markdown
+projection of the same content — real, per-finding structure (`<details>`,
+badges, suggestion cards) that Markdown expresses more cheaply with
+bullets and headings — but this section no longer states a multiplier,
+because the true one moves with decisions still being made in
+[§6](#6-syntax-highlighting-chroma-token-api-only) and depends on the
+panel measured. To see the actual current cost of a report, render one
+and measure it directly: `collect-reviews --format html --ref=SHA |
+tee report.html | wc -c`, and `gzip -c report.html | wc -c` for the
+compressed size — a number read off the binary a reader is actually
+running is worth more than one copied from this paragraph.
 
 ## 12. Failure and degradation
 

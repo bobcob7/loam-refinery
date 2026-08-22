@@ -1218,22 +1218,23 @@ from, and no future feature should add a flag that parses one back into
 structured data — see
 [docs/features/html-report.md §11](features/html-report.md#11-budgets-and-audience).
 
-Being exempt from a ceiling does not mean the cost is unknown. Measured
-against a prototype build of the HTML renderer, over the 7-submission,
-36-comment panel the feature's own fixtures use, one full report totaled
-145,168 bytes (32,717 gzipped) — 10,456 bytes of CSS and 3,891 of script,
-both fixed costs paid once regardless of how many findings the page holds,
-against 145,168 − 10,456 − 3,891 = 130,821 bytes that do scale with the
-review, of which visible review text — `body`, `summary`, `pros`, `cons`,
-suggestion text — accounts for roughly two-thirds of the page total, 67%.
-The same panel's markdown projection measures 70,449 bytes; HTML costing
-roughly twice that for the same content is the honest price of per-finding
-structure (`<details>`, badges, suggestion cards), not a cost anyone should
-try to recover by trimming markup, since markup is not where the weight is.
-These are prototype measurements, not a pin on the shipped renderer — see
+Being exempt from a ceiling does not mean the cost is unknown, but this
+paragraph no longer restates a byte figure to prove it: the "7-submission,
+36-comment panel" earlier versions of this section cited was never a
+fixture checked into this repository, and every number quoted here before
+— a prototype build's, then the shipped renderer's — went stale before the
+next reader saw it, because nothing in `.go` enforces any of them.
+`refinery-t1c.13` proposes a checked-in fixture and a test pinning the
+costs that are actually fixed and content-independent (the `<style>` and
+`<script>` block byte lengths); until that lands, the number that matters
+is whatever the renderer currently emits, not whatever this paragraph last
+said. What holds regardless: the CSS and script are fixed costs paid once
+per page, and visible review text — `body`, `summary`, `pros`, `cons`,
+suggestion text — is the one thing that scales with the review and the one
+thing this renderer has no license to trim. See
 [docs/features/html-report.md §11.1](features/html-report.md#111-measured-size)
-for the full table and what it was measured against; re-measure before
-restating them as more than that.
+for how to measure a report's actual current size, and for the fuller
+account of why this section stops short of a number.
 
 The largest saving is not in any row of that table — it is in **not repeating
 it**. A validator that reports one problem at a time turns a document with four
@@ -1434,11 +1435,35 @@ Keep the tree shallow — this binary is invoked in tight loops.
 
 - `github.com/santhosh-tekuri/jsonschema/v6` for draft 2020-12 validation
 - `modernc.org/sqlite` for the run database — pure Go, no cgo, so cross
-  compilation and `go install` keep working. It is by a wide margin the heaviest
-  thing here, and the reasoning for accepting it is in
+  compilation and `go install` keep working. It was by a wide margin the
+  heaviest thing here before chroma joined the list below — the two are not
+  compared against each other here, since isolating either one's exact
+  share of the binary would need its own build, but neither should be
+  assumed the clear heavier one on the strength of this sentence alone
+  now that both are in the tree — and the reasoning for accepting it is in
   [config.md §4.5.3](config.md#453-why-sqlite): it buys queries that stay fast
   as a store grows, and it costs binary size rather than startup, which is the
   budget that matters for a binary invoked in loops.
+- `github.com/alecthomas/chroma/v2` for syntax highlighting on the
+  `--format html` path
+  ([docs/features/html-report.md §6](features/html-report.md#6-syntax-highlighting-chroma-token-api-only)).
+  Costs binary size: building `cmd/loam-refinery` from `main` and from this
+  branch, identically (`go build`, no extra flags), measured 12,584,178
+  bytes versus 18,986,322 — **a 50.9% increase**, roughly 6.4MB, almost
+  entirely chroma and the language data it embeds. That cost is not
+  confined to `--format html` callers: `internal/cli` imports
+  `internal/render` for the JSON and Markdown paths too, so chroma's lexer
+  registry — which parses all 279 of its embedded lexer definitions into
+  memory at package-import time — loads on every invocation of this
+  binary, `submit-review` included, not only a call that asks for
+  `--format html`. See
+  [docs/features/html-report.md §6.4](features/html-report.md#64-the-dependency-this-costs)
+  for the detail and for what does and doesn't confine chroma's other
+  costs to the HTML path. Re-measure before trusting the byte figures
+  exactly — this renderer's use of chroma was still being narrowed for a
+  denial-of-service fix as of this measurement, though that fix denies two
+  lexers by name rather than shrinking the imported set, so it is not
+  expected to move this number by much.
 - Standard library `flag` with `flag.NewFlagSet` per subcommand. A CLI framework
   is not warranted for four subcommands, and `prime` already serves the
   agent-facing help role that a framework's generated help would cover.
