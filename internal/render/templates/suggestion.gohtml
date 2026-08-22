@@ -1,0 +1,37 @@
+{{- /* internal/render/templates/suggestion.gohtml — one comment's
+suggestions as a row of cards (§7.4): CSS grid
+(grid-template-columns: repeat(auto-fit, minmax(320px, 1fr))), bead .5's
+rule to write against the "suggestions" class below. Within one card, pros
+and cons sit in their own two-column sub-grid as sibling containers — never
+one nested inside the other — so a reader's eye moves left-right between
+"why" and "what it costs". effort and scope, both structurally-constrained
+enums, render as small badges in the card header, not prose. A
+suggestion's own code excerpt, when present, sits at the bottom of its
+card, through the same {{template "code"}} partial (bead .4) every other
+excerpt uses — omitted entirely, not emitted empty, when the suggestion
+carries none (§12). Dot is []htmlSuggestionView
+(internal/render/html_view_finding.go). */ -}}
+{{define "suggestion"}}
+<div class="suggestions">
+{{range .}}
+<div class="suggestion-card">
+<div class="suggestion-header">
+<span class="suggestion-summary">{{.Summary}}</span>
+<span class="tag tag-effort">{{.Effort}}</span>
+<span class="tag tag-scope">{{.Scope}}</span>
+</div>
+<div class="suggestion-pros-cons">
+<div class="suggestion-pros">
+<h4>Pros</h4>
+<ul>{{range .Pros}}<li>{{.}}</li>{{end}}</ul>
+</div>
+<div class="suggestion-cons">
+<h4>Cons</h4>
+<ul>{{range .Cons}}<li>{{.}}</li>{{end}}</ul>
+</div>
+</div>
+{{if .HasCode}}{{template "code" .Code}}{{end}}
+</div>
+{{end}}
+</div>
+{{end}}

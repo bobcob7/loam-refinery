@@ -145,7 +145,7 @@ loam-refinery describe        [--lens=NAME[,NAME...]]
 loam-refinery submit-review   [path] [--strict]
 loam-refinery reviews         [--repo=NAME] [--ref=SHA] [--limit=N] [--content]
                               [--failed] [--list]
-loam-refinery collect-reviews --ref=SHA [--repo=NAME] [--format json|markdown]
+loam-refinery collect-reviews --ref=SHA [--repo=NAME] [--format json|markdown|html]
 loam-refinery schema          [--annotated]
 loam-refinery version
 ```
@@ -776,21 +776,21 @@ run; the config file that exists ([config.md](config.md)) is optional and may
 only set the store flags.
 
 ```
---profile=NAME            append one reviewer profile                prime
---list                    print the profile index, no bodies         prime
---strict                  treat advisories as errors (exit 1)        submit-review
---lens=NAME[,NAME...]     open one entry in full                     describe
---list                    print the lens index, no bodies            describe
---repo=NAME               which repository's reviews                 reviews
---ref=SHA                 which commit; the full 40-char SHA         reviews
---limit=N                 most recent N; 0 for all                   reviews
---content                 include each stored file, not just rows    reviews
---failed                  list runs that stored no review            reviews
---list                    print the repositories in the store        reviews
---ref=SHA                 which commit; required, no default         collect-reviews
---repo=NAME               which repository's reviews                 collect-reviews
---format json|markdown    output format; markdown is unique here     collect-reviews
---annotated               emit the schema with descriptions intact   schema
+--profile=NAME               append one reviewer profile                       prime
+--list                       print the profile index, no bodies                prime
+--strict                     treat advisories as errors (exit 1)               submit-review
+--lens=NAME[,NAME...]        open one entry in full                            describe
+--list                       print the lens index, no bodies                   describe
+--repo=NAME                  which repository's reviews                        reviews
+--ref=SHA                    which commit; the full 40-char SHA                reviews
+--limit=N                    most recent N; 0 for all                          reviews
+--content                    include each stored file, not just rows           reviews
+--failed                     list runs that stored no review                   reviews
+--list                       print the repositories in the store               reviews
+--ref=SHA                    which commit; required, no default                collect-reviews
+--repo=NAME                  which repository's reviews                        collect-reviews
+--format json|markdown|html  output format; markdown and html are unique here  collect-reviews
+--annotated                  emit the schema with descriptions intact          schema
 ```
 
 Structural checks cannot be disabled or demoted, and neither can verification
@@ -930,7 +930,7 @@ already uses:**
 
 | Principle | Standing |
 | --- | --- |
-| No second renderer, no `--format` choice left to make | **Amended, narrowly.** `loam-refinery collect-reviews --format markdown` is the one exception, on the one command whose primary audience is a human reader rather than an agent in a loop — see [docs/features/combined-reviews.md §8.3](features/combined-reviews.md#83-the-markdown-projection). It is not a second *renderer* in the sense this section warns against: it is a pure projection of the identical result value the JSON form serializes, built once, by one code path, with the same escaping and fencing discipline specified there to close the forgery half of this section's own argument. `submit-review`, `reviews`, `describe`, and `schema` are unchanged in the sense this row is actually about — one command, one projection, one source of truth, not a second computation of any result. A later, unrelated decision removes their `--format` flag entirely rather than leaving it accepting one value: a flag chooses between formats, and none of the four has more than one to choose between, `collect-reviews` now being the sole command that does. |
+| No second renderer, no `--format` choice left to make | **Amended, narrowly.** `loam-refinery collect-reviews --format markdown` and `--format html` are two narrow exceptions, on the one command whose primary audience is a human reader rather than an agent in a loop — see [docs/features/combined-reviews.md §8.3](features/combined-reviews.md#83-the-markdown-projection) and [docs/features/html-report.md §2](features/html-report.md#2-the-amendment-this-falls-under). Neither is a second *renderer* in the sense this section warns against: each is a pure projection of the identical result value the JSON form serializes, built once, by one code path, with an escaping discipline suited to each target grammar — CommonMark fencing and position-aware backslash-escaping for markdown, `html/template`'s contextual autoescaping for HTML's markup, and a script that never receives caller-authored content in the first place for HTML's one script context — each closing the forgery half of this section's own argument in its own grammar's terms. `submit-review`, `reviews`, `describe`, and `schema` are unchanged in the sense this row is actually about — one command, one projection, one source of truth, not a second computation of any result. A later, unrelated decision removes their `--format` flag entirely rather than leaving it accepting one value: a flag chooses between formats, and none of the four has more than one to choose between, `collect-reviews` now being the sole command that does. |
 
 ### 5.2 The result object
 
@@ -1082,6 +1082,7 @@ nothing measures is a limit that erodes.
 | `reviews --content` | none | Returns caller-authored documents |
 | `collect-reviews --format json` | 80 + 40 per submission + 60 per comment + 60 per diverged anchor | Rare; only when an orchestrator has run more than one reviewer against one ref |
 | `collect-reviews --format markdown` | unbudgeted | Rare; human reading, or embedding somewhere a human reads it |
+| `collect-reviews --format html` | **exempt — not agent-facing** | Rare; opened in a browser by a person |
 
 These are higher than the text format they replaced. Measured over a
 realistic write-submit-review-fix cycle it is about **2.1x**; a clean `submit-review`
@@ -1198,6 +1199,42 @@ is the identical shape that ceiling was already measured against.
 `--format markdown` stays unbudgeted outright: it is read by a human once, or
 piped into a comment body a human reads once, never paid on a loop the way
 every other row here is.
+
+`--format html` is **exempt**, not merely unbudgeted, and the distinction is
+deliberate: every other row in this table is a ceiling, so silence next to
+one would read as an oversight rather than a decision. Naming the exemption
+says plainly what would otherwise only be inferable from which flag happens
+to be documented where — the three formats now serve three audiences, and
+none of them overlap: **JSON** is for a machine — an orchestrator, another
+tool in a pipeline, anything that parses the output and acts on it — and is
+the only form anything automated should ever consume. **Markdown** is for an
+agent in a loop, or a human reading pass-through content a loop produced — a
+PR comment, a chat message, read once by a person but generated by, and
+often consumed adjacent to, an automated process. **HTML** is for a person,
+directly, with a browser open, and never for anything else: nothing should
+generate it inside a loop that expects to read the result back, nothing
+should feed it to a model as context in place of the JSON form it was built
+from, and no future feature should add a flag that parses one back into
+structured data — see
+[docs/features/html-report.md §11](features/html-report.md#11-budgets-and-audience).
+
+Being exempt from a ceiling does not mean the cost is unknown, but this
+paragraph no longer restates a byte figure to prove it: the "7-submission,
+36-comment panel" earlier versions of this section cited was never a
+fixture checked into this repository, and every number quoted here before
+— a prototype build's, then the shipped renderer's — went stale before the
+next reader saw it, because nothing in `.go` enforces any of them.
+`refinery-t1c.13` proposes a checked-in fixture and a test pinning the
+costs that are actually fixed and content-independent (the `<style>` and
+`<script>` block byte lengths); until that lands, the number that matters
+is whatever the renderer currently emits, not whatever this paragraph last
+said. What holds regardless: the CSS and script are fixed costs paid once
+per page, and visible review text — `body`, `summary`, `pros`, `cons`,
+suggestion text — is the one thing that scales with the review and the one
+thing this renderer has no license to trim. See
+[docs/features/html-report.md §11.1](features/html-report.md#111-measured-size)
+for how to measure a report's actual current size, and for the fuller
+account of why this section stops short of a number.
 
 The largest saving is not in any row of that table — it is in **not repeating
 it**. A validator that reports one problem at a time turns a document with four
@@ -1398,11 +1435,35 @@ Keep the tree shallow — this binary is invoked in tight loops.
 
 - `github.com/santhosh-tekuri/jsonschema/v6` for draft 2020-12 validation
 - `modernc.org/sqlite` for the run database — pure Go, no cgo, so cross
-  compilation and `go install` keep working. It is by a wide margin the heaviest
-  thing here, and the reasoning for accepting it is in
+  compilation and `go install` keep working. It was by a wide margin the
+  heaviest thing here before chroma joined the list below — the two are not
+  compared against each other here, since isolating either one's exact
+  share of the binary would need its own build, but neither should be
+  assumed the clear heavier one on the strength of this sentence alone
+  now that both are in the tree — and the reasoning for accepting it is in
   [config.md §4.5.3](config.md#453-why-sqlite): it buys queries that stay fast
   as a store grows, and it costs binary size rather than startup, which is the
   budget that matters for a binary invoked in loops.
+- `github.com/alecthomas/chroma/v2` for syntax highlighting on the
+  `--format html` path
+  ([docs/features/html-report.md §6](features/html-report.md#6-syntax-highlighting-chroma-token-api-only)).
+  Costs binary size: building `cmd/loam-refinery` from `main` and from this
+  branch, identically (`go build`, no extra flags), measured 12,584,178
+  bytes versus 18,986,322 — **a 50.9% increase**, roughly 6.4MB, almost
+  entirely chroma and the language data it embeds. That cost is not
+  confined to `--format html` callers: `internal/cli` imports
+  `internal/render` for the JSON and Markdown paths too, so chroma's lexer
+  registry — which parses all 279 of its embedded lexer definitions into
+  memory at package-import time — loads on every invocation of this
+  binary, `submit-review` included, not only a call that asks for
+  `--format html`. See
+  [docs/features/html-report.md §6.4](features/html-report.md#64-the-dependency-this-costs)
+  for the detail and for what does and doesn't confine chroma's other
+  costs to the HTML path. Re-measure before trusting the byte figures
+  exactly — this renderer's use of chroma was still being narrowed for a
+  denial-of-service fix as of this measurement, though that fix denies two
+  lexers by name rather than shrinking the imported set, so it is not
+  expected to move this number by much.
 - Standard library `flag` with `flag.NewFlagSet` per subcommand. A CLI framework
   is not warranted for four subcommands, and `prime` already serves the
   agent-facing help role that a framework's generated help would cover.

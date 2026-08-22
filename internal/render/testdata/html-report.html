@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>collect-reviews: 4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d</title>
+<style>/* elided by TestHTMLGolden (refinery-t1c.5) — see report.css / code.css; the correctness-carrying rules are pinned by name in TestHiddenAttributeAlwaysWinsTheCascade and TestToolbarRevealRuleExists */</style>
+</head>
+<body>
+
+<div id="envelope" class="envelope">
+<span class="envelope-ref">collect-reviews: 4f2c1a9e8b3d7c5a1f0e2d4b6a8c9e1f3a5b7c9d</span>
+<span class="envelope-repo">repo: github.com/bobcob7/loam-refinery (known)</span>
+<span class="envelope-store">store: enabled</span>
+<span class="envelope-head-check">head_check: repo, is_head=true, 0 diverged</span>
+<span class="envelope-total">total: 1</span>
+<span class="envelope-unreadable">unreadable: 0</span>
+</div>
+
+
+<section id="submissions" class="submissions">
+
+<div class="index" role="table">
+<style>/* elided by TestHTMLGolden (refinery-t1c.5) — see report.css / code.css; the correctness-carrying rules are pinned by name in TestHiddenAttributeAlwaysWinsTheCascade and TestToolbarRevealRuleExists */</style>
+<div class="index-row index-header" role="row">
+<span class="index-cell" role="columnheader">#</span>
+<span class="index-cell" role="columnheader">profile</span>
+<span class="index-cell" role="columnheader">verdict</span>
+<span class="index-cell" role="columnheader">assessment</span>
+<span class="index-cell" role="columnheader">severity</span>
+</div>
+
+<div class="index-row" role="row">
+<span class="index-cell index-ordinal" role="cell"><a href="#backend:dropped-context-1">#1</a></span>
+<span class="index-cell index-profile" role="cell">backend</span>
+<span class="index-cell index-verdict" role="cell">request_changes</span>
+<span class="index-cell index-assessment" role="cell">mixed</span>
+<span class="index-cell index-severity" role="cell">max=8</span>
+</div>
+<div class="index-summary-row" role="row">
+<span class="index-cell index-summary" role="cell"></span>
+</div>
+
+</div>
+
+</section>
+
+
+<div class="toolbar" id="toolbar" aria-label="Filter and view controls">
+<style>/* elided by TestHTMLGolden (refinery-t1c.5) — see report.css / code.css; the correctness-carrying rules are pinned by name in TestHiddenAttributeAlwaysWinsTheCascade and TestToolbarRevealRuleExists */</style>
+<div class="toolbar-row toolbar-actions">
+<button type="button" id="expandAllBtn">Expand all</button>
+<button type="button" id="collapseAllBtn">Collapse all</button>
+<button type="button" id="resetFiltersBtn">Reset filters</button>
+<span id="filterCount" class="toolbar-count" aria-live="polite"></span>
+</div>
+<p id="filterBanner" class="toolbar-banner" hidden aria-live="polite"></p>
+<div class="toolbar-row toolbar-facet">
+<span class="toolbar-facet-label">Priority</span>
+<div id="facetPriority" class="toolbar-chip-row" role="group" aria-label="Filter by priority"></div>
+</div>
+<div class="toolbar-row toolbar-facet">
+<span class="toolbar-facet-label">Category</span>
+<div id="facetCategory" class="toolbar-chip-row" role="group" aria-label="Filter by category"></div>
+</div>
+<div class="toolbar-row toolbar-facet">
+<span class="toolbar-facet-label">Lens</span>
+<div id="facetLens" class="toolbar-chip-row" role="group" aria-label="Filter by lens"></div>
+</div>
+</div>
+
+<section id="findings">
+
+<details class="finding" id="backend:dropped-context-1" data-priority-css="pri-shouldfix" data-category-css="cat-correctness" data-lens="backend" open>
+<summary>
+<span class="finding-headline">The retry loop calls c.do(context.Background(), req) rather than passing the caller&#39;s ctx.</span>
+<a class="finding-id" href="#backend:dropped-context-1" title="backend:dropped-context-1">backend:dropped-context-1</a>
+<span class="tag tag-profile">backend</span>
+
+<span class="tag pri-shouldfix">priority 8</span>
+<span class="tag cat-correctness">correctness</span>
+</summary>
+<div class="finding-body">
+<p class="anchors"><code class="tag anchor">internal/fetch/client.go:88</code></p>
+<p class="body">The retry loop calls c.do(context.Background(), req) rather than passing the caller&#39;s ctx.</p>
+
+<div class="code-lang">.go</div><pre class="code-block"><code><span class="c-nm">c</span><span class="c-pn">.</span><span class="c-nm">do</span><span class="c-pn">(</span><span class="c-nm">context</span><span class="c-pn">.</span><span class="c-nm">Background</span><span class="c-pn">(),</span> <span class="c-nm">req</span><span class="c-pn">)</span></code></pre>
+
+
+<div class="suggestions">
+
+<div class="suggestion-card">
+<div class="suggestion-header">
+<span class="suggestion-summary">Pass the caller&#39;s context straight through</span>
+<span class="tag tag-effort">trivial</span>
+<span class="tag tag-scope">line</span>
+</div>
+<div class="suggestion-pros-cons">
+<div class="suggestion-pros">
+<h4>Pros</h4>
+<ul><li>Cancellation and deadlines propagate immediately</li></ul>
+</div>
+<div class="suggestion-cons">
+<h4>Cons</h4>
+<ul><li>A caller relying on retries outliving the request context sees a behavior change</li></ul>
+</div>
+</div>
+
+</div>
+
+</div>
+
+</div>
+</details>
+
+</section>
+<script>// elided by TestHTMLGolden (refinery-t1c.5) — see report.js; syntax and wiring are pinned by name in TestScriptSyntaxIsWellFormed, byte-identity to source in TestHTMLForgery_ScriptStaysExactlyOneAndByteIdenticalToItsOwnSource</script>
+</body>
+</html>

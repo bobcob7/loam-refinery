@@ -1,0 +1,24 @@
+{{- /* internal/render/templates/envelope.gohtml — the envelope strip
+(§7.1): ref, repo, store.enabled, head_check, total, unreadable, laid
+out as one full-width flexbox strip (styling is bead .5's; this file
+only supplies the structure and class names), never collapsed — it is
+what orients a reader before anything else, so it is never behind a
+<details>. Dot is htmlEnvelopeView (internal/render/html_view_envelope.go).
+
+head_check.source renders exactly as reported, "none" and "unavailable"
+included (§12) — it is never omitted or dressed up as if a check ran.
+is_head only appears when HeadCheckHasIsHead is true (source == "repo"),
+and diverged only when HeadCheckHasDiverged is true (nil means the check
+did not apply; an empty, non-nil Diverged still renders "0 diverged",
+distinguishing "checked, found nothing" from "did not check" per §4.3.1
+of combined-reviews.md). */ -}}
+{{define "envelope"}}
+<div id="envelope" class="envelope">
+<span class="envelope-ref">collect-reviews: {{.Ref}}</span>
+<span class="envelope-repo">repo: {{.RepoName}} ({{if .RepoKnown}}known{{else}}unknown{{end}})</span>
+<span class="envelope-store">store: {{if .StoreEnabled}}enabled{{else}}disabled{{end}}</span>
+<span class="envelope-head-check">head_check: {{.HeadCheckSource}}{{if .HeadCheckHasIsHead}}, is_head={{.HeadCheckIsHead}}{{end}}{{if .HeadCheckHasDiverged}}, {{.HeadCheckDiverged}} diverged{{end}}</span>
+<span class="envelope-total">total: {{.Total}}</span>
+<span class="envelope-unreadable">unreadable: {{.Unreadable}}</span>
+</div>
+{{end}}

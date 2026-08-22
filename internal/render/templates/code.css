@@ -1,0 +1,54 @@
+{{- /* internal/render/templates/code.css — the six syntax-highlighting
+token classes and their CSS custom properties (§6.2): .c-kw, .c-str,
+.c-cm, .c-nm, .c-num, .c-pn, each keyed off a --c-* custom property so a
+prefers-color-scheme: dark media query can redefine the six names
+without touching html_highlight.go's class mapping. Kept in its own
+file, separate from report.css, so bead .4 (this file) and bead .5
+(report.css, everything else) never edit the same file (docs/features/
+html-report.md's file-ownership map). Wrapped in {{define "codeStyle"}}
+for the identical reason report.css is wrapped in {{define "style"}} —
+see that file's own comment.
+
+The six light-mode hex values and their six dark-mode counterparts below
+are §6.2's own worked example, reproduced exactly rather than
+re-derived, so this file and the doc never drift apart on what "the
+palette" means.
+
+.code-block and .code-lang (§6.3, §7.5) are also this file's own — the
+block a code excerpt renders into, never chroma's own colors inline
+(styles.Get("github") resolves TextWhitespace to a hardcoded #ffffff,
+foreclosing dark mode and costing a style attribute per token; nothing
+here ever emits one), and the label htmlCodeView.Label() computes from
+the owning anchor's file extension, never chroma's lexer name.
+
+Bead .4 owns this file's content. */ -}}
+{{define "codeStyle"}}
+:root {
+  --c-kw:#a626a4; --c-str:#50a14f; --c-cm:#a0a1a7;
+  --c-nm:#383a42; --c-num:#986801; --c-pn:#383a42;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-kw:#c678dd; --c-str:#98c379; --c-cm:#5c6370;
+    --c-nm:#abb2bf; --c-num:#d19a66; --c-pn:#abb2bf;
+  }
+}
+.c-kw{color:var(--c-kw)} .c-str{color:var(--c-str)} .c-cm{color:var(--c-cm)}
+.c-nm{color:var(--c-nm)} .c-num{color:var(--c-num)} .c-pn{color:var(--c-pn)}
+.code-block {
+  overflow-x: auto;
+  white-space: pre;
+  max-width: 100%;
+  margin: 0.5em 0;
+  padding: 0.75em 1em;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+.code-lang {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75em;
+  opacity: 0.65;
+  margin-bottom: 0.25em;
+}
+{{end}}
