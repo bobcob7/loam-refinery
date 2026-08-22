@@ -504,6 +504,21 @@ func TestEveryIDAttributeIsUniqueAcrossTheWholePage(t *testing.T) {
 
 // --- Progressive enhancement (§5.2, §2.2.1) ---
 
+// bead7StyleText concatenates every <style> element's text content from
+// the rendered page — the one place both bead7DisplayNoneSelectors and
+// the named-rule tests below read the emitted stylesheet from, so there
+// is exactly one scan over the page's <style> elements, not two.
+func bead7StyleText(t *testing.T, doc *html.Node) string {
+	t.Helper()
+	var css strings.Builder
+	for _, style := range findingElementsByTag(doc, "style") {
+		css.WriteString(findingText(style))
+		css.WriteString("\n")
+	}
+	require.NotZero(t, css.Len(), "the page must carry at least one <style> element to scan")
+	return css.String()
+}
+
 // bead7DisplayNoneSelectors returns every CSS selector, from the
 // rendered page's own <style> elements, whose declaration block sets
 // "display: none" — a scan over the emitted bytes (§9's self-contained
@@ -513,16 +528,11 @@ func TestEveryIDAttributeIsUniqueAcrossTheWholePage(t *testing.T) {
 // regex is sufficient for exactly the two files bead .5 and bead .6 own.
 func bead7DisplayNoneSelectors(t *testing.T, doc *html.Node) []string {
 	t.Helper()
-	var css strings.Builder
-	for _, style := range findingElementsByTag(doc, "style") {
-		css.WriteString(findingText(style))
-		css.WriteString("\n")
-	}
-	require.NotZero(t, css.Len(), "the page must carry at least one <style> element to scan")
+	css := bead7StyleText(t, doc)
 	ruleRE := regexp.MustCompile(`([^{}]+)\{([^{}]*)\}`)
 	displayNoneRE := regexp.MustCompile(`display\s*:\s*none`)
 	var selectors []string
-	for _, m := range ruleRE.FindAllStringSubmatch(css.String(), -1) {
+	for _, m := range ruleRE.FindAllStringSubmatch(css, -1) {
 		if !displayNoneRE.MatchString(m[2]) {
 			continue
 		}
@@ -575,6 +585,168 @@ func TestOnlyToolbarIsHiddenByDefault(t *testing.T) {
 	assert.Empty(t, offenders, `".toolbar" must be the only selector hidden by default`)
 }
 
+// bead7HiddenAttributeAlwaysWinsRE pins §5.4's mandatory defence by its
+// own exact shape, not merely its presence in bead7DisplayNoneSelectors'
+// permitted list: the "[hidden]" selector's declaration block must set
+// "display: none" AND carry "!important" — report.css's own comment
+// explains why the "!important" is load-bearing, not decorative: it is
+// what lets this one rule outrank any later, more specific selector that
+// also sets display on the same element, regardless of source order.
+var bead7HiddenAttributeAlwaysWinsRE = regexp.MustCompile(`\[hidden\]\s*\{[^{}]*display\s*:\s*none\s*!important[^{}]*\}`)
+
+// TestHiddenAttributeAlwaysWinsTheCascade requires — not merely permits
+// — §5.4's own defence to exist: refinery-t1c.5 reproduced that deleting
+// "[hidden] { display: none !important }" from report.css failed only
+// TestHTMLGolden, and one -update run made the suite green with the
+// defence gone. TestOnlyToolbarIsHiddenByDefault above whitelists this
+// selector in its offender scan but never requires it to be present at
+// all — an empty stylesheet passes that test just as cleanly as one
+// carrying the rule. This test is what actually requires it.
+//
+// Mutation this kills: deleting the "[hidden]" rule, or weakening it to
+// "display: none" without "!important" (letting a later, more specific
+// selector on the same element silently win), fails this test by name —
+// not only the golden.
+func TestHiddenAttributeAlwaysWinsTheCascade(t *testing.T) {
+	t.Parallel()
+	_, doc := renderHTML(t, fiveSubmissionEnvelope())
+	css := bead7StyleText(t, doc)
+	assert.True(t, bead7HiddenAttributeAlwaysWinsRE.MatchString(css),
+		`§5.4's mandatory defence is missing or weakened: the stylesheet must contain "[hidden] { display: none !important }"`)
+}
+
+// bead7ToolbarRevealRE pins the toolbar's own reveal by its exact shape:
+// "html.js .toolbar" must set "display: flex", the only rule that undoes
+// ".toolbar { display: none }" once report.js's first statement has
+// added the "js" class to <html> (TestScriptFirstStatementAddsJSClassToDocumentElement,
+// html_script_test.go). Without it the toolbar stays display:none
+// forever, script or no script.
+var bead7ToolbarRevealRE = regexp.MustCompile(`html\.js\s+\.toolbar\s*\{[^{}]*display\s*:\s*flex[^{}]*\}`)
+
+// TestToolbarRevealRuleExists requires — not merely permits — the
+// toolbar's only reveal to exist. refinery-t1c.5 reproduced the same
+// golden-only failure mode for this rule that
+// TestHiddenAttributeAlwaysWinsTheCascade guards against above: deleting
+// "html.js .toolbar { display: flex }" fails only TestHTMLGolden today,
+// and regenerating the golden erases the loss silently.
+//
+// Mutation this kills: deleting the "html.js .toolbar" reveal, or
+// changing its declared display value away from "flex", fails this test
+// by name — the toolbar would stay hidden even after script has run.
+func TestToolbarRevealRuleExists(t *testing.T) {
+	t.Parallel()
+	_, doc := renderHTML(t, fiveSubmissionEnvelope())
+	css := bead7StyleText(t, doc)
+	assert.True(t, bead7ToolbarRevealRE.MatchString(css),
+		`the toolbar's only reveal is missing: the stylesheet must contain "html.js .toolbar { display: flex }"`)
+}
+
+// --- Script vitality (§5, §2.2.1) ---
+//
+// TestHTMLForgery_ScriptStaysExactlyOneAndByteIdenticalToItsOwnSource
+// above, and TestScriptBytesAreIdenticalAcrossWildlyDifferentFixtures
+// (html_script_test.go), each compare the rendered <script> element
+// against report.js's own source — real tests for real properties, but
+// neither can ever see a syntax error: both sides of every comparison
+// they make come from the same broken file, so a mismatched brace that
+// kills the whole IIFE at parse time passes both of them and fails
+// nothing but TestHTMLGolden (refinery-t1c.5). This package has no JS
+// runtime to actually execute report.js and observe the breakage
+// (html_script_test.go's own TestScriptFacetStateIsPrototypePollutionSafe
+// doc comment notes the same limit), so the guard below checks the one
+// thing byte-scanning a script with no string-embedded delimiters can
+// check honestly: that every (), {}, and [] closes what it opened, in
+// the order it opened it. report.js's own doc comment records that it
+// contains no single-quoted strings and no "//" comments (grep confirms
+// both), so a plain double-quote-aware scan — skip everything between an
+// unescaped '"' and the next unescaped '"' — never misreads a delimiter
+// character that was actually part of string content.
+
+// bead7CheckBalancedDelimiters walks script one byte at a time, skipping
+// double-quoted string content (backslash-escape aware, per report.js's
+// own strings), and fails t the moment a closing delimiter has no
+// matching opener, closes the wrong opener, or any opener is left
+// unclosed at the end — the shape a dropped or duplicated brace takes
+// when it kills the whole enclosing IIFE.
+func bead7CheckBalancedDelimiters(t *testing.T, script string) {
+	t.Helper()
+	closers := map[byte]byte{')': '(', '}': '{', ']': '['}
+	var stack []byte
+	inString := false
+	escaped := false
+	for i := 0; i < len(script); i++ {
+		c := script[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '(', '{', '[':
+			stack = append(stack, c)
+		case ')', '}', ']':
+			if !assert.NotEmptyf(t, stack, "unexpected closing %q at byte %d with nothing open", c, i) {
+				return
+			}
+			top := stack[len(stack)-1]
+			if !assert.Equalf(t, closers[c], top, "mismatched delimiter: %q closes %q, not %q, at byte %d", c, top, closers[c], i) {
+				return
+			}
+			stack = stack[:len(stack)-1]
+		}
+	}
+	assert.Emptyf(t, stack, "script ends with unclosed delimiter(s) still open: %q", stack)
+}
+
+// bead7ScriptSpine is every top-level call report.js's own tail makes to
+// actually wire the page up (its last five statements, in source order):
+// building the filter chips, wiring the toolbar's buttons, applying the
+// filter state once, and routing the page's own fragment on load and on
+// every later hash change. A syntax error early in the file (an extra
+// "}" closing a function one statement too soon, for instance) can
+// leave these calls sitting outside the IIFE they were meant to run
+// inside, present in the bytes but never invoked — invisible to a
+// substring check, but not to the delimiter-balance one above, which is
+// why this list is a second, independent signal rather than a
+// replacement for it.
+var bead7ScriptSpine = []string{
+	"buildFacets();",
+	"wireToolbar();",
+	"applyFilters();",
+	`document.addEventListener("DOMContentLoaded", routeHash);`,
+	`window.addEventListener("hashchange", routeHash);`,
+}
+
+// TestScriptSyntaxIsWellFormed is refinery-t1c.5's behavioural guard on
+// report.js: reproduced by the tests lens as seven logic mutations plus
+// a deliberate syntax error that kills the entire script IIFE, all
+// golden-only. This test gives the syntax error specifically a named
+// failure: delimiter balance is checkable from the bytes with no JS
+// runtime, and it is exactly what a mismatched or dropped brace/paren/
+// bracket violates. bead7ScriptSpine is the complementary check — the
+// calls that actually make the IIFE do anything once it parses.
+//
+// Mutation this kills: an extra or missing "}", "(", or "[" anywhere in
+// report.js, or deleting the wiring calls at its tail, fails this test —
+// not only TestHTMLGolden.
+func TestScriptSyntaxIsWellFormed(t *testing.T) {
+	t.Parallel()
+	_, doc := renderHTML(t, fiveSubmissionEnvelope())
+	content := scriptTextContent(t, doc)
+	bead7CheckBalancedDelimiters(t, content)
+	for _, call := range bead7ScriptSpine {
+		assert.Containsf(t, content, call, "report.js must still invoke %q to wire the page up", call)
+	}
+}
+
 // --- Self-contained (§9) ---
 
 // bead7OffPageURLPattern matches a url(...) or href value naming any
@@ -617,6 +789,53 @@ func TestSelfContainedNoNetworkReferencesAnywhereInTheOutput(t *testing.T) {
 
 // --- The one retained golden (§2.2.1) ---
 
+// bead7ElidedCSSPlaceholder and bead7ElidedScriptPlaceholder replace, in
+// the golden alone, the inner bytes of every <style> and the one
+// <script> element the rendered page ships. refinery-t1c.5: 583 of this
+// golden's 697 lines were a verbatim copy of report.css, code.css, and
+// report.js, which made §2.2.1's own "small enough that a reviewer
+// reads the whole diff" false, and made regenerating the golden — the
+// routine response to any CSS edit — silently swallow a real regression
+// (deleting "[hidden] { display: none !important }", or
+// "html.js .toolbar { display: flex }", each failed only this test, and
+// one -update run erased the loss). Both rules are now required BY NAME
+// in TestHiddenAttributeAlwaysWinsTheCascade and
+// TestToolbarRevealRuleExists above, the script's syntactic health is
+// required by name in TestScriptSyntaxIsWellFormed, and script/CSS
+// byte-identity against their own known source files is already pinned
+// elsewhere (TestHTMLForgery_ScriptStaysExactlyOneAndByteIdenticalToItsOwnSource
+// above; TestScriptBytesAreIdenticalAcrossWildlyDifferentFixtures,
+// html_script_test.go). With every correctness-carrying property of the
+// CSS and script asserted by name, this golden's only remaining job is
+// the page's STRUCTURE — element placement, escaping, ids, the shape
+// bead7GoldenEnvelope's own doc comment already describes — which is
+// exactly what stays legible once the copied asset bytes are elided.
+// The <style> and <script> tags themselves are left in place, so a
+// change that adds, removes, or reorders one of the three style blocks
+// or the one script element still shows up in the diff; only their
+// interiors do not.
+const (
+	bead7ElidedCSSPlaceholder    = "/* elided by TestHTMLGolden (refinery-t1c.5) — see report.css / code.css; the correctness-carrying rules are pinned by name in TestHiddenAttributeAlwaysWinsTheCascade and TestToolbarRevealRuleExists */"
+	bead7ElidedScriptPlaceholder = "// elided by TestHTMLGolden (refinery-t1c.5) — see report.js; syntax and wiring are pinned by name in TestScriptSyntaxIsWellFormed, byte-identity to source in TestHTMLForgery_ScriptStaysExactlyOneAndByteIdenticalToItsOwnSource"
+)
+
+var (
+	bead7StyleBlockRE  = regexp.MustCompile(`(?s)<style>.*?</style>`)
+	bead7ScriptBlockRE = regexp.MustCompile(`(?s)<script>.*?</script>`)
+)
+
+// bead7ElideStaticAssets returns rendered with every <style>...</style>
+// and <script>...</script> element's own inner bytes replaced by a
+// short, fixed placeholder. See the doc comment on
+// bead7ElidedCSSPlaceholder for why TestHTMLGolden calls this before
+// comparing against (or writing) the golden file, rather than comparing
+// the full page.
+func bead7ElideStaticAssets(rendered string) string {
+	rendered = bead7StyleBlockRE.ReplaceAllString(rendered, "<style>"+bead7ElidedCSSPlaceholder+"</style>")
+	rendered = bead7ScriptBlockRE.ReplaceAllString(rendered, "<script>"+bead7ElidedScriptPlaceholder+"</script>")
+	return rendered
+}
+
 // bead7GoldenEnvelope is the one hand-reviewed golden fixture §2.2.1
 // keeps — small enough that a reviewer can read the whole diff, but
 // touching every layout region once: the envelope strip, the
@@ -652,12 +871,17 @@ func bead7GoldenEnvelope() CollectReviewsEnvelope {
 
 // TestHTMLGolden is §2.2.1's one retained golden file for this
 // renderer: reviewed by eye, not asserted on structurally, and kept
-// small enough that a reviewer can read the whole diff. Run
-// `go test ./internal/render/... -run TestHTMLGolden -update` to
-// regenerate it after a deliberate, reviewed change.
+// small enough that a reviewer can read the whole diff — true again,
+// per refinery-t1c.5, once bead7ElideStaticAssets removes the copied
+// report.css/code.css/report.js bytes that used to make up 583 of its
+// 697 lines. Run `go test ./internal/render/... -run TestHTMLGolden
+// -update` to regenerate it after a deliberate, reviewed change; a
+// change confined to the CSS or script's own bytes, with no
+// correctness-carrying rule touched, now regenerates nothing here at
+// all, since this golden no longer contains those bytes.
 func TestHTMLGolden(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	require.NoError(t, NewHTML().CollectReviews(&out, bead7GoldenEnvelope()))
-	golden(t, "html-report.html", out.String())
+	golden(t, "html-report.html", bead7ElideStaticAssets(out.String()))
 }

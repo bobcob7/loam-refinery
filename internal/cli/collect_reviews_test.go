@@ -226,6 +226,43 @@ func TestCollectReviews_FormatMarkdownRendersMarkdownNotJSON(t *testing.T) {
 	assert.NotEqual(t, byte('{'), stdout[0], "must not be the JSON envelope")
 }
 
+// TestCollectReviews_FormatHTMLIsAcceptedAtFlagParsing pins html-report.md
+// §2.3's own wording: html is accepted at the flag-parsing level, the same
+// as markdown. Mutation this kills: removing "html" from
+// checkCollectReviewsFormat's switch would make --format=html a usage
+// error, and refinery-t1c.6 recorded that this survived the full suite
+// with no test at any level to catch it.
+func TestCollectReviews_FormatHTMLIsAcceptedAtFlagParsing(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	setCollectReviewsStore(t, h.reviews, "some/repo", testRef, true, true, nil, nil)
+	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + testRef, "--repo=some/repo", "--format=html"})
+	assert.Equal(t, ExitValid, code, h.stderr.String())
+}
+
+// TestCollectReviews_FormatHTMLRendersHTMLNotJSON pins the
+// renderCollectReviews wiring alongside markdown's own test: --format=html
+// must reach render.HTML.CollectReviews, not the JSON path a misrouted
+// "html" case would silently fall through to. Mutation this kills:
+// renderCollectReviews routing the "html" case to a.renderer (or falling
+// through its switch's default) would still exit 0 here, but stdout would
+// be JSON, not an HTML document — the second half of refinery-t1c.6.
+func TestCollectReviews_FormatHTMLRendersHTMLNotJSON(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "")
+	setCollectReviewsStore(t, h.reviews, repo121, ref121, true, true,
+		[]string{"digest-a", "digest-b"},
+		map[string]string{"digest-a": submissionA(t), "digest-b": submissionB(t)},
+	)
+	setHeadCheckStub(h.headChecker, "repo", true, []DivergedAnchor{})
+	code := h.app.Run(t.Context(), []string{"collect-reviews", "--ref=" + ref121, "--repo=" + repo121, "--format=html"})
+	require.Equal(t, ExitValid, code, h.stderr.String())
+	stdout := h.stdout.String()
+	assert.True(t, strings.HasPrefix(stdout, "<!doctype html>"), "html output, not a JSON object: %q", stdout)
+	assert.Contains(t, stdout, "<html")
+	assert.NotEqual(t, byte('{'), stdout[0], "must not be the JSON envelope")
+}
+
 // TestCollectReviews_FormatJSONStillRendersJSON is the negative case
 // alongside the test above: the default and explicit "json" formats must
 // still go through the unchanged JSON path once collectReviewsRun starts
