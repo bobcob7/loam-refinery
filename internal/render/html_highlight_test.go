@@ -14,8 +14,10 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/bobcob7/loam-refinery/internal/collect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -194,6 +196,135 @@ func TestSpansTokeniseErrorDegradesToOneUnstyledSpan(t *testing.T) {
 	view := htmlCodeView{Code: "plain text that any lexer tokenizes without error"}
 	spans := view.Spans()
 	require.NotEmpty(t, spans)
+}
+
+// jungleHangingExcerpt is bead .11's own reproduction, at the same
+// shape and length the bead reports: a 47-byte excerpt whose bare "!"
+// (none of Jungle's "var" state rules match it, and its own fallback
+// rule pops with zero width) sends the state machine into a push/pop
+// cycle that never advances position and never reaches EOF. Verified
+// directly against chroma v2.27.0, outside this package: lex.Tokenise
+// followed by Tokens() on this string does not return.
+const jungleHangingExcerpt = "x = !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+
+// TestHighlightLexerDeniesJungleAndJSONata pins deniedLexerNames at the
+// highlightLexer altitude: lexers.Match itself still resolves ".jungle"
+// and ".jsonata" to the real Jungle and JSONata lexers (the first two
+// assertions prove the test fixture is real, not a typo'd extension
+// that would have fallen back regardless) but highlightLexer refuses
+// both and returns lexers.Fallback instead.
+func TestHighlightLexerDeniesJungleAndJSONata(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "Jungle", lexers.Match("x.jungle").Config().Name, "fixture check: .jungle must still resolve to the real pathological lexer")
+	require.Equal(t, "JSONata", lexers.Match("x.jsonata").Config().Name, "fixture check: .jsonata must still resolve to the real pathological lexer")
+	assert.Equal(t, lexers.Fallback, highlightLexer("x.jungle"))
+	assert.Equal(t, lexers.Fallback, highlightLexer("x.jsonata"))
+}
+
+// TestTokeniseWithinDeadlineAbandonsAPathologicalLexer is bead .11's
+// deadline pinned directly against the real Jungle lexer — bypassing
+// highlightLexer's own denylist via lexers.Get, so this test still
+// means something if that denylist is ever loosened or a lexer chroma
+// adds later has the same defect and nobody has denied it yet. A single
+// "!" reproduces the hang in one byte (jungleHangingExcerpt's own
+// comment explains why); tokeniseWithinDeadline must return ok == false
+// well inside highlightTimeout's own budget, not by hanging until the
+// test's own timeout kills the whole test binary.
+func TestTokeniseWithinDeadlineAbandonsAPathologicalLexer(t *testing.T) {
+	t.Parallel()
+	lex := lexers.Get("Jungle")
+	require.NotNil(t, lex, "fixture check: chroma must still ship a lexer literally named Jungle")
+	start := time.Now()
+	tokens, ok := tokeniseWithinDeadline(lex, "!")
+	elapsed := time.Since(start)
+	assert.False(t, ok, "a lexer whose token stream never reaches EOF must not be reported as having tokenised successfully")
+	assert.Nil(t, tokens)
+	assert.Less(t, elapsed, highlightTimeout+time.Second, "tokeniseWithinDeadline must return once highlightTimeout elapses, not hang past it")
+}
+
+// TestSpansJungleAnchorDegradesInsteadOfHanging is bead .11's own
+// acceptance criterion end to end, through the real Spans method a
+// finding's code partial actually calls: a review with anchor file
+// x.jungle and jungleHangingExcerpt's own 47 bytes of code renders in
+// bounded time, as a single unstyled span carrying the excerpt
+// verbatim, rather than never returning. The bound is generous relative
+// to highlightTimeout only to keep this test itself from being flaky
+// under load; the fix this pins is that Spans returns at all.
+func TestSpansJungleAnchorDegradesInsteadOfHanging(t *testing.T) {
+	t.Parallel()
+	view := htmlCodeView{Code: jungleHangingExcerpt, Filename: "x.jungle"}
+	doneCh := make(chan []htmlCodeSpan, 1)
+	start := time.Now()
+	go func() { doneCh <- view.Spans() }()
+	select {
+	case spans := <-doneCh:
+		elapsed := time.Since(start)
+		t.Logf("x.jungle excerpt rendered in %v", elapsed)
+		assert.Less(t, elapsed, 5*time.Second, "a hostile .jungle excerpt must degrade in bounded time, not hang the report")
+		require.Len(t, spans, 1)
+		assert.Equal(t, "", spans[0].Class, "a degraded excerpt is unstyled — coloring is what was given up, not the text")
+		assert.Equal(t, jungleHangingExcerpt, spans[0].Text, "the excerpt itself must stay fully readable even when highlighting is abandoned")
+	case <-time.After(10 * time.Second):
+		t.Fatal("Spans on a .jungle anchor did not return within 10s — the hang bead .11 exists to fix is still present")
+	}
+}
+
+// TestSpansOversizedExcerptDegradesWithoutTokenising is bead .11's size
+// cap: an excerpt over maxHighlightInputBytes never reaches Tokenise at
+// all, on a plain .go anchor with nothing pathological about the lexer
+// — the amplification bead .11 measured (13x, one span per token plus
+// per-span markup) happens on ordinary source, not only on an
+// adversarial lexer, so the cap must trigger on size alone.
+func TestSpansOversizedExcerptDegradesWithoutTokenising(t *testing.T) {
+	t.Parallel()
+	oversized := strings.Repeat("x", maxHighlightInputBytes+1)
+	view := htmlCodeView{Code: oversized, Filename: "main.go"}
+	spans := view.Spans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "", spans[0].Class)
+	assert.Equal(t, oversized, spans[0].Text)
+}
+
+// TestSpansExcessiveSpanCountDegradesToUnstyledFallback is bead .11's
+// third, independent cap: an excerpt well under maxHighlightInputBytes
+// that still tokenises into more than maxHighlightSpans class
+// transitions degrades the same way. Alternating a one-rune identifier
+// with a punctuation mark gives Go's own lexer no two adjacent tokens
+// to merge, so the span count tracks the token count almost exactly —
+// enough repetitions crosses maxHighlightSpans while the excerpt itself
+// stays a few kilobytes, nowhere near maxHighlightInputBytes.
+func TestSpansExcessiveSpanCountDegradesToUnstyledFallback(t *testing.T) {
+	t.Parallel()
+	source := strings.Repeat("a;", maxHighlightSpans)
+	require.Less(t, len(source), maxHighlightInputBytes, "fixture check: this must exercise the span cap, not the size cap")
+	view := htmlCodeView{Code: source, Filename: "main.go"}
+	spans := view.Spans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "", spans[0].Class)
+	assert.Equal(t, source, spans[0].Text)
+}
+
+// TestTrimSyntheticTrailingNewlineRestoresByteFidelityForDiffAnchor is
+// bead .12's own reproduction and fix: chroma's Diff lexer sets
+// Config().EnsureNL, a setting Spans' own tokeniseOptions (EnsureLF)
+// cannot reach, so without trimSyntheticTrailingNewline this renders a
+// trailing "\n" the reviewer never wrote — verified directly against
+// chroma v2.27.0 outside this package. Unlike
+// TestSpansConcatenationReproducesSourceByteForByte, whose main.go
+// fixture matches a lexer with the knob off, this uses notes.diff,
+// where lexers.Match("notes.diff").Config().EnsureNL is true, so this
+// test is false before the fix and true after it — the shape the bead
+// itself asks for.
+func TestTrimSyntheticTrailingNewlineRestoresByteFidelityForDiffAnchor(t *testing.T) {
+	t.Parallel()
+	require.True(t, lexers.Match("notes.diff").Config().EnsureNL, "fixture check: the Diff lexer must still set the knob this test exists to route around")
+	source := "--- a\n+++ b\n-old\n+new"
+	view := htmlCodeView{Code: source, Filename: "notes.diff"}
+	var got strings.Builder
+	for _, s := range view.Spans() {
+		got.WriteString(s.Text)
+	}
+	assert.Equal(t, source, got.String(), "the rendered excerpt must not gain a trailing newline the reviewer never wrote")
 }
 
 // numberLiteralEnvelope is a one-comment fixture whose code excerpt
