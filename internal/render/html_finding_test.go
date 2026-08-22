@@ -96,6 +96,24 @@ func TestDeriveHeadline_UnbrokenTokenLongerThanCap(t *testing.T) {
 	assert.Equal(t, strings.Repeat("x", headlineCap)+headlineEllipsis, headline)
 }
 
+// TestDeriveHeadline_WordBoundaryAtWindowStart pins the degenerate case
+// this bead fixes: a body whose only whitespace inside the capped window
+// sits at index 0 (one leading space followed by a single long run of
+// non-space runes). Backing off to that whitespace would cut before
+// index 0, leaving an empty prefix, so the fallback must reach the same
+// hard-cut-at-capN outcome as the no-whitespace-at-all case rather than
+// appending the ellipsis to nothing and rendering as a single character.
+func TestDeriveHeadline_WordBoundaryAtWindowStart(t *testing.T) {
+	t.Parallel()
+	body := " " + strings.Repeat("a", 200)
+	headline := deriveHeadline(body)
+	assert.NotEqual(t, headlineEllipsis, headline, "headline must not collapse to a bare ellipsis")
+	require.True(t, strings.HasSuffix(headline, headlineEllipsis))
+	prefix := strings.TrimSuffix(headline, headlineEllipsis)
+	assert.Greater(t, len([]rune(prefix)), 1, "prefix must carry readable content, not just the leading space")
+	assert.True(t, strings.HasPrefix(body, prefix), "headline must be a prefix of body")
+}
+
 // TestDeriveHeadline_NeverRewords is the "cut, never a rewrite" property
 // stated three separate ways in §7.3: whatever deriveHeadline returns,
 // once its ellipsis (if any) is stripped, is found verbatim at the start

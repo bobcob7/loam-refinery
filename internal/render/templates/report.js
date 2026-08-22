@@ -68,7 +68,7 @@ var FACETS = [
 { key: "lens", attr: "data-lens", containerID: "facetLens", labels: null, order: null }
 ];
 
-var active = { priority: {}, category: {}, lens: {} };
+var active = { priority: new Map(), category: new Map(), lens: new Map() };
 var activeCount = { priority: 0, category: 0, lens: 0 };
 
 function findings() {
@@ -136,12 +136,12 @@ details.open = open;
 }
 
 function presentValues(attr) {
-var seen = {};
+var seen = new Map();
 var values = [];
 findings().forEach(function (details) {
 var value = details.getAttribute(attr);
-if (value && !seen[value]) {
-seen[value] = true;
+if (value && !seen.has(value)) {
+seen.set(value, true);
 values.push(value);
 }
 });
@@ -159,12 +159,12 @@ return present.indexOf(value) !== -1;
 }
 
 function toggleChip(facetKey, value, chip) {
-if (active[facetKey][value]) {
-delete active[facetKey][value];
+if (active[facetKey].has(value)) {
+active[facetKey].delete(value);
 activeCount[facetKey] -= 1;
 chip.setAttribute("aria-pressed", "false");
 } else {
-active[facetKey][value] = true;
+active[facetKey].set(value, true);
 activeCount[facetKey] += 1;
 chip.setAttribute("aria-pressed", "true");
 }
@@ -226,7 +226,7 @@ var count = activeCount[facetKey];
 if (count === 0) {
 return true;
 }
-return !!active[facetKey][details.getAttribute(attr)];
+return active[facetKey].has(details.getAttribute(attr));
 }
 
 function applyFilters() {
@@ -248,7 +248,7 @@ updateBanner(anyActive);
 
 function resetFilters() {
 FACETS.forEach(function (facet) {
-active[facet.key] = {};
+active[facet.key] = new Map();
 activeCount[facet.key] = 0;
 });
 document.querySelectorAll(".chip[aria-pressed]").forEach(function (chip) {

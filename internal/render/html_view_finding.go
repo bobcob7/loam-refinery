@@ -220,11 +220,13 @@ func deriveHeadline(body string) string {
 
 // truncateAtWordBoundary cuts runes to at most capN runes, backing off to
 // the last whitespace rune within that window so the cut lands after a
-// whole word rather than mid-word. The single exception (§7.3) is a run
-// with no whitespace at all inside the window — one unbroken token, an
-// identifier or a URL, longer than the cap by itself — which is cut hard
+// whole word rather than mid-word. The exception (§7.3) is a window where
+// backing off to that whitespace leaves nothing before it — no whitespace
+// at all (one unbroken token, an identifier or a URL, longer than the cap
+// by itself), or whitespace sitting right at the front of the window
+// (e.g. a leading space) — in which case the cut falls back to a hard cut
 // at capN rather than either overflowing the cap or vanishing outright,
-// since there is no earlier word boundary to cut it at.
+// since there is no usable earlier word boundary to cut it at.
 func truncateAtWordBoundary(runes []rune, capN int) string {
 	window := runes[:capN]
 	lastSpace := -1
@@ -237,7 +239,10 @@ func truncateAtWordBoundary(runes []rune, capN int) string {
 	if lastSpace == -1 {
 		return string(window)
 	}
-	return strings.TrimRight(string(window[:lastSpace]), " \t\n\r")
+	if trimmed := strings.TrimRight(string(window[:lastSpace]), " \t\n\r"); trimmed != "" {
+		return trimmed
+	}
+	return string(window)
 }
 
 // buildAnchorLabels renders every anchor as its own "file:line" or

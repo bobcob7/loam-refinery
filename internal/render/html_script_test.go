@@ -144,6 +144,34 @@ func TestScriptNeverPhonesOutOrInjectsExecutableContent(t *testing.T) {
 	}
 }
 
+// TestScriptFacetStateIsPrototypePollutionSafe pins the fix for the
+// lens-filter bypass a review found: a profile or lens value equal to
+// an Object.prototype member name — "constructor" is the confirmed
+// case, "__proto__" is one profile-format does not admit today but
+// costs nothing to guard too — must never read back as already-seen or
+// already-active on an empty bare object literal, since
+// !!({})["constructor"] is true. presentValues' seen tracker and the
+// active/activeCount facet state must therefore be backed by Map (whose
+// key lookups are never influenced by Object.prototype), not a plain
+// object keyed directly on an untrusted attribute value. This package
+// has no JS runtime to execute report.js against a live DOM and observe
+// passesFacet's return value directly, so this test pins the guarding
+// mechanism at the source level instead.
+func TestScriptFacetStateIsPrototypePollutionSafe(t *testing.T) {
+	t.Parallel()
+	_, doc := renderHTML(t, fiveSubmissionEnvelope())
+	content := scriptTextContent(t, doc)
+	assert.Contains(t, content, "new Map()", "facet-active and seen-value tracking must be backed by Map, not a bare object literal")
+	forbidden := []string{
+		"seen = {}", "seen[value]",
+		"active = { priority: {}", "active[facetKey][value]",
+		"active[facetKey][details.getAttribute(attr)]",
+	}
+	for _, token := range forbidden {
+		assert.NotContainsf(t, content, token, "report.js must not reintroduce a bare-object facet lookup keyed on an untrusted value (prototype lookup risk), found %q", token)
+	}
+}
+
 // TestPageHasNoEventHandlerAttributes pins §5.1's "onclick and its
 // relatives appear nowhere" across the whole rendered page, not just
 // the script — every handler is wired with addEventListener, so no
@@ -177,7 +205,7 @@ var toolbarControlIDs = []string{
 func TestToolbarCarriesEveryRequiredControlID(t *testing.T) {
 	t.Parallel()
 	_, doc := renderHTML(t, fiveSubmissionEnvelope())
-	var ids = map[string]bool{}
+	ids := map[string]bool{}
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode {
