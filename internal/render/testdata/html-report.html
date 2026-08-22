@@ -344,6 +344,26 @@ pre code { white-space: pre; }
 <section id="submissions" class="submissions">
 
 <div class="index" role="table">
+<style>
+.index-row-superseded .index-cell { color: var(--text-muted); }
+.index-superseded-tag {
+  margin-left: 0.4rem;
+  border: 1px solid var(--chip-border);
+  background: var(--chip-bg);
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.index-summary-row { grid-column: 1 / -1; }
+.index-summary-row .index-summary {
+  display: block;
+  padding: 0.35rem 0.75rem 0.75rem;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+</style>
 <div class="index-row index-header" role="row">
 <span class="index-cell" role="columnheader">#</span>
 <span class="index-cell" role="columnheader">profile</span>
@@ -358,6 +378,9 @@ pre code { white-space: pre; }
 <span class="index-cell index-verdict" role="cell">request_changes</span>
 <span class="index-cell index-assessment" role="cell">mixed</span>
 <span class="index-cell index-severity" role="cell">max=8</span>
+</div>
+<div class="index-summary-row" role="row">
+<span class="index-cell index-summary" role="cell"></span>
 </div>
 
 </div>

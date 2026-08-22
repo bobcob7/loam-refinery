@@ -56,12 +56,42 @@ type htmlEnvelopeView struct {
 // here, not left as "" / nil, so the template never has to reason about
 // an absent value's zero shape — the same reasoning
 // buildHTMLEnvelope's own IsHead/Diverged flattening already applies.
+//
+// Summary and HasSupersededBy/SupersededBy are the two fields
+// markdown.go's writeMarkdownSubmissions already renders per submission
+// (§8.1's superseded_by, §8.3.2's summary) that the fixed five-column
+// grid never carried — dropping them made the HTML projection lossy
+// next to the other two (refinery-t1c.4). Neither joins the grid as a
+// sixth column: Summary is 30-1500 characters of free-text prose, the
+// same shape markdown already sets apart as an indented paragraph below
+// its bullet rather than a sixth inline field, so templates/index.gohtml
+// renders it the same way — its own full-width row beneath the
+// five-column one, never crammed into a fixed-width cell. SupersededBy
+// is a currency signal, not content: a reader has to know a row is
+// stale before reading it, so it renders as a small tag inline in the
+// ordinal cell, the first thing a reader scans, with the row itself
+// carrying an "index-row-superseded" class so its cells sit visually
+// muted next to the submission that replaced it.
 type htmlSubmissionView struct {
 	Ordinal    int
 	Profile    string
 	Verdict    string
 	Assessment string
 	Severity   string
+	// Summary is s.Summary, verbatim — free-text prose, escaped by
+	// html/template's own contextual autoescaper the same way every
+	// other reviewer-authored field on this page already is (§4),
+	// never trimmed, elided, or summarized.
+	Summary string
+	// HasSupersededBy and SupersededBy flatten collect.Submission's
+	// *int the same way HeadCheckHasIsHead/HeadCheckIsHead already
+	// flatten HeadCheck.IsHead above: nil (current, or unprofiled, which
+	// has no supersession axis at all) leaves HasSupersededBy false and
+	// the template renders no marker; non-nil names the ordinal of the
+	// submission that is current for this one's profile, the identical
+	// fact markdown renders as "· superseded_by=#N" beside verdict.
+	HasSupersededBy bool
+	SupersededBy    int
 	// FindingID is the qualified id of the first comment (in Result's
 	// own Comments order) belonging to this submission, "" when the
 	// submission filed none. templates/index.gohtml only renders a
@@ -107,14 +137,20 @@ func buildHTMLEnvelope(envelope CollectReviewsEnvelope) htmlEnvelopeView {
 func buildHTMLSubmissions(submissions []collect.Submission, comments []collect.Comment) []htmlSubmissionView {
 	views := make([]htmlSubmissionView, 0, len(submissions))
 	for _, s := range submissions {
-		views = append(views, htmlSubmissionView{
+		view := htmlSubmissionView{
 			Ordinal:    s.Ordinal,
 			Profile:    submissionProfileText(s.Profile),
 			Verdict:    s.Verdict,
 			Assessment: submissionAssessmentText(s.Assessment),
 			Severity:   formatSeverity(s.Severity),
+			Summary:    s.Summary,
 			FindingID:  firstFindingID(s, comments),
-		})
+		}
+		if s.SupersededBy != nil {
+			view.HasSupersededBy = true
+			view.SupersededBy = *s.SupersededBy
+		}
+		views = append(views, view)
 	}
 	return views
 }

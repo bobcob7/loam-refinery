@@ -6,6 +6,7 @@ package render
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -72,6 +73,17 @@ func classListContains(classList, class string) bool {
 	return false
 }
 
+// htmlNodeAttr returns n's own attribute named key, or "" when n
+// carries none.
+func htmlNodeAttr(n *html.Node, key string) string {
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return a.Val
+		}
+	}
+	return ""
+}
+
 // htmlAncestorTags returns every tag name of n's ancestors, root-most
 // last, for tests that need to assert an element is never nested inside
 // a given tag anywhere on the page.
@@ -107,7 +119,12 @@ func htmlNodeText(n *html.Node) string {
 // (Severity's zero value), and one superseded by a later submission
 // sharing its profile — the case the manual verification ref happened
 // not to exercise, exercised here instead so firstFindingID's
-// ordinal-qualified branch is covered by something.
+// ordinal-qualified branch is covered by something. Every submission
+// also carries its own Summary, plain prose with no CommonMark-special
+// leading or anywhere characters, so escapeMarkdown leaves it
+// byte-identical — TestHTMLAndMarkdownSubmissions_CarryTheSameSubmissionLevelFacts
+// compares it verbatim across both projections without first having to
+// reverse either renderer's own escaping.
 func fiveSubmissionEnvelope() CollectReviewsEnvelope {
 	return CollectReviewsEnvelope{
 		Ref: "10974f7077704bb9f43c4a81741fcea84f510e49", RepoName: "github.com/bobcob7/loam-refinery",
@@ -115,11 +132,11 @@ func fiveSubmissionEnvelope() CollectReviewsEnvelope {
 		HeadCheck: CollectReviewsHeadCheck{Source: "repo"},
 		Result: &collect.Result{
 			Submissions: []collect.Submission{
-				{Ordinal: 1, Profile: "backend", Verdict: "request_changes", Assessment: htmlAssessment("mixed"), Severity: htmlSeverity(9)},
-				{Ordinal: 2, Profile: "", Verdict: "comment", Assessment: htmlAssessment("sound"), Severity: htmlSeverity(3)},
-				{Ordinal: 3, Profile: "security", Verdict: "approve", Assessment: nil, Severity: htmlSeverity(2)},
-				{Ordinal: 4, Profile: "docs", Verdict: "approve", Assessment: htmlAssessment("strong"), Severity: collect.Severity{}},
-				{Ordinal: 5, Profile: "go", Verdict: "request_changes", Assessment: htmlAssessment("weak"), SupersededBy: intPtr(6), Severity: htmlSeverity(8)},
+				{Ordinal: 1, Profile: "backend", Verdict: "request_changes", Summary: "the backend lens found unresolved concurrency issues across two goroutines in the request path", Assessment: htmlAssessment("mixed"), Severity: htmlSeverity(9)},
+				{Ordinal: 2, Profile: "", Verdict: "comment", Summary: "an unprofiled reviewer left a note about naming conventions in the exported package", Assessment: htmlAssessment("sound"), Severity: htmlSeverity(3)},
+				{Ordinal: 3, Profile: "security", Verdict: "approve", Summary: "the security lens found no material issues and approved the change as submitted", Assessment: nil, Severity: htmlSeverity(2)},
+				{Ordinal: 4, Profile: "docs", Verdict: "approve", Summary: "the docs lens approved the change and praised the clarity of the new guide", Assessment: htmlAssessment("strong"), Severity: collect.Severity{}},
+				{Ordinal: 5, Profile: "go", Verdict: "request_changes", Summary: "the go lens flagged a nil pointer dereference risk in the request handler before revision", Assessment: htmlAssessment("weak"), SupersededBy: intPtr(6), Severity: htmlSeverity(8)},
 			},
 			Comments: []collect.Comment{
 				{ID: "backend:dropped-context-1", Profile: "backend", Priority: 9, Category: "correctness", Body: "context not propagated"},
@@ -148,7 +165,7 @@ func TestHTMLIndex_OneRowPerSubmission_FieldsMatchTheFixture(t *testing.T) {
 		"#2 (none) comment sound max=3",
 		"#3 security approve (none) max=2",
 		"#4 docs approve strong none",
-		"#5 go request_changes weak max=8",
+		"#5 superseded by #6 go request_changes weak max=8",
 	}
 	for i, row := range dataRows {
 		assert.Equal(t, want[i], strings.Join(strings.Fields(htmlNodeText(row)), " "), "row %d text", i+1)
@@ -384,4 +401,88 @@ func TestHTMLView_RenderingTwiceProducesByteIdenticalOutput(t *testing.T) {
 	require.NoError(t, NewHTML().CollectReviews(&first, envelope))
 	require.NoError(t, NewHTML().CollectReviews(&second, envelope))
 	assert.Equal(t, first.String(), second.String())
+}
+
+// TestHTMLIndex_SupersededSubmissionIsVisiblyMarked is
+// refinery-t1c.4's acceptance criterion, half one: submission 5 — the
+// only submission in fiveSubmissionEnvelope carrying SupersededBy —
+// gets an "index-row-superseded" class on its own row and a tag naming
+// the ordinal that replaced it, so a reader sees it is stale before
+// reading the rest of the row. Submission 4, the row directly beside
+// it, carries neither, pinning that the marking is per-row, not a page-
+// wide flourish that would make every row look the same.
+func TestHTMLIndex_SupersededSubmissionIsVisiblyMarked(t *testing.T) {
+	t.Parallel()
+	_, doc := renderHTML(t, fiveSubmissionEnvelope())
+	rows := htmlNodesWithClass(doc, "index-row")
+	dataRows := rows[1:]
+	require.Len(t, dataRows, 5)
+	assert.True(t, classListContains(htmlNodeAttr(dataRows[4], "class"), "index-row-superseded"), "submission 5's row is marked superseded")
+	assert.False(t, classListContains(htmlNodeAttr(dataRows[3], "class"), "index-row-superseded"), "submission 4's row is not marked superseded")
+	badges := htmlNodesWithClass(doc, "index-superseded-tag")
+	require.Len(t, badges, 1, "exactly one submission in this fixture carries SupersededBy")
+	assert.Equal(t, "superseded by #6", strings.TrimSpace(htmlNodeText(badges[0])))
+}
+
+// TestHTMLIndex_EverySubmissionSummaryAppears is refinery-t1c.4's
+// acceptance criterion, half two: every submission's own Summary text
+// renders somewhere in the index, in Submissions' own order, one
+// "index-summary" cell per submission — the field the bug report
+// measured at zero occurrences across the whole page.
+func TestHTMLIndex_EverySubmissionSummaryAppears(t *testing.T) {
+	t.Parallel()
+	envelope := fiveSubmissionEnvelope()
+	_, doc := renderHTML(t, envelope)
+	cells := htmlNodesWithClass(doc, "index-summary")
+	require.Len(t, cells, len(envelope.Result.Submissions))
+	for i, s := range envelope.Result.Submissions {
+		assert.Equal(t, s.Summary, strings.TrimSpace(htmlNodeText(cells[i])), "submission #%d's own summary", s.Ordinal)
+	}
+}
+
+// TestHTMLAndMarkdownSubmissions_CarryTheSameSubmissionLevelFacts is
+// refinery-t1c.4's own reviewer-requested regression pin: the JSON,
+// Markdown, and HTML projections are each downstream of the identical
+// CollectReviewsEnvelope value, but until this bead each was tested only
+// against its own fixture — exactly how the HTML index's dropped
+// summary and superseded_by went unnoticed while markdown's own test
+// suite stayed green. This test renders fiveSubmissionEnvelope through
+// both Markdown and HTML and asserts every submission-level fact
+// appears in both outputs, ordinal, profile, verdict, assessment,
+// severity, and summary through the identical
+// submissionProfileText/submissionAssessmentText/formatSeverity helpers
+// both renderers already call (so this test tracks either renderer's
+// own formatting rather than racing it with a duplicated literal), plus
+// superseded_by, checked precisely — inside the superseded submission's
+// own row for HTML, not merely anywhere on the page, since this
+// fixture's own comment prose ("a finding from the superseded go
+// submission") already contains the word "superseded" regardless of
+// whether the index ever marks anything, the exact false-positive a
+// bare substring search across the whole page would fall into.
+func TestHTMLAndMarkdownSubmissions_CarryTheSameSubmissionLevelFacts(t *testing.T) {
+	t.Parallel()
+	envelope := fiveSubmissionEnvelope()
+	var htmlOut, mdOut bytes.Buffer
+	require.NoError(t, NewHTML().CollectReviews(&htmlOut, envelope))
+	require.NoError(t, NewMarkdown().CollectReviews(&mdOut, envelope))
+	htmlText, mdText := htmlOut.String(), mdOut.String()
+	_, doc := renderHTML(t, envelope)
+	rows := htmlNodesWithClass(doc, "index-row")
+	dataRows := rows[1:]
+	require.Len(t, dataRows, len(envelope.Result.Submissions))
+	for i, s := range envelope.Result.Submissions {
+		facts := []string{"#" + strconv.Itoa(s.Ordinal), submissionProfileText(s.Profile), s.Verdict, submissionAssessmentText(s.Assessment), formatSeverity(s.Severity), s.Summary}
+		for _, fact := range facts {
+			assert.Contains(t, htmlText, fact, "html output for submission #%d missing %q", s.Ordinal, fact)
+			assert.Contains(t, mdText, fact, "markdown output for submission #%d missing %q", s.Ordinal, fact)
+		}
+		if s.SupersededBy == nil {
+			assert.False(t, classListContains(htmlNodeAttr(dataRows[i], "class"), "index-row-superseded"), "submission #%d is not superseded", s.Ordinal)
+			continue
+		}
+		supersededOrdinal := "#" + strconv.Itoa(*s.SupersededBy)
+		assert.True(t, classListContains(htmlNodeAttr(dataRows[i], "class"), "index-row-superseded"), "html marks submission #%d's own row as superseded", s.Ordinal)
+		assert.Contains(t, htmlNodeText(dataRows[i]), "superseded by "+supersededOrdinal, "html names the superseding ordinal inside submission #%d's own row", s.Ordinal)
+		assert.Contains(t, mdText, "superseded_by="+supersededOrdinal, "markdown names the superseding ordinal for submission #%d", s.Ordinal)
+	}
 }

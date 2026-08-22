@@ -17,11 +17,51 @@ the index is what a reader scans first to decide where to go), via
 fragmentHref (html_href.go, §8.2-8.3) — the same helper, called the same
 way, templates/finding.gohtml already uses for a finding's own permalink.
 FindingID is "" for a submission that filed no comments, so that row's
-ordinal renders as plain text rather than a link to nowhere. */ -}}
+ordinal renders as plain text rather than a link to nowhere.
+
+Two fields beyond the five grid columns (refinery-t1c.4): every row is
+immediately followed by its own full-width "index-summary-row" carrying
+Summary, unconditionally, the same way markdown.go's
+writeMarkdownSubmissions always writes the indented summary paragraph
+below its bullet regardless of length — 30-1500 characters of prose is
+the wrong shape for a fixed grid cell, so it gets its own row instead of
+a sixth column. A row whose HasSupersededBy is true instead gets an
+"index-row-superseded" class, muting its own cells, plus a small tag in
+the ordinal cell naming the ordinal that superseded it — placed first,
+before profile/verdict/assessment/severity, because a reader has to know
+a row is stale before reading the rest of it, not after. Both rows —
+row and its summary — share the same grid container as the header and
+data rows above them: "index-summary-row" reaches full width with
+grid-column: 1/-1, the identical mechanism report.css's own ".index-row"
+already uses, declared in the <style> block below rather than in
+report.css itself, the same "a partial owns a few rules of its own
+presentation, reusing report.css's custom properties, without editing
+that file" pattern templates/toolbar.gohtml already establishes for the
+identical reason: bead .5's ownership of report.css stays untouched. */ -}}
 {{define "index"}}
 <section id="submissions" class="submissions">
 {{if .Submissions}}
 <div class="index" role="table">
+<style>
+.index-row-superseded .index-cell { color: var(--text-muted); }
+.index-superseded-tag {
+  margin-left: 0.4rem;
+  border: 1px solid var(--chip-border);
+  background: var(--chip-bg);
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.index-summary-row { grid-column: 1 / -1; }
+.index-summary-row .index-summary {
+  display: block;
+  padding: 0.35rem 0.75rem 0.75rem;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+</style>
 <div class="index-row index-header" role="row">
 <span class="index-cell" role="columnheader">#</span>
 <span class="index-cell" role="columnheader">profile</span>
@@ -30,12 +70,15 @@ ordinal renders as plain text rather than a link to nowhere. */ -}}
 <span class="index-cell" role="columnheader">severity</span>
 </div>
 {{range .Submissions}}
-<div class="index-row" role="row">
-<span class="index-cell index-ordinal" role="cell">{{if .FindingID}}<a href="#{{fragmentHref .FindingID}}">#{{.Ordinal}}</a>{{else}}#{{.Ordinal}}{{end}}</span>
+<div class="index-row{{if .HasSupersededBy}} index-row-superseded{{end}}" role="row">
+<span class="index-cell index-ordinal" role="cell">{{if .FindingID}}<a href="#{{fragmentHref .FindingID}}">#{{.Ordinal}}</a>{{else}}#{{.Ordinal}}{{end}}{{if .HasSupersededBy}} <span class="tag index-superseded-tag" title="superseded by submission #{{.SupersededBy}}">superseded by #{{.SupersededBy}}</span>{{end}}</span>
 <span class="index-cell index-profile" role="cell">{{.Profile}}</span>
 <span class="index-cell index-verdict" role="cell">{{.Verdict}}</span>
 <span class="index-cell index-assessment" role="cell">{{.Assessment}}</span>
 <span class="index-cell index-severity" role="cell">{{.Severity}}</span>
+</div>
+<div class="index-summary-row" role="row">
+<span class="index-cell index-summary" role="cell">{{.Summary}}</span>
 </div>
 {{end}}
 </div>
