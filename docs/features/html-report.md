@@ -892,8 +892,8 @@ shipping chroma at all, are paid by every invocation regardless of format.
 this costs. `x/net/html` sits closer to `sqlc` than to chroma on
 that axis — [§2.2.1](#221-how-html-output-is-tested)'s parser runs only
 inside `go test`, never inside a shipped `loam-refinery` binary — but it is
-not tracked behind the `tools` build tag the way `sqlc` is, because it is
-not a code generator invoked once at build time; it is an ordinary test
+not pinned as a `tool` directive in `go.mod` the way `sqlc` is, because it
+is not a code generator invoked once at build time; it is an ordinary test
 import, and Go's module tooling makes no distinction between a test-only
 direct import and a runtime one when deciding what belongs in the direct
 block. The line in `go.mod` reads the same either way, which is exactly

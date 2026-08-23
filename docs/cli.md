@@ -1470,8 +1470,10 @@ Keep the tree shallow — this binary is invoked in tight loops.
 - testify for tests
 
 Build-time tools are not dependencies of the binary. They're pinned as `tool`
-directives in `go.mod` and resolved by `go tool <name>`, which `make lint` and
-`make generate` invoke directly: `moq`, `gofumpt`, and now `sqlc`, which
+directives in `go.mod` and resolved by `go tool <name>`. `make lint` invokes
+`go tool gofumpt` directly ([Makefile:14](../Makefile)); `make generate` is
+plain `go generate ./...`, and the six `//go:generate` directives it runs each
+call `go tool <name>` themselves — five for `moq`, one for `sqlc`, which
 compiles `internal/store/sql/*.sql` into typed Go. Its output is committed, so a
 build never needs it ([config.md §4.5.4](config.md#454-sqlc)). Pinning a tool
 this way still doesn't make it a build-time dependency of the binary — `go tool`
@@ -1479,6 +1481,15 @@ resolves and runs the module from the module cache, it doesn't link it into
 anything `go build ./cmd/loam-refinery` produces — so sqlc's own enormous
 transitive tree stays exactly as build-time-only as it was under the old
 mechanism.
+
+There used to be a `make tools` target that installed pinned tool binaries
+into `bin/` via `internal/tools/tools.go` and a `GOBIN` prepend; it's gone,
+replaced by the `tool` directives above, and `go tool <name>` needs no
+install step. If you ran the old target on this machine, `bin/moq`,
+`bin/gofumpt`, and `bin/sqlc` are still sitting there and nothing points at
+them anymore — run `make clean` to remove them, especially before the next
+version bump, since the old target used to reinstall them on every `lint`
+and `generate` and that self-healing is gone too.
 
 ### 7.4 Testing
 

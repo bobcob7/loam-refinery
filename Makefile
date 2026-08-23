@@ -9,7 +9,7 @@ build:
 test:
 	go test ./...
 
-# lint is what CI enforces: formatting, vet, and a build of everything.
+# lint is the gate a contributor is expected to run: formatting and vet.
 lint:
 	go tool gofumpt -l -e . | tee /dev/stderr | (! read)
 	go vet ./...
