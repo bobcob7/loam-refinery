@@ -757,7 +757,7 @@ if there happens to be one. sqlc makes all three a build failure, and it makes
 [§4.9](#49-the-store-is-not-a-contract) needs in order for the shape to be
 allowed to change.
 
-It joins `moq` and `gofumpt` in `internal/tools/tools.go` and runs under
+It joins `moq` and `gofumpt` as `tool` directives in `go.mod` and runs under
 `make generate`, which stays the one entry point for code generation. Generated
 code is committed, as `moq_test.go` already is, so a build never depends on the
 tool being installed.

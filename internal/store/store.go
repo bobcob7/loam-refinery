@@ -18,7 +18,7 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
-//go:generate sqlc generate -f ../../sqlc.yaml
+//go:generate go tool sqlc generate -f ../../sqlc.yaml
 
 //go:embed sql/schema.sql
 var schema string

@@ -2,7 +2,7 @@ package verify
 
 import "context"
 
-//go:generate moq -out moq_test.go . gitRunner
+//go:generate go tool moq -out moq_test.go . gitRunner
 
 // gitRunner runs one git command against the discovered repository, and
 // answers whether an anchored file's working-tree copy has diverged from a

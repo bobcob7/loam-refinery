@@ -6,7 +6,7 @@ import (
 	"github.com/bobcob7/loam-refinery/internal/review"
 )
 
-//go:generate moq -out moq_test.go . structuralChecker advisoryRunner repositoryFinder verifier
+//go:generate go tool moq -out moq_test.go . structuralChecker advisoryRunner repositoryFinder verifier
 
 // structuralChecker runs the hard checks over a parsed document.
 type structuralChecker interface {

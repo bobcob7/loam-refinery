@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-//go:generate moq -out moq_test.go . clock gitRunner
+//go:generate go tool moq -out moq_test.go . clock gitRunner
 
 // clock supplies the current time for a run's "at" column (config.md
 // section 4.5.1). A real clock is used in production; a test pins it so a
