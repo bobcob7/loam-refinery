@@ -867,8 +867,8 @@ direct or it isn't.
 This is worth stating as a real cost rather than waving past, and worth
 distinguishing from a dependency already in the tree that looks similar in
 size but isn't the same kind of cost: `github.com/sqlc-dev/sqlc` is a build-
-time code generator, tracked in `internal/tools/tools.go` behind the
-`tools` build tag ([cli.md §7.3](../cli.md#73-dependencies)) — it is never
+time code generator, pinned as a `tool` directive in `go.mod`
+([cli.md §7.3](../cli.md#73-dependencies)) — it is never
 imported by code that ships in the binary, and its own enormous transitive
 tree (a SQL parser, a Postgres driver, a MySQL driver, a CEL evaluator)
 never executes when a user runs `loam-refinery`. Chroma is not that kind of
@@ -892,8 +892,8 @@ shipping chroma at all, are paid by every invocation regardless of format.
 this costs. `x/net/html` sits closer to `sqlc` than to chroma on
 that axis — [§2.2.1](#221-how-html-output-is-tested)'s parser runs only
 inside `go test`, never inside a shipped `loam-refinery` binary — but it is
-not tracked behind the `tools` build tag the way `sqlc` is, because it is
-not a code generator invoked once at build time; it is an ordinary test
+not pinned as a `tool` directive in `go.mod` the way `sqlc` is, because it
+is not a code generator invoked once at build time; it is an ordinary test
 import, and Go's module tooling makes no distinction between a test-only
 direct import and a runtime one when deciding what belongs in the direct
 block. The line in `go.mod` reads the same either way, which is exactly

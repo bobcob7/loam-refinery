@@ -4,14 +4,11 @@ go 1.26.0
 
 require (
 	github.com/alecthomas/chroma/v2 v2.27.0
-	github.com/matryer/moq v0.7.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
-	github.com/sqlc-dev/sqlc v1.31.1
 	github.com/stretchr/testify v1.12.0
 	golang.org/x/net v0.57.0
 	golang.org/x/text v0.40.0
 	modernc.org/sqlite v1.57.0
-	mvdan.cc/gofumpt v0.11.0
 )
 
 require (
@@ -33,6 +30,7 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
+	github.com/matryer/moq v0.7.1 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-sqlite3 v0.32.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
@@ -47,6 +45,7 @@ require (
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/sqlc-dev/doubleclick v1.0.0 // indirect
+	github.com/sqlc-dev/sqlc v1.31.1 // indirect
 	github.com/tetratelabs/wazero v1.11.0 // indirect
 	github.com/wasilibs/go-pgquery v0.0.0-20250409022910-10ac41983c07 // indirect
 	github.com/wasilibs/wazero-helpers v0.0.0-20240620070341-3dff1577cd52 // indirect
@@ -67,4 +66,15 @@ require (
 	modernc.org/libc v1.74.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
+	mvdan.cc/gofumpt v0.11.0 // indirect
+)
+
+// The tool block below requires Go 1.24 or later to parse. On an older
+// toolchain (GOTOOLCHAIN=local), "go" reports "unknown block type: tool"
+// naming the "tool (" line below, rather than a version floor — upgrade
+// Go instead of looking for a syntax error here.
+tool (
+	github.com/matryer/moq
+	github.com/sqlc-dev/sqlc/cmd/sqlc
+	mvdan.cc/gofumpt
 )

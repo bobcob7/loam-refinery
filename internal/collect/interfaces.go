@@ -2,7 +2,7 @@ package collect
 
 import "context"
 
-//go:generate moq -out moq_test.go . reader
+//go:generate go tool moq -out moq_test.go . reader
 
 // reader is what Assemble needs to read one distinct digest's stored
 // bytes, defined here at the consumer rather than in internal/store, per
