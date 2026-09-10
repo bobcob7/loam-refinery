@@ -1,23 +1,38 @@
 loam-refinery checks a review document — one JSON object: a verdict, a
-summary, and comments carrying an id you choose, a priority, a category, a
-body, anchors, and competing suggestions.
+summary, a ref, and comments carrying an id you choose, a priority, a
+category, a body, anchors, and competing suggestions.
+
+Read the shape before writing one:
+
+loam-refinery describe          the document shape
+loam-refinery describe --list   every name it can explain
+loam-refinery schema            JSON Schema, for machines only
+
+Run inside the repository you reviewed: every submission verifies its
+anchors against it, with no flag, and cd is how you point elsewhere.
+Anchor paths are repo-relative. ref is one full 40-char commit SHA — git
+rev-parse HEAD — never a branch or tag, and the working tree must still
+match it.
 
 The loop:
 
 1. Write the review.
 2. loam-refinery submit-review review.json   (- or no path reads stdin)
-3. Exit 0 done. Exit 1: each diagnostic names a check, listed in
-   "lenses" — run loam-refinery describe --lens=a,b,c, fix, retry.
-4. Exit 2 fix the invocation. Exit 3: the reviewed state is not a
+   --strict fails the run on advisories too.
+3. Read the JSON result, not prose. Exit 0 done.
+4. Exit 1: each diagnostic names a check, all of them listed in
+   "lenses" — run loam-refinery describe --lens=a,b,c, fix, resubmit.
+   One call reports every fault it can, so fix them all before you
+   resubmit. Only exit 1 retries.
+5. Exit 2 fix the invocation. Exit 3: the reviewed state is not a
    commit — commit it, or "git stash create" and submit that SHA.
-   Exit 101: the tool failed. Only exit 1 retries; the rest stop
-   and report.
-5. Unsure about a field? Same command, --lens=<field>. Never guess at
+   Exit 101: the tool failed. These three stop and report.
+6. Unsure about a field? Same command, --lens=<field>. Never guess at
    an enum or a scale.
-
-loam-refinery describe          the document shape
-loam-refinery describe --list   every name it can explain
-loam-refinery schema            JSON Schema, for machines
 
 Advisories report review quality and never fail the run; structural and
 anchor errors do.
+
+Every run is recorded: loam-refinery reviews lists what this repository
+already concluded, and collect-reviews --ref=SHA combines every review
+submitted for one commit.

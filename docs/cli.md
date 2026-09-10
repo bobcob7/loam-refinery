@@ -175,6 +175,7 @@ knows anything, by whoever launched it ([§2.1.1](#211-reviewer-profiles)).
 ### 2.1 `prime`
 
 Teaches the **workflow**, not the contract. Prints: what the tool is for, the
+preconditions a submission is checked against, the
 write → `submit-review` → `describe --lens` → revise loop, the exit codes, and the
 instruction to reach for `describe` rather than guess.
 
@@ -185,17 +186,38 @@ whole session, so it is the one that must stay small.
 
 The workflow it teaches:
 
-1. Write a review document.
-2. Run `loam-refinery submit-review`.
-3. Exit 0 — done. Exit 2 — the invocation is wrong, not the review. Exit 101 —
-   the tool failed; nothing about the review or the command will fix it.
-4. Exit 1 — each diagnostic names a check. Run
-   `loam-refinery describe --lens=<check-name>` for the ones you do not understand,
-   fix, and submit-review again.
-5. Unsure about a field before writing? `loam-refinery describe --lens=<field>`. Never
+1. Read the shape before writing: `loam-refinery describe`, `describe --list` for
+   every name it can explain, `schema` for machines only.
+2. Write a review document.
+3. Run `loam-refinery submit-review`, optionally `--strict`.
+4. Exit 0 — done. Exit 2 — the invocation is wrong, not the review. Exit 3 — the
+   reviewed state is not a commit ([§2.3.1](#231-verifying-anchors)); commit it or
+   `git stash create` and submit that SHA. Exit 101 — the tool failed; nothing
+   about the review or the command will fix it. Only exit 1 is retried.
+5. Exit 1 — each diagnostic names a check, and every name is collected in
+   `lenses`. Run `loam-refinery describe --lens=<check-name>` for the ones you do
+   not understand, fix the whole list, and submit-review again.
+6. Unsure about a field before writing? `loam-refinery describe --lens=<field>`. Never
    guess at an enum or a scale.
 
-Budget: ~250 tokens. See [§6](#6-token-economy).
+**The preconditions it states.** These are the four facts a reviewer cannot
+derive from the contract and pays a full failed submission to discover, so
+`prime` states them rather than letting `submit-review` teach them one rejection
+at a time: run inside the repository that was reviewed, because verification
+resolves against the working directory's repository and has no flag
+([§2.3.1](#231-verifying-anchors)); anchor paths are repository-relative;
+`ref` is one full 40-character commit SHA, never a branch or tag; and the
+working tree must still match it. Each is a precondition on the *run*, not a
+field in the document — which is exactly why `describe` is the wrong place for
+them and `prime` is the right one.
+
+It closes by naming `reviews` and `collect-reviews`. Neither is a rung on the
+ladder ([§2](#2-commands)), and a reviewer does not call either one — but
+`prime` is the only place a caller learns that a submission is *kept* at all,
+and an orchestrator that does not know reviews accumulate under a `ref` cannot
+ask for the combined view that accumulation exists to serve.
+
+Budget: ~450 tokens. See [§6](#6-token-economy).
 
 #### 2.1.1 Reviewer profiles
 
@@ -1064,8 +1086,8 @@ nothing measures is a limit that erodes.
 
 | Call | Budget | Frequency |
 | --- | --- | --- |
-| `prime` | 250 | Once per session, often pinned into a system prompt |
-| `prime --profile=NAME` | 250 + 25 + the profile | Once per session, when an orchestrator names one |
+| `prime` | 450 | Once per session, often pinned into a system prompt |
+| `prime --profile=NAME` | 450 + 25 + the profile | Once per session, when an orchestrator names one |
 | `prime --list` | 10 + 40 per profile | Rare; operator discovery, never a reviewer's call |
 | `describe` | 850 | Once per session that writes a review |
 | `describe --lens=NAME` | 350 each | Only on uncertainty or a failed check |
@@ -1130,11 +1152,11 @@ A profile's body is unbudgeted, like `reviews --content` and for the same
 reason: it is content the caller wrote, and a ceiling on it would be this tool
 rationing an operator's own words back to them. The seed profiles in
 `profiles/` measure 210–290 tokens each, which is the norm rather than the
-rule: a primed reviewer costs about 525 tokens instead of 250, paid once, in
+rule: a primed reviewer costs about 725 tokens instead of 450, paid once, in
 exchange for prompt text the orchestrator would otherwise have written by hand.
 A profile costing more than `prime` itself is worth re-reading before it is
 worth installing. What is budgeted is everything
-around it — `prime` holds at 250 whether a profile is named or not, the frame is
+around it — `prime` holds at 450 whether a profile is named or not, the frame is
 fixed at about 25, and `description` is capped at 120 characters so `--list`
 cannot quietly become a second copy of every profile
 ([§2.1.2](#212-the-profile-file)). `prime`'s own byte-identity regardless of
@@ -1153,6 +1175,27 @@ for roughly 285 total. The ceiling rounds both up with headroom, to 10 and
 
 The two that matter most are `prime` and clean `submit-review`, because they are paid
 on every single loop.
+
+`prime` measures 422 against a 450 ceiling, raised from 250 by
+[§2.1](#21-prime)'s preconditions and the two store commands. Growing the one
+call that gets pinned into a system prompt needs an argument, and the argument
+is arithmetic rather than taste: every fact added is one a reviewer otherwise
+discovers by having a submission rejected, and the cheapest rejection on this
+table already costs more than the whole increase. A run that fails
+`verification-required` because the reviewer was not in the repository pays the
+per-diagnostic cost, then a 350-token lens to find out what the check wants,
+then a rewrite — call it 500, against 172 paid once to make it not happen.
+Three of the four preconditions cannot fail any cheaper than that, and the
+fourth, exit 3, is the one that costs 153 *per attempt* while a reviewer
+that mistook it for exit 1 keeps retrying. The ceiling holds at 450 rather
+than tracking the measurement, for the same reason every other ceiling here
+carries headroom.
+
+That trade is available to `prime` and to almost nothing else on this table.
+It works only because `prime` is paid once per session while the loop around
+it is paid per attempt, so a fixed cost buys out a recurring one. The same
+addition to a clean `submit-review` would be paid every attempt and buy
+nothing, which is what the paragraph below is about.
 
 Clean `submit-review` holds at 80 even though every clean run now writes to a store,
 because the result object says nothing about the store. A draft that reported
@@ -1341,12 +1384,12 @@ against a session that writes one review and gets two things wrong:
 
 | | Monolithic | Progressive |
 | --- | --- | --- |
-| Learn the tool | 4,000 | 250 (`prime`) |
+| Learn the tool | 4,000 | 420 (`prime`) |
 | Learn the contract | — | 600 (`describe`) |
 | First submit-review | 15 | 15 |
 | Two failed checks | re-read 4,000 | 500 (two lenses) + 15 pointer |
 | Second submit-review | 15 | 15 |
-| **Total** | **~8,030** | **~1,395** |
+| **Total** | **~8,030** | **~1,565** |
 
 The gap widens with every additional attempt, because the monolithic path has
 nothing smaller to re-read than everything. Progressive disclosure only works if
