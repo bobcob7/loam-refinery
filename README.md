@@ -44,9 +44,9 @@ go install github.com/bobcob7/loam-refinery/cmd/loam-refinery@latest
 
 ## Quickstart
 
-An agent asked to review code runs `loam-refinery prime` — about 250 tokens teaching
-the loop, not the contract — then `loam-refinery describe` for the document shape. It
-writes its review and checks it:
+An agent asked to review code runs `loam-refinery prime` — about 420 tokens teaching
+the loop and the preconditions, not the contract — then `loam-refinery describe` for
+the document shape. It writes its review and checks it:
 
 ```sh
 loam-refinery validate review.json
@@ -181,7 +181,7 @@ with no cooperation from this tool and no state it had to keep.
 
 | Command | Purpose | ~Tokens |
 | --- | --- | --- |
-| `loam-refinery prime` | The workflow: how to use the tool and when to reach for `describe` | 250 |
+| `loam-refinery prime` | The workflow: how to run the tool, what a run assumes, and when to reach for `describe` | 450 |
 | `loam-refinery describe` | The contract in summary — enough to write a review | 850 |
 | `loam-refinery describe --lens=NAME` | One field or one failed check, in full | 350 each |
 | `loam-refinery describe --list` | Every name the binary can explain | 380 |
@@ -230,7 +230,7 @@ So the material is tiered, and callers climb only as far as the problem requires
 `prime` teaches the loop. `describe` gives the shape. `--lens` opens exactly one
 entry — and the lens namespace includes **every check name**, so a failed
 validation routes straight to its own explanation rather than back to the top of
-the contract. Priced against one review with two mistakes, that's ~1,400 tokens
+the contract. Priced against one review with two mistakes, that's ~1,600 tokens
 where a monolithic contract costs ~8,000, and the gap widens with every retry.
 
 `describe` renders entries from a registry rather than printing a document, so

@@ -48,5 +48,5 @@ Every profile here does one thing, and a second when it needs to:
   exactly the subjects a profile has to give an anchoring rule for.
 
 Keep the body near the size of the ones here, 210–290 tokens. It is pinned for a
-whole session next to a `prime` that fought to stay at 250, and a profile that
+whole session next to a `prime` that fought to stay at 450, and a profile that
 costs more than the tool's own instructions is worth reading again.

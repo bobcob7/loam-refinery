@@ -49,7 +49,7 @@ func TestCommandsStayWithinBudget(t *testing.T) {
 		budget     int
 		wantTokens int
 	}{
-		{name: "prime", args: []string{"prime"}, golden: "prime.txt", budget: 250},
+		{name: "prime", args: []string{"prime"}, golden: "prime.txt", budget: 450, wantTokens: 422},
 		{name: "describe", args: []string{"describe"}, golden: "describe.txt", budget: 850, wantTokens: 768},
 		{name: "describe --list", args: []string{"describe", "--list"}, golden: "list.txt", budget: 380, wantTokens: 276},
 		{name: "schema", args: []string{"schema"}, budget: 1100},
